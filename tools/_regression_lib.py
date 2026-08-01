@@ -24,7 +24,7 @@ def set_data_root(web, data_root):
     web.DATA_ROOT = os.path.abspath(data_root)
 
 
-SELECTION_KEYS = ("device", "ver", "type", "lot", "purpose", "item", "readout", "ft_temp")
+SELECTION_KEYS = ("device", "ver", "lot", "purpose", "item", "readout", "ft_temp")
 
 
 def iter_selections(web):
@@ -46,7 +46,6 @@ def iter_selections(web):
                         yield {
                             "device": device,
                             "ver": folder["ver"],
-                            "type": folder["type"],
                             "lot": folder["lot"],
                             "purpose": folder["purpose"],
                             "folder": folder["name"],

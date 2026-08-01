@@ -6,7 +6,7 @@ calculate_results_vectorized / payload_with_items / json.dumps / cache write.
 Runs the pipeline --repeat times (default 3) and reports the median per segment.
 
 By default it auto-picks the combo with the largest post data file under
---data-root. Pass --device/--ver/--type/--lot/--purpose/--item/--readout/--ft-temp
+--data-root. Pass --device/--ver/--lot/--purpose/--item/--readout/--ft-temp
 to pin a specific combo instead.
 
 Usage:

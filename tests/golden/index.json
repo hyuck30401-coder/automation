@@ -1,0 +1,31 @@
+{
+  "data_root": "C:\\파이썬코딩\\신뢰성데이터분석툴\\Test Data",
+  "combos": [
+    {
+      "device": "SM3502Q",
+      "ver": "MVT0-0",
+      "lot": "1111",
+      "purpose": "111",
+      "folder": "00_MVT0-0_1111_111",
+      "item": "HTOL",
+      "readout": "1000hrs",
+      "ft_temp": "Room",
+      "mode": "pass",
+      "file": "SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json",
+      "message": ""
+    },
+    {
+      "device": "SM3502Q",
+      "ver": "MVT0-0",
+      "lot": "1111",
+      "purpose": "111",
+      "folder": "00_MVT0-0_1111_111",
+      "item": "HTOL",
+      "readout": "1000hrs",
+      "ft_temp": "Room",
+      "mode": "fail",
+      "file": "SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json",
+      "message": "Fail Items 5, Fail Samples 22, Files 1"
+    }
+  ]
+}

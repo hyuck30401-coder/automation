@@ -1848,7 +1848,6 @@ HTML = r"""<!doctype html>
             <div class="condition-title"><span class="filter-icon"></span><span>1. Analysis Condition</span></div>
             <div class="rda-form">
               <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
-              <div class="field"><label>Reliability Type</label><select id="typeSelect"></select></div>
               <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
               <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
               <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
@@ -2004,7 +2003,6 @@ const passColumns = [
 const failColumns = passColumns;
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
 const lookupOrder = [
-  ["type", "typeSelect"],
   ["ver", "verSelect"],
   ["lot", "lotSelect"],
   ["purpose", "purposeSelect"],
@@ -2012,10 +2010,10 @@ const lookupOrder = [
   ["readout", "readoutSelect"],
   ["ft_temp", "ftTempSelect"]
 ];
-const lookupState = { device: "", ver: "", type: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
+const lookupState = { device: "", ver: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
 function normalizedAnalysisSelection(extra = {}) {
   const payload = { ...lookupState, ...extra };
-  const hasBaseSelection = ["device", "ver", "type", "purpose", "lot"].every(key => (payload[key] || "").trim());
+  const hasBaseSelection = ["device", "ver", "purpose", "lot"].every(key => (payload[key] || "").trim());
   const hasCompleteDetailSelection = ["item", "readout", "ft_temp"].every(key => (payload[key] || "").trim());
   if (hasBaseSelection && !hasCompleteDetailSelection) {
     payload.item = "";
@@ -2276,7 +2274,7 @@ function bindLookupControls() {
         setSelectOptions(selectId, [], "Select");
       }
     });
-    await refreshLookup("type");
+    await refreshLookup("ver");
   });
   device.addEventListener("focus", async () => {
     if (deviceLookupLoaded && document.getElementById("deviceOptions").options.length) return;
@@ -5405,7 +5403,7 @@ def apply_post_readout_history_to_payload(payload, post_history):
     return payload
 
 def has_base_analysis_selection(selection):
-    required = ["device", "ver", "type", "purpose", "lot"]
+    required = ["device", "ver", "purpose", "lot"]
     return all(selection.get(field, "").strip() for field in required)
 
 
@@ -5971,7 +5969,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 17
+CACHE_SCHEMA = 18
 CACHE_DIR = os.path.join(app_base_dir(), ".analysis_cache")
 
 
@@ -5997,7 +5995,6 @@ def cache_key_for(selection, pre_path, post_path, mode):
         "post_path": os.path.abspath(post_path) if post_path else "",
         "device": selection.get("device", "").strip(),
         "ver": selection.get("ver", "").strip(),
-        "type": selection.get("type", "").strip(),
         "purpose": selection.get("purpose", "").strip(),
         "lot": selection.get("lot", "").strip(),
         "item": selection.get("item", "").strip(),
@@ -6292,7 +6289,7 @@ def payload_with_items(app, payload, mode, cache_status):
     return enriched
 
 
-LOOKUP_FIELDS = ["device", "ver", "type", "purpose", "lot", "item", "readout", "ft_temp"]
+LOOKUP_FIELDS = ["device", "ver", "purpose", "lot", "item", "readout", "ft_temp"]
 RELIABILITY_ITEMS = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"]
 
 
@@ -6366,31 +6363,28 @@ def browse_data_root():
 
 
 def parse_data_folder_name(name):
-    parts = name.split("_", 4)
-    if len(parts) != 5:
+    parts = name.split("_", 3)
+    if len(parts) != 4:
         return None
     sequence = parts[0].strip().rstrip(".")
     if not sequence.isdigit():
         return None
-    _, ver, rel_type, lot, purpose = parts
+    _, ver, lot, purpose = parts
     return {
         "name": name,
         "ver": ver.strip(),
-        "type": rel_type.strip(),
         "lot": lot.strip(),
         "purpose": purpose.strip(),
     }
 
 
-def device_data_folders(device_path, ver=None, rel_type=None, purpose=None, lot=None):
+def device_data_folders(device_path, ver=None, purpose=None, lot=None):
     matches = []
     for name in child_dirs(device_path):
         parsed = parse_data_folder_name(name)
         if not parsed:
             continue
         if ver and parsed["ver"] != ver:
-            continue
-        if rel_type and parsed["type"] != rel_type:
             continue
         if purpose and parsed["purpose"] != purpose:
             continue
@@ -6403,13 +6397,12 @@ def device_data_folders(device_path, ver=None, rel_type=None, purpose=None, lot=
 def selected_data_path(selection):
     device = selection.get("device", "").strip()
     ver = selection.get("ver", "").strip()
-    rel_type = selection.get("type", "").strip()
     purpose = selection.get("purpose", "").strip()
     lot = selection.get("lot", "").strip()
-    if not all([device, ver, rel_type, purpose, lot]):
-        raise ValueError("Device, Ver., Reliability Type, Purpose, and Lot No. are required.")
+    if not all([device, ver, purpose, lot]):
+        raise ValueError("Device, Ver., Purpose, and Lot No. are required.")
     device_path = safe_child(DATA_ROOT, device)
-    matches = device_data_folders(device_path, ver, rel_type, purpose, lot)
+    matches = device_data_folders(device_path, ver, purpose, lot)
     if not matches:
         raise ValueError("Matching reliability data folder was not found.")
     return safe_child(device_path, matches[0]["name"])
@@ -6550,7 +6543,7 @@ def resolve_selection_file_set(selection):
 
 
 def lookup_options(query):
-    field = query.get("field", ["type"])[0]
+    field = query.get("field", ["ver"])[0]
     if field not in LOOKUP_FIELDS:
         raise ValueError("Invalid lookup field.")
     if field == "device":
@@ -6559,29 +6552,23 @@ def lookup_options(query):
     if not device:
         return {"path": DATA_ROOT, "options": []}
     device_path = safe_child(DATA_ROOT, device)
-    if field == "type":
-        options = sorted({entry["type"] for entry in device_data_folders(device_path)})
-        return {"path": device_path, "options": options}
-    rel_type = query.get("type", [""])[0].strip()
-    if not rel_type:
-        return {"path": device_path, "options": []}
     if field == "ver":
-        options = sorted({entry["ver"] for entry in device_data_folders(device_path, rel_type=rel_type)})
+        options = sorted({entry["ver"] for entry in device_data_folders(device_path)})
         return {"path": device_path, "options": options}
     ver = query.get("ver", [""])[0].strip()
     if not ver:
         return {"path": device_path, "options": []}
     if field == "lot":
-        options = sorted({entry["lot"] for entry in device_data_folders(device_path, ver=ver, rel_type=rel_type)})
+        options = sorted({entry["lot"] for entry in device_data_folders(device_path, ver=ver)})
         return {"path": device_path, "options": options}
     lot = query.get("lot", [""])[0].strip()
     if not lot:
         return {"path": device_path, "options": []}
     if field == "purpose":
-        options = sorted({entry["purpose"] for entry in device_data_folders(device_path, ver=ver, rel_type=rel_type, lot=lot)})
+        options = sorted({entry["purpose"] for entry in device_data_folders(device_path, ver=ver, lot=lot)})
         return {"path": device_path, "options": options}
     purpose = query.get("purpose", [""])[0].strip()
-    matches = device_data_folders(device_path, ver, rel_type, purpose, lot)
+    matches = device_data_folders(device_path, ver, purpose, lot)
     data_path = safe_child(device_path, matches[0]["name"]) if matches else device_path
     if field == "item":
         return {"path": data_path, "options": RELIABILITY_ITEMS}
