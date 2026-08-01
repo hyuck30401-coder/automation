@@ -15,6 +15,7 @@ except ImportError:
 
 APP_TITLE = "Pre/Post CDF Sigma Compare Tool"
 FLAG_LIMIT = 3
+ID_ITEM_NAMES = ("DEVICE_ID",)
 
 
 def to_float(value):
@@ -381,9 +382,17 @@ def extract_item_records_from_meta_table(table, test_name_index, data_header_ind
     }
     first_item_col = max(metadata_cols) + 1 if metadata_cols else 0
 
+    device_id_col = find_col_with_label(name_row, ID_ITEM_NAMES)
+    device_id_by_row = {}
+    if device_id_col is not None:
+        for row_index, row in enumerate(table[data_start:], start=1):
+            device_id_by_row[row_index] = cell_text(row_value_at(row, device_id_col))
+
     records = {}
     max_cols = max(len(row) for row in table)
     for col in range(first_item_col, max_cols):
+        if col == device_id_col:
+            continue
         item_name = cell_text(row_value_at(name_row, col))
         if not item_name:
             item_name = cell_text(row_value_at(header_row, col))
@@ -397,7 +406,7 @@ def extract_item_records_from_meta_table(table, test_name_index, data_header_ind
             if value is None:
                 continue
             sample = cell_text(row_value_at(row, serial_col)) or str(row_index)
-            record = {"sample": sample, "value": value}
+            record = {"sample": sample, "value": value, "device_id": device_id_by_row.get(row_index, "")}
             test_number = cell_text(row_value_at(test_number_row, col))
             if test_number:
                 record["test_number"] = test_number
@@ -442,7 +451,7 @@ def extract_item_records_from_legacy_table(table):
             if value is None:
                 continue
             sample = cell_text(row_value_at(row, sample_col)) or str(row_index)
-            records[item_name].append({"sample": sample, "value": value})
+            records[item_name].append({"sample": sample, "value": value, "device_id": ""})
 
     if not records:
         raise ValueError("No numeric Test Item columns were found.")

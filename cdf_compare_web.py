@@ -4890,7 +4890,19 @@ def records_values(records):
     return [record.get("value") for record in records if finite_number(record.get("value")) is not None]
 
 
+def record_device_id(record):
+    return str(record.get("device_id", "")).strip()
+
+
 def record_sample_id(record):
+    # Pre/Post join key: prefer DEVICE_ID (see CLAUDE.md §3-3 -- Pre and Post use
+    # unrelated Serial # numbering, so every function that joins records via this
+    # helper -- records_by_sample, filter_records_by_sample_ids,
+    # pass_sample_ids_from_records, item_analysis -- becomes DEVICE_ID-aware for
+    # free. Falls back to Serial # when this record has no DEVICE_ID value.
+    device_id = record_device_id(record)
+    if device_id:
+        return device_id
     return str(record.get("sample", "")).strip()
 
 
@@ -4901,6 +4913,39 @@ def records_by_sample(records):
         if sample:
             by_sample[sample] = record
     return by_sample
+
+
+def match_summary_for_files(pre_records_raw, post_records_raw):
+    if not post_records_raw:
+        return None
+    ref_item = max(post_records_raw, key=lambda name: len(post_records_raw[name]))
+    post_rows = post_records_raw[ref_item]
+    if not post_rows:
+        return None
+    pre_device_ids = {
+        record_device_id(record)
+        for records in pre_records_raw.values()
+        for record in records
+        if record_device_id(record)
+    }
+    if pre_device_ids and any(record_device_id(record) for record in post_rows):
+        matched = sum(1 for record in post_rows if record_device_id(record) in pre_device_ids)
+        key = "device_id"
+    else:
+        pre_samples = {
+            record_sample_id(record)
+            for records in pre_records_raw.values()
+            for record in records
+            if record_sample_id(record)
+        }
+        matched = sum(1 for record in post_rows if record_sample_id(record) in pre_samples)
+        key = "sample"
+    return {
+        "key": key,
+        "post_units": len(post_rows),
+        "matched": matched,
+        "unmatched": len(post_rows) - matched,
+    }
 
 
 def vector_array(values):
@@ -5704,6 +5749,14 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "over_sigma": over_rows,
         "select_count": CdfCompareApp.count_flags(app),
     }
+    if include_pre:
+        match_summary = match_summary_for_files(
+            cached_item_records(pre_path),
+            cached_item_records(post_path, last_sample=False),
+        )
+        if match_summary:
+            payload["match_summary"] = match_summary
+            payload["message"] = f"Pre 매칭 {match_summary['matched']}/{match_summary['post_units']}"
     if progress:
         progress(98, "Finalizing")
     return app, payload
@@ -5969,7 +6022,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 18
+CACHE_SCHEMA = 19
 CACHE_DIR = os.path.join(app_base_dir(), ".analysis_cache")
 
 
