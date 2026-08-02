@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.analysis_cache/
+_release/
+tests/golden/
+# 검증 데이터는 용량이 커서 제외 — 별도 보관
+Test Data/
