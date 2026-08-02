@@ -70,7 +70,7 @@ def run_once(web, selection, mode, segment_bucket):
         web.CACHE_DIR = tmp_dir
         t_cache_start = time.perf_counter()
         try:
-            web.save_cached_analysis("bench-run", dict(payload))
+            web.save_cached_analysis(app, "bench-run", dict(payload))
         finally:
             web.CACHE_DIR = original_cache_dir
     t_cache_end = time.perf_counter()

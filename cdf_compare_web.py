@@ -2792,7 +2792,15 @@ async function waitForJob(jobId, label = "", mode = "") {
     } else {
       setAnalyzeProgress(data.progress, message);
     }
-    if (data.status === "done") return data.payload;
+    if (data.status === "done") {
+      const resultMode = mode === "fail" ? "fail" : "pass";
+      const params = new URLSearchParams({ mode: resultMode });
+      if (activeAnalysisRunId) params.set("run", activeAnalysisRunId);
+      const latestRes = await fetch(`/latest-analysis?${params.toString()}`);
+      const latest = await latestRes.json();
+      if (!latestRes.ok || latest.error) throw new Error(latest.error || "Analyze failed");
+      return latest;
+    }
     if (data.status === "error") throw new Error(data.message || "Analyze failed");
     await delay(250);
   }
@@ -6179,7 +6187,7 @@ def load_cached_analysis(cache_key):
     payload = cached.get("payload")
     if not payload:
         return None
-    save_cached_analysis(cache_key, payload)
+    save_cached_analysis(None, cache_key, payload)
     return load_cached_analysis(cache_key)
 
 
@@ -6214,14 +6222,28 @@ def load_cached_item(cache_key, item_key):
     return (cached.get("payload") or {}).get("items", {}).get(item_key)
 
 
-def save_cached_analysis(cache_key, payload):
+def save_cached_analysis(app, cache_key, payload):
     os.makedirs(CACHE_DIR, exist_ok=True)
     payload = enrich_payload_summary_stats(payload)
-    cache_dir = split_cache_dir(cache_key)
     items_dir = split_cache_items_dir(cache_key)
     os.makedirs(items_dir, exist_ok=True)
+    existing_items = payload.get("items") or {}
     item_index = {}
-    for item_key, item_payload in (payload.get("items") or {}).items():
+    seen_keys = set()
+    for row in payload.get("results", []):
+        item_key = payload_item_key(row)
+        if not item_key or item_key in seen_keys:
+            continue
+        seen_keys.add(item_key)
+        # Build the full item set on disk (not just the SELECT-ed ones already in
+        # memory) so /item lazy-loading keeps working for every item. One item is
+        # computed and written at a time -- never accumulated into a big dict --
+        # since that accumulation is exactly the memory blowup this change removes.
+        item_payload = existing_items.get(item_key)
+        if item_payload is None and app is not None:
+            item_payload = item_to_json(app, row.get("item"))
+        if item_payload is None:
+            continue
         filename = cache_item_filename(item_key)
         item_index[item_key] = filename
         item_path = os.path.join(items_dir, filename)
@@ -6331,14 +6353,15 @@ def current_analysis_error_response(mode, requested_run_id=""):
 def payload_with_items(app, payload, mode, cache_status):
     items = dict(payload.get("items") or {})
     if not items:
-        for row in payload.get("results", []):
+        for row in payload.get("selected_summary", []):
             item = row.get("item")
-            if item:
+            if item and item not in items:
                 items[item] = item_to_json(app, item)
     enriched = dict(payload)
     enriched["items"] = items
     enriched["analysis_mode"] = mode
     enriched["cache_status"] = cache_status
+    enriched["items_are_partial"] = True
     enriched.setdefault("analysis_date", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     return enriched
 
@@ -6667,7 +6690,7 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
-            save_cached_analysis(cache_key, payload)
+            save_cached_analysis(app, cache_key, payload)
         global CURRENT_APP, CURRENT_ITEMS, CURRENT_PAYLOADS, CURRENT_CACHE_KEYS
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -6677,7 +6700,7 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
                 if cache_key:
                     CURRENT_CACHE_KEYS[mode] = cache_key
                 set_current_analysis_status(mode, "done", "Done")
-        update_job(job_id, status="done", progress=100, message="Done", payload=payload)
+        update_job(job_id, status="done", progress=100, message="Done")
     except Exception as exc:
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -6704,7 +6727,7 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
-            save_cached_analysis(cache_key, payload)
+            save_cached_analysis(app, cache_key, payload)
         global CURRENT_APP, CURRENT_ITEMS, CURRENT_PAYLOADS, CURRENT_CACHE_KEYS
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -6714,7 +6737,7 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
                 if cache_key:
                     CURRENT_CACHE_KEYS["fail"] = cache_key
                 set_current_analysis_status("fail", "done", "Done")
-        update_job(job_id, status="done", progress=100, message="Done", payload=payload)
+        update_job(job_id, status="done", progress=100, message="Done")
     except Exception as exc:
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -6791,7 +6814,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
         payload["analysis_run_id"] = run_id
         payload["cache_status"] = "saved" if cache_key else "none"
         if cache_key:
-            save_cached_analysis(cache_key, payload)
+            save_cached_analysis(None, cache_key, payload)
         global CURRENT_APP, CURRENT_ITEMS, CURRENT_PAYLOADS, CURRENT_CACHE_KEYS
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -6801,7 +6824,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
                 if cache_key:
                     CURRENT_CACHE_KEYS[mode] = cache_key
                 set_current_analysis_status(mode, "done", "Done")
-        update_job(job_id, status="done", progress=100, message="Done", payload=payload)
+        update_job(job_id, status="done", progress=100, message="Done")
     except Exception as exc:
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
@@ -7127,7 +7150,12 @@ class Handler(BaseHTTPRequestHandler):
             if not job:
                 self.send_json({"error": "Unknown analyze job."}, status=404)
                 return
-            self.send_json(job)
+            self.send_json({
+                "job_id": job_id,
+                "status": job.get("status"),
+                "progress": job.get("progress"),
+                "message": job.get("message"),
+            })
             return
         if parsed.path == "/lookup":
             try:
@@ -7215,7 +7243,7 @@ class Handler(BaseHTTPRequestHandler):
                             CURRENT_PAYLOADS[mode] = cached_payload
                             CURRENT_CACHE_KEYS[mode] = cache_key
                             set_current_analysis_status(mode, "done", "Loaded saved result")
-                        update_job(job_id, status="done", progress=100, message="Loaded saved result", payload=cached_payload)
+                        update_job(job_id, status="done", progress=100, message="Loaded saved result")
                         self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": "", "post_path": "TOTAL_ANALYSIS"})
                         return
                     with APP_LOCK:
@@ -7259,7 +7287,7 @@ class Handler(BaseHTTPRequestHandler):
                         CURRENT_PAYLOADS[mode] = cached_payload
                         CURRENT_CACHE_KEYS[mode] = cache_key
                         set_current_analysis_status(mode, "done", "Loaded saved result")
-                    update_job(job_id, status="done", progress=100, message="Loaded saved result", payload=cached_payload)
+                    update_job(job_id, status="done", progress=100, message="Loaded saved result")
                     self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": pre_path, "post_path": post_path})
                     return
                 with APP_LOCK:

@@ -113,6 +113,42 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 
 ---
 
+## 📝 §1 성능 측정 — bench.py "10배 감소" 기준 미달 사유
+
+**상태**: §1(payload_with_items/save_cached_analysis/progress 슬림화) 구현 완료, regression_check
+PASS, API 동작(진행 슬림화·`/item` 지연 로딩) 실 서버로 확인. 단 완료 기준의 "json.dumps 시간·
+payload 크기 10배 이상 감소"는 실측 Test Data 로는 **1.5배 수준에 그침** (미달, 사용자 확인 후
+그대로 커밋).
+
+**원인 (코드 버그 아님, 이 데이터셋의 특성)**
+
+1. §7 기준선(json.dumps 12.5s / 839MB)은 "항목 1,000×유닛 3,000(26MB CSV)" 스케일 실측이고,
+   실제 `Test Data/SM3502Q/00_MVT0-0_1111_111` 콤보는 항목 466개·유닛 145개뿐이라 애초에
+   json.dumps 가 0.1초 미만이었음. 절대적인 개선 여지가 크지 않은 규모.
+2. `selected_summary`(SELECT 항목)가 466개 중 295개(63%)로 이례적으로 많음. `payload_with_items`
+   가 SELECT 항목만 만들어도 SELECT 자체가 압도적 다수라 절감폭이 작음. 이건 위 "P0 — 통계 정의"의
+   `FLAG_LIMIT=3` 문제(n 작으면 3σ flag 가 수학적으로 불가능한 반대급부로, 실측 규모에서는 노이즈만
+   으로도 다수가 flag)와 같은 뿌리로 보임 — 성능 브랜치 범위 밖이라 손대지 않음.
+3. `save_cached_analysis` 가 §1 프롬프트 4번 지시대로 SELECT 되지 않은 나머지 항목의 상세도 전부
+   디스크에 캐시하므로(`/item` 지연 로딩용), `payload_with_items` 가 덜어낸 계산 비용이 캐시 쓰기
+   단계로 옮겨갈 뿐 없어지지 않음. 실측(같은 콤보, stash 전/후 비교): TOTAL 12.404s → 13.743s로
+   총 처리시간은 오히려 소폭 증가. **체감 속도 개선은 §4(요약 먼저 push) 없이는 안 됨.**
+
+**실측 수치 (Test Data, item 466/selected 295, repeat 3 median)**
+
+| 구간 | 전 | 후 |
+|---|---:|---:|
+| json.dumps | 0.094s | 0.061s |
+| payload bytes | 7,743,985 | 4,989,494 |
+| payload_with_items | 8.108s | 4.985s |
+| cache write | 0.768s | 5.286s |
+| TOTAL | 12.404s | 13.743s |
+
+**§7 기준선 규모(1,000×3,000)의 실 데이터가 확보되면** 그 경로로 bench.py 를 재실행해 10배 기준
+재검증 권장.
+
+---
+
 ## 🟡 P3 — 기능 판단 필요 (사용자 결정 대기)
 
 - **Reliability Items 가 파일을 보지 않는다** — `RELIABILITY_ITEMS` 고정 9종을 항상 반환해서,
