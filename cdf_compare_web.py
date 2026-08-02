@@ -3,6 +3,7 @@ import json
 import hashlib
 import math
 import os
+import pickle
 import re
 import sys
 import tempfile
@@ -4789,29 +4790,64 @@ def filter_records_by_allowed_units(pre_records, post_records):
 
 RECORD_CACHE = {}
 RECORD_CACHE_LOCK = threading.Lock()
+RECORD_PARSE_LOCKS = {}
 
 
-def record_cache_key(path, last_sample=False):
-    stat = os.stat(path)
-    return (os.path.abspath(path), stat.st_mtime_ns, stat.st_size, bool(last_sample))
+def file_stamp(path):
+    """(abspath, mtime_ns, size). 존재하지 않으면 None."""
+    try:
+        stat = os.stat(path)
+        return (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
 
 
-def cached_item_records(path, last_sample=False):
+def record_cache_key(path):
+    stamp = file_stamp(path)
+    if stamp is None:
+        raise FileNotFoundError(path)
+    return stamp
+
+
+def raw_item_records(path):
+    """파일 하나를 RAW 로 파싱한 결과 (last_sample 필터 적용 전). RAM(RECORD_CACHE) →
+    디스크(parse cache) → 실제 파싱 순으로 조회한다. last_sample 유무는 키에 넣지 않으므로
+    pass/fail 이 같은 파일을 다른 last_sample 값으로 동시에 요청해도 서로의 캐시를 축출하지 않는다.
+    같은 키를 동시에 처음 요청하는 스레드끼리는 key 별 락으로 직렬화해, 콜드 캐시 상태에서
+    pass/fail 이 동시에 들어와도 실제 파싱(및 read_table)이 파일당 한 번만 일어나게 한다."""
     if not path:
         return {}
-    key = record_cache_key(path, last_sample)
+    key = record_cache_key(path)
     with RECORD_CACHE_LOCK:
         cached = RECORD_CACHE.get(key)
         if cached is not None:
             return cached
-    records = extract_item_records(read_table(path))
+        lock = RECORD_PARSE_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            RECORD_PARSE_LOCKS[key] = lock
+    with lock:
+        with RECORD_CACHE_LOCK:
+            cached = RECORD_CACHE.get(key)
+            if cached is not None:
+                return cached
+        records = load_parse_cache(path, key)
+        if records is None:
+            records = extract_item_records(read_table(path))
+            save_parse_cache(path, key, records)
+        abs_path = key[0]
+        with RECORD_CACHE_LOCK:
+            for old_key in [old_key for old_key in RECORD_CACHE if old_key[0] == abs_path and old_key != key]:
+                RECORD_CACHE.pop(old_key, None)
+            RECORD_CACHE[key] = records
+            RECORD_PARSE_LOCKS.pop(key, None)
+    return records
+
+
+def cached_item_records(path, last_sample=False):
+    records = raw_item_records(path)
     if last_sample:
         records = filter_records_to_last_sample(records)
-    abs_path = os.path.abspath(path)
-    with RECORD_CACHE_LOCK:
-        for old_key in [old_key for old_key in RECORD_CACHE if old_key[0] == abs_path and old_key != key]:
-            RECORD_CACHE.pop(old_key, None)
-        RECORD_CACHE[key] = records
     return records
 
 
@@ -6031,8 +6067,140 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 19
+CACHE_SCHEMA = 20  # 19->20: cache_key_for 에 pre_stamp/post_stamps 추가 (§2)
 CACHE_DIR = os.path.join(app_base_dir(), ".analysis_cache")
+
+PARSE_CACHE_VERSION = 1
+PARSE_CACHE_DIR = os.path.join(CACHE_DIR, "parse")
+PARSE_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
+PARSE_CACHE_LOCK = threading.Lock()
+
+
+def parse_cache_key(stamp):
+    abspath, mtime_ns, size = stamp
+    raw = f"{abspath}|{mtime_ns}|{size}|{PARSE_CACHE_VERSION}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def parse_cache_file_path(stamp):
+    return os.path.join(PARSE_CACHE_DIR, parse_cache_key(stamp) + ".npz")
+
+
+def save_parse_cache(path, stamp, records):
+    """records(item -> [record,...])를 디스크에 저장한다. 캐시는 최적화일 뿐이므로
+    실패해도 조용히 무시하고 정상 파싱 결과는 그대로 돌려준다(호출부는 이미 records 를 들고 있음)."""
+    if np is None:
+        return
+    try:
+        items = list(records.keys())
+        value_parts = []
+        item_meta = []
+        for item in items:
+            item_records = records[item]
+            value_parts.append(np.array([r["value"] for r in item_records], dtype=np.float64))
+            item_meta.append({
+                "count": len(item_records),
+                "samples": [r.get("sample") for r in item_records],
+                "device_ids": [r.get("device_id", "") for r in item_records],
+                "bins": [r.get("bin") for r in item_records],
+                "sites": [r.get("site") for r in item_records],
+                "test_number": item_records[0].get("test_number") if item_records else None,
+                "unit": item_records[0].get("unit") if item_records else None,
+                "lower_limit": item_records[0].get("lower_limit") if item_records else None,
+                "upper_limit": item_records[0].get("upper_limit") if item_records else None,
+            })
+        value_blob = np.concatenate(value_parts) if value_parts else np.array([], dtype=np.float64)
+        meta_bytes = pickle.dumps({"items": items, "item_meta": item_meta}, protocol=pickle.HIGHEST_PROTOCOL)
+        meta_blob = np.frombuffer(meta_bytes, dtype=np.uint8)
+
+        os.makedirs(PARSE_CACHE_DIR, exist_ok=True)
+        final_path = parse_cache_file_path(stamp)
+        tmp_path = final_path + f".{os.getpid()}.{threading.get_ident()}.tmp"
+    except Exception:
+        return
+    try:
+        with open(tmp_path, "wb") as fh:
+            np.savez(fh, value_blob=value_blob, meta_blob=meta_blob)
+        os.replace(tmp_path, final_path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        return
+    enforce_parse_cache_budget()
+
+
+def load_parse_cache(path, stamp):
+    if np is None:
+        return None
+    final_path = parse_cache_file_path(stamp)
+    if not os.path.isfile(final_path):
+        return None
+    try:
+        with np.load(final_path, allow_pickle=False) as data:
+            value_blob = data["value_blob"]
+            meta_bytes = data["meta_blob"].tobytes()
+        meta = pickle.loads(meta_bytes)
+        items = meta["items"]
+        item_meta = meta["item_meta"]
+        records = {}
+        offset = 0
+        for item, m in zip(items, item_meta):
+            count = m["count"]
+            values = value_blob[offset:offset + count]
+            offset += count
+            item_records = []
+            for i in range(count):
+                record = {
+                    "sample": m["samples"][i],
+                    "value": float(values[i]),
+                    "device_id": m["device_ids"][i],
+                }
+                if m["test_number"] is not None:
+                    record["test_number"] = m["test_number"]
+                if m["unit"] is not None:
+                    record["unit"] = m["unit"]
+                if m["lower_limit"] is not None:
+                    record["lower_limit"] = m["lower_limit"]
+                if m["upper_limit"] is not None:
+                    record["upper_limit"] = m["upper_limit"]
+                if m["bins"][i] is not None:
+                    record["bin"] = m["bins"][i]
+                if m["sites"][i] is not None:
+                    record["site"] = m["sites"][i]
+                item_records.append(record)
+            records[item] = item_records
+        return records
+    except Exception:
+        return None
+
+
+def enforce_parse_cache_budget(max_bytes=PARSE_CACHE_MAX_BYTES):
+    with PARSE_CACHE_LOCK:
+        try:
+            entries = []
+            total = 0
+            for name in os.listdir(PARSE_CACHE_DIR):
+                full = os.path.join(PARSE_CACHE_DIR, name)
+                if not os.path.isfile(full):
+                    continue
+                stat = os.stat(full)
+                entries.append((stat.st_mtime, stat.st_size, full))
+                total += stat.st_size
+            if total <= max_bytes:
+                return
+            entries.sort(key=lambda entry: entry[0])
+            for _mtime, size, full in entries:
+                if total <= max_bytes:
+                    break
+                try:
+                    os.remove(full)
+                    total -= size
+                except OSError:
+                    pass
+        except Exception:
+            pass
 
 
 def empty_analysis_payload(mode="pass", message=""):
@@ -6048,13 +6216,19 @@ def empty_analysis_payload(mode="pass", message=""):
     }
 
 
-def cache_key_for(selection, pre_path, post_path, mode):
+def cache_key_for(selection, pre_path, post_path, mode, post_paths=None):
+    """post_paths 를 넘기면 개별 실제 파일들의 (mtime, size) 를 키에 포함시켜, 파일 내용이
+    바뀌면(파일명은 그대로여도) 캐시가 자동으로 무효화되게 한다. pass 모드도 post_files[-1]
+    하나만이 아니라 전체 세트를 넘겨야 한다(호출부 책임)."""
+    stamp_paths = list(post_paths) if post_paths else ([post_path] if post_path else [])
     fields = {
         "schema": CACHE_SCHEMA,
         "data_root": os.path.abspath(DATA_ROOT),
         "mode": mode,
         "pre_path": os.path.abspath(pre_path) if pre_path else "",
         "post_path": os.path.abspath(post_path) if post_path else "",
+        "pre_stamp": file_stamp(pre_path) if pre_path else None,
+        "post_stamps": [file_stamp(p) for p in stamp_paths],
         "device": selection.get("device", "").strip(),
         "ver": selection.get("ver", "").strip(),
         "purpose": selection.get("purpose", "").strip(),
@@ -7213,8 +7387,8 @@ class Handler(BaseHTTPRequestHandler):
                     pre_path, post_files, _base_path = resolve_selection_file_set(selection)
                     post_path = post_files[-1]
                     fail_post_key = "\n".join(post_files)
-                    deleted += delete_cached_analysis(cache_key_for(selection, pre_path, post_path, "pass"))
-                    deleted += delete_cached_analysis(cache_key_for(selection, pre_path, fail_post_key, "fail"))
+                    deleted += delete_cached_analysis(cache_key_for(selection, pre_path, post_path, "pass", post_paths=post_files))
+                    deleted += delete_cached_analysis(cache_key_for(selection, pre_path, fail_post_key, "fail", post_paths=post_files))
                 clear_current_analysis_results()
                 self.send_json({"ok": True, "deleted": deleted})
             except Exception as exc:
@@ -7273,7 +7447,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     post_history = {"labels": [], "values": {}}
                 cache_post_key = "\n".join(post_files) if mode == "fail" else post_path
-                cache_key = cache_key_for(selection, pre_path, cache_post_key, mode)
+                cache_key = cache_key_for(selection, pre_path, cache_post_key, mode, post_paths=post_files)
                 job_id = uuid.uuid4().hex
                 cached_payload = load_cached_analysis(cache_key)
                 if cached_payload:
