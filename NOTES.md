@@ -99,7 +99,7 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 | CSRF / DNS 리바인딩 | `Handler` 에 Origin/Host/Referer 검증이 **전혀 없음**. `POST /shutdown` 은 바디 없는 단순 요청이라 임의 웹페이지가 툴을 종료시킬 수 있고, `/browse-data-root` 는 서버 PC 에 tkinter 다이얼로그를 띄움 |
 | 요청 크기·타임아웃 | 상한 없음. `Content-Length` 만 크게 보내고 바디를 안 보내면 작업자 스레드 영구 블록 |
 | `Handler.log_message` | `return None` — **모든 서버 로그 억제**. 현장 문제 재현 시 단서 zero |
-| `DATA_ROOT` | 하드코딩. `Browse` 로 바꿔도 **재시작하면 초기화** → `%APPDATA%` 설정 파일로 영속화 |
+| `DATA_ROOT` | 하드코딩. `Browse` 로 바꿔도 **재시작하면 초기화** → `%APPDATA%` 설정 파일로 영속화. **임시 조치**: `CDFTOOL_DATA_ROOT` 환경변수로 덮어쓸 수 있게 함(web:42, 기본값은 그대로 유지) — 근본 해결(설정 파일 영속화)은 아직 미완 |
 | `JOBS` | 완료 payload 를 담고 **아무도 지우지 않음** → 장시간 구동 시 메모리 누적 |
 
 ---

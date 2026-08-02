@@ -39,7 +39,7 @@ from cdf_compare_tool import (
 HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
-DATA_ROOT = r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
+DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
 APP_REVISION = "Rev.0.027"
 CURRENT_APP = None
 CURRENT_ITEMS = {}
@@ -4814,6 +4814,7 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
 
     app = object.__new__(CdfCompareApp)
     app.include_pre = include_pre
+    app.pre_pass_samples = PASS_SAMPLE_IDS_AUTO
     if include_pre:
         update(25, "Reading Pre")
         app.pre_records = cached_item_records(pre_path)
@@ -5980,7 +5981,7 @@ def item_to_json(app, item):
     upper = metadata["upper_limit"]
     details = analysis_entry["details"]
     return {
-        "pre_values": pre_cdf_values_for_item(app.pre_records, item, getattr(app, "pre_pass_samples", PASS_SAMPLE_IDS_AUTO)),
+        "pre_values": pre_cdf_values_for_item(app.pre_records, item, app.__dict__.get("pre_pass_samples", PASS_SAMPLE_IDS_AUTO)),
         "post_values": analysis_entry["post_values"],
         "lower_limit": to_jsonable(lower),
         "upper_limit": to_jsonable(upper),
