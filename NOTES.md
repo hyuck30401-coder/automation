@@ -58,6 +58,11 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 | `diff_ratio` (tool:75) | 분모가 **부호 있는** `pre_value` → pre 가 음수면 열화/개선 부호 반전. `pre ≈ 0` 폭발 방어 없음 | 분모를 `abs(pre)` + 상대 임계 도입 + 절대 shift 병기 |
 | `safe_ratio`/`sigma`/`mean` | 분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨** | `None` 반환 + UI 에 `N/A` / `NOT EVALUATED` |
 
+**§1(payload details 축소)과의 연결**: §1(payload details 축소) 효과는 (전체 항목 수 ÷ SELECT
+항목 수)가 상한이다. Test Data 실측: 466 ÷ 295 = 1.58배 (측정 1.5배). SELECT 비율 63%는 3σ 고정
+임계의 위양성 때문이며(n=145), 임계를 표본 크기에 맞게 고치면 SELECT 비율이 떨어져 §1 효과도
+함께 커진다. → 통계 임계 수정은 정확성 과제이자 성능 과제다.
+
 ---
 
 ## 🟠 P1 — 파서 강건성
