@@ -4858,7 +4858,6 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
 
     app = object.__new__(CdfCompareApp)
     app.include_pre = include_pre
-    app.pre_pass_samples = PASS_SAMPLE_IDS_AUTO
     if include_pre:
         update(25, "Reading Pre")
         app.pre_records = cached_item_records(pre_path)
@@ -4873,6 +4872,12 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     else:
         update(70, "Excluding Fail Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
+    # pre_cdf_values_for_item() 의 PASS_SAMPLE_IDS_AUTO 센티널을 여기서 한 번만 실제 값으로
+    # 치환한다. 그렇지 않으면 item_to_json() 이 항목마다 pass_sample_ids_from_records(전체
+    # pre_records)를 다시 순회한다 (항목 수 x pre 레코드 수 규모로 재계산, §2 벤치에서 실측:
+    # payload_with_items 866s/921s = 94%). None 은 "bin 데이터 없음 = 필터 안 함"이라는 유효한
+    # 결과이므로 센티널과 구분해 그대로 저장한다.
+    app.pre_pass_samples = pass_sample_ids_from_records(app.pre_records) if include_pre else None
     update(76, "Preparing Items")
     app.pre_items = {item: [record["value"] for record in records] for item, records in app.pre_records.items()}
     app.post_items = {item: [record["value"] for record in records] for item, records in app.post_records.items()}

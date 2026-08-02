@@ -154,6 +154,90 @@ payload 크기 10배 이상 감소"는 실측 Test Data 로는 **1.5배 수준�
 
 ---
 
+## 📝 §2 성능 측정 — 파싱 캐시 콜드/웜 실측 및 bench.py 계측 사각지대
+
+**같은 조건(SM3502Q/MVT0-0/1111/111/HTOL/1000hrs/Room) 연속 2회 분석**
+(analyze_condition 단독 측정, 서버 미기동, 함수 직접 호출):
+콜드(파싱 캐시 미스) 5.475s → 웜(파싱 캐시 히트) 4.6875s, **1.17배**.
+pass+fail 동시 실행 시 Pre/Post 각각 정확히 1회씩만 실제 파싱됨(read_table 실호출 횟수로 확인,
+중복 파싱 없음).
+
+1.17배가 낮아 보이는 이유는 파싱 캐싱 효과가 작아서가 아니라, 측정 범위(analyze_condition 전체)에
+`payload_with_items`(~4.6s, SELECT 항목 상세)와 `save_cached_analysis`(~4~4.5s, 비-SELECT 포함 전
+항목 상세 디스크 캐시 — §1 항목 참조)처럼 파싱과 무관하고 캐싱으로 줄지 않는 구간이 함께 섞여
+희석됐기 때문. 같은 프로세스 안에서 콜드→웜을 구간별로 나눠 측정(bench.py 표준 4구간 +
+`load_parse_cache`/`raw_item_records` 추가 계측)하면:
+
+| 구간 | 콜드 | 웜 | 차이 |
+|---|---:|---:|---:|
+| read_table | 0.1327s | 0.0000s | 0.1327s |
+| extract_item_records | 2.0251s | 0.0000s | 2.0251s |
+| filter_records_to_last_sample | 0.0021s | 0.0017s | 0.0004s |
+| calculate_results_vectorized | 0.1067s | 0.1111s | -0.0044s |
+| load_parse_cache | 0.0002s | 0.9212s | -0.9211s |
+| raw_item_records(전체) | 2.7253s | 0.9215s | 1.8038s |
+| analyze_condition(전체) | 3.8830s | 1.8469s | 2.0361s |
+
+**bench.py 계측 사각지대**: `tools/_regression_lib.py` 의 `INSTRUMENTED_FUNCS` 에 `load_parse_cache`
+(디스크 npz+pickle 로드 + 레코드 역직렬화)가 빠져 있음. 웜 실행에서도 이 구간이 0.92s 나 걸리는데
+bench.py 표준 4구간 표에는 전혀 안 잡혀 `read_table`+`extract_item_records` 만 0 이 되는 걸 보고
+"파싱이 3.06s(=0.13+2.93, 단발 콜드 측정치) 통째로 없어졌다"고 오인하기 쉬움. 실제로 콜드→웜에서
+없어지는 건 `raw_item_records` 기준 1.80s(디스크 캐시 로드 비용 0.92s 는 여전히 남음) 뿐이라,
+이 사각지대를 모르면 파싱 캐싱 효과를 과대평가하게 된다. → bench.py 에 `load_parse_cache` 계측
+추가 권장(성능 브랜치 범위 밖이라 이번엔 손대지 않음).
+
+read_table 실호출 횟수(Pre/Post 구분): 콜드 pre=1·post=1, 웜 pre=0·post=0
+(디스크 캐시가 완전히 대체함, 실측 확인).
+
+---
+
+## ✅ 완료 — `pre_pass_samples` 센티널 재계산 버그 (payload_with_items 94% → 8%)
+
+**상태**: 수정 완료, `Test Data`/`Perf Data` 양쪽 regression_check PASS.
+
+### 원인
+
+`make_app()` (web.py, `analyze_to_json` 경로) 이 `app.pre_pass_samples` 에
+`PASS_SAMPLE_IDS_AUTO` 센티널을 그대로 넣어뒀다. `pre_cdf_values_for_item()` 이
+이 센티널을 만나면 `pass_sample_ids_from_records(pre_records)`(Pre 전 항목 × 전
+레코드 순회)를 실행하는데, 이게 `item_to_json()` 을 통해 **항목마다** 반복 호출됐다
+— 항목 수 × pre 레코드 수 규모 재계산.
+
+**수정**: `make_app()` 에서 `app.pre_pass_samples` 를 pre/post 필터링 뒤 **한 번만**
+실제 값으로 채움 (`pass_sample_ids_from_records(app.pre_records) if include_pre else
+None`). `None` 은 "bin 데이터 없음 = 필터 안 함"이라는 유효값이라 센티널과 구분해
+그대로 저장.
+
+### 벤치마크 하네스에도 같은 패턴이 숨어 있었음
+
+`tools/_regression_lib.py` 의 `analyze_condition()` 이 `analyze_to_json()` 리턴 직후
+`app.pre_pass_samples` 를 **무조건** 센티널로 재덮어쓰고 있었다 (`analyze_fail_to_json()`
+의 app 은 이 속성 자체가 없어 `tk.Tk.__getattr__` 무한재귀 방지용으로 필요했던 코드).
+그래서 위 소스 수정 후 `bench.py` 를 돌려도 하네스가 즉시 되돌려놔서 개선이 측정되지
+않았다 (1차 재측정: `payload_with_items` 951.637s, 수정 전 866.651s 와 사실상 동일 —
+이 시점엔 원인 미상으로 기록만 하고 넘어갈 뻔함). `app.__dict__` 에 이미 값이 있을 때만
+건너뛰도록 수정(`hasattr()` 은 같은 재귀를 다시 유발하므로 `"pre_pass_samples" not in
+app.__dict__` 로 직접 확인)한 뒤에야 실제 효과가 드러남.
+
+### 실측 (Perf Data, 항목 999 · Post 유닛 3,000 · Pre 유닛 9,000, repeat 1)
+
+| 구간 | 수정 전 (하네스 버그로 가려짐) | 수정 후 |
+|---|---:|---:|
+| payload_with_items | 951.637s (93.4%) | **4.740s (8.0%)** |
+| calculate_results_vectorized | 12.330s | 6.679s |
+| json.dumps | 10.424s | 9.403s |
+| cache write | 28.784s | 25.791s |
+| **TOTAL** | **1019.301s** | **59.609s** |
+
+`payload_with_items` 약 200배, TOTAL 약 17배 감소. `Test Data`/`Perf Data` 양쪽
+regression_check PASS (판정 결과 불변 확인, 순수 성능 수정).
+
+새 병목은 `cache write`(25.8s, 43.3%) → `json.dumps`(9.4s, 15.8%) →
+`calculate_results_vectorized`(6.7s, 11.2%) 순으로 이동. 이번 작업 범위 밖이라
+손대지 않음.
+
+---
+
 ## 🟡 P3 — 기능 판단 필요 (사용자 결정 대기)
 
 - **Reliability Items 가 파일을 보지 않는다** — `RELIABILITY_ITEMS` 고정 9종을 항상 반환해서,

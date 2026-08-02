@@ -72,12 +72,20 @@ def analyze_condition(web, selection, mode, include_pre=True):
         raise ValueError(f"Unknown mode: {mode}")
     # Pre-existing bug (see NOTES.md): CdfCompareApp is built via object.__new__(),
     # so tk.Tk.__init__ never runs and `self.tk` is never set. item_to_json() reads
-    # getattr(app, "pre_pass_samples", PASS_SAMPLE_IDS_AUTO); since the attribute is
+    # getattr(app, "pre_pass_samples", PASS_SAMPLE_IDS_AUTO); if the attribute is
     # missing, tk.Tk's own __getattr__ tries to delegate to the also-missing self.tk
     # and recurses infinitely (RecursionError, not AttributeError -- getattr's
-    # default never kicks in). Setting the attribute here supplies exactly the
-    # fallback value the call site already intended, without touching the source.
-    app.pre_pass_samples = web.PASS_SAMPLE_IDS_AUTO
+    # default never kicks in). analyze_fail_to_json()'s app never sets this attribute
+    # at all, so it still needs the fallback here. analyze_to_json()'s app (via
+    # make_app()) now always sets a real value (a set, or None when there is no bin
+    # data) -- only backfill when the attribute is genuinely absent, or this
+    # unconditionally overwrites that real value with the sentinel and forces
+    # item_to_json() to recompute it from scratch for every item (the O(items x
+    # pre_records) bug make_app() was just fixed to avoid).
+    # NOTE: must check app.__dict__ directly, not hasattr()/getattr() -- those would
+    # trigger the exact recursion described above on the fail-mode app.
+    if "pre_pass_samples" not in app.__dict__:
+        app.pre_pass_samples = web.PASS_SAMPLE_IDS_AUTO
     return app, payload
 
 
