@@ -2375,20 +2375,11 @@ function setAnalysisMode(mode, renderExisting = true) {
   }
 }
 function resultColumns() {
-  const columns = (analysis?.analysis_mode || analysisMode) === "fail" ? failColumns : passColumns;
-  if (analysis?.total_analysis) {
-    return [["reliability_item", "Reliability"], ["ft_temp", "FT Temp."], ["readout", "Read-out"], ...columns];
-  }
-  return columns;
+  return (analysis?.analysis_mode || analysisMode) === "fail" ? failColumns : passColumns;
 }
 function resultColumnsForPayload(payload, mode = payload?.analysis_mode) {
   const resultMode = mode === "fail" ? "fail" : (payload?.analysis_mode || "pass");
-  const columns = resultMode === "fail" ? failColumns : passColumns;
-  if (payload?.total_analysis) {
-    const hideContextColumns = !!analysisFilters.reliability_item;
-    return hideContextColumns ? columns : [["reliability_item", "Reliability"], ["ft_temp", "FT Temp."], ["readout", "Read-out"], ...columns];
-  }
-  return columns;
+  return resultMode === "fail" ? failColumns : passColumns;
 }
 function readoutDetailColumns() {
   const labels = (itemCache[selectedItem]?.post_readout_labels || analysis?.post_readout_labels || []).slice(0, 3);
@@ -7230,7 +7221,7 @@ def export_summary_rows(mode, payload):
     rows = []
     mode_label = "Fail" if mode == "fail" else "Pass"
     keys = [
-        "reliability_item", "ft_temp", "readout", "test_number", "item", "unit",
+        "test_number", "item", "unit",
         "lower_limit", "upper_limit", "avg", "stdev", "min", "max", "qty", "sample_numbers", "result",
     ]
     rows.append(["Mode", *keys])
@@ -7255,7 +7246,7 @@ def build_raw_export_workbook(run_id=""):
     if not payloads:
         raise ValueError("Analysis result is not available.")
     raw_rows = [EXPORT_RAW_COLUMNS]
-    summary_rows = [["Mode", "Reliability", "FT Temp.", "Read-out", "Test No.", "Item", "Unit", "LL", "UL", "Avg.", "Stdev.", "Min.", "Max.", "Q'ty", "Sample No.", "Result"]]
+    summary_rows = [["Mode", "Test No.", "Item", "Unit", "LL", "UL", "Avg.", "Stdev.", "Min.", "Max.", "Q'ty", "Sample No.", "Result"]]
     info_rows = [["Field", "Value"], ["Exported At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")], ["Run ID", run_id]]
     for mode in ("fail", "pass"):
         payload = payloads.get(mode)
