@@ -2,7 +2,8 @@ __pycache__/
 *.pyc
 .analysis_cache/
 _release/
-tests/golden/
+tests/golden/*
+!tests/golden/MANIFEST.txt
 # 검증 데이터는 용량이 커서 제외 — 별도 보관
 Test Data/
 # 벤치마크 전용 합성 데이터 (tools/make_perf_fixture.py 로 생성, 회귀 검증에는 쓰지 않음)

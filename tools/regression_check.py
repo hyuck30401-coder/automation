@@ -39,6 +39,9 @@ def main():
     set_data_root(web, args.data_root)
 
     index_path = os.path.join(args.golden, "index.json")
+    if not os.path.isfile(index_path):
+        print(f"골든이 없다 ({index_path}). tools/regression_snapshot.py 로 먼저 생성하라.")
+        sys.exit(1)
     with open(index_path, encoding="utf-8") as fh:
         index = json.load(fh)
     combos = index.get("combos", [])
