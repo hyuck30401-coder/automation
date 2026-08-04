@@ -5345,7 +5345,12 @@ def rows_from_records(records, sort_by_sample=False):
         sample = str(record.get("sample", "")).strip()
         if sample and sample not in row_map:
             order.append(sample)
-            row_map[sample] = {"source_sample": sample, "bin": record.get("bin", ""), "items": {}}
+            row_map[sample] = {
+                "source_sample": sample,
+                "join_key": record_sample_id(record),
+                "bin": record.get("bin", ""),
+                "items": {},
+            }
     for item, item_records in records.items():
         for record in item_records:
             sample = str(record.get("sample", "")).strip()
@@ -5353,9 +5358,16 @@ def rows_from_records(records, sort_by_sample=False):
                 continue
             if sample not in row_map:
                 order.append(sample)
-                row_map[sample] = {"source_sample": sample, "bin": record.get("bin", ""), "items": {}}
+                row_map[sample] = {
+                    "source_sample": sample,
+                    "join_key": record_sample_id(record),
+                    "bin": record.get("bin", ""),
+                    "items": {},
+                }
             if not row_map[sample].get("bin") and record.get("bin"):
                 row_map[sample]["bin"] = record.get("bin", "")
+            if not row_map[sample].get("join_key") and record_sample_id(record):
+                row_map[sample]["join_key"] = record_sample_id(record)
             row_map[sample]["items"][item] = record
     rows = [row_map[sample] for sample in order]
     if sort_by_sample:
@@ -5688,6 +5700,7 @@ def merged_fail_rows(post_files):
         sample_states[sample] = {
             "sample": sample,
             "serial": sample,
+            "join_key": row.get("join_key", "") or sample,
             "final_bin": row.get("bin", ""),
             "final_spec_fail": row_has_spec_fail(row),
             "final_pass": row_is_pass(row),
@@ -5821,7 +5834,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     pre_records = cached_item_records(pre_path) if include_pre else {}
     pre_rows = rows_from_records(pre_records, sort_by_sample=True) if include_pre else []
     pre_by_sample = {
-        str(row.get("source_sample", "")).strip() or str(index): row
+        (row.get("join_key") or str(row.get("source_sample", "")).strip() or str(index)): row
         for index, row in enumerate(pre_rows, start=1)
     } if include_pre else {}
     pre_pass_samples = pass_sample_ids_from_records(pre_records) if include_pre else None
@@ -5864,7 +5877,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             if spec_status(latest.get("value"), lower, upper) not in ("low", "high"):
                 continue
             post_records.append((sample, latest))
-            pre_record = pre_by_sample.get(sample, {}).get("items", {}).get(item)
+            join_key = state.get("join_key") or sample
+            pre_record = pre_by_sample.get(join_key, {}).get("items", {}).get(item)
             pre_values_by_sample[sample] = pre_record.get("value") if pre_record else None
         if not post_records:
             continue
@@ -5883,7 +5897,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             pass_upper = pass_record.get("upper_limit")
             if spec_status(pass_record.get("value"), pass_lower, pass_upper) in ("low", "high"):
                 continue
-            pre_record = pre_by_sample.get(sample, {}).get("items", {}).get(item)
+            join_key = state.get("join_key") or sample
+            pre_record = pre_by_sample.get(join_key, {}).get("items", {}).get(item)
             pre_value = pre_record.get("value") if pre_record else None
             pass_post_values.append(pass_record["value"])
             pass_pre_values.append(pre_value)
@@ -5974,14 +5989,21 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         }
     summary_rows.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
     results.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
+    message = f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}"
+    match_summary = (
+        match_summary_for_files(pre_records, cached_item_records(merged_files[0])) if include_pre else None
+    )
     payload = {
         "results": results,
         "selected_summary": [{key: to_jsonable(value) for key, value in row.items()} for row in summary_rows],
         "over_sigma": [],
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
-        "message": f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}",
+        "message": message,
     }
+    if match_summary:
+        payload["match_summary"] = match_summary
+        payload["message"] = f"{message}, Pre 매칭 {match_summary['matched']}/{match_summary['post_units']}"
     update(98, "Finalizing")
     app = object.__new__(CdfCompareApp)
     app.pre_records = pre_records
