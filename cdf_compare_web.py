@@ -1028,20 +1028,6 @@ HTML = r"""<!doctype html>
       padding: 7px 10px;
       font-size: 13px;
     }
-    body.results-window #resultTable th:nth-child(1),
-    body.results-window #resultTable td:nth-child(1) { width: 15%; }
-    body.results-window #resultTable th:nth-child(2),
-    body.results-window #resultTable td:nth-child(2) { width: 34%; }
-    body.results-window #resultTable th:nth-child(3),
-    body.results-window #resultTable td:nth-child(3) { width: 10%; }
-    body.results-window #resultTable th:nth-child(4),
-    body.results-window #resultTable td:nth-child(4),
-    body.results-window #resultTable th:nth-child(5),
-    body.results-window #resultTable td:nth-child(5),
-    body.results-window #resultTable th:nth-child(6),
-    body.results-window #resultTable td:nth-child(6) { width: 9%; }
-    body.results-window #resultTable th:nth-child(7),
-    body.results-window #resultTable td:nth-child(7) { width: 14%; }
     body.results-window #resultTable {
       min-width: 1680px;
       table-layout: auto;
@@ -1997,9 +1983,10 @@ function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
   drawGraphNotice(canvas, "Binary unit item is excluded from graph display.", minWidth, minHeight);
 }
 const passColumns = [
-  ["test_number", "Test No."], ["item", "Item"], ["unit", "Unit"], ["lower_limit", "LL"],
-  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev."], ["min", "Min."],
-  ["max", "Max."], ["qty", "Q'ty"], ["sample_numbers", "Sample No."]
+  ["test_number", "Test No."], ["item", "Item"], ["n", "N (σ 모수)"], ["unit", "Unit"], ["lower_limit", "LL"],
+  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev."], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
+  ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["qty", "Q'ty"], ["qty_ratio", "%"],
+  ["sample_numbers", "Sample No."]
 ];
 const failColumns = passColumns;
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
@@ -3313,31 +3300,15 @@ function renderItemSelect() {
 function numericValues(values) {
   return (values || []).map(Number).filter(value => Number.isFinite(value));
 }
-function valuesForSummaryRow(row, payload = analysis) {
-  const data = (payload?.items || itemCache)[itemKey(row)];
-  if (!data) return [];
-  const allReadoutSeries = tablePostReadoutSeries(data);
-  if (allReadoutSeries.length) {
-    return numericValues(allReadoutSeries.flatMap(series => series.values || []));
-  }
-  return numericValues(data.post_values || data.pass_post_values || []);
-}
-function statsForValues(values) {
-  const nums = numericValues(values);
-  if (!nums.length) return { avg: null, stdev: null, min: null, max: null };
-  const avg = meanValue(nums);
-  return {
-    avg,
-    stdev: populationStd(nums),
-    min: Math.min(...nums),
-    max: Math.max(...nums)
-  };
-}
 function summaryCellValue(row, key, payload = analysis) {
   const data = (payload?.items || itemCache)[itemKey(row)] || {};
-  if (["avg", "stdev", "min", "max"].includes(key)) {
-    const values = valuesForSummaryRow(row, payload);
-    return values.length ? statsForValues(values)[key] : row[key];
+  if (key === "qty_ratio") {
+    const ratio = Number(row.qty_ratio);
+    return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : "";
+  }
+  if (key === "diff_mean") {
+    const ratio = Number(row.diff_mean);
+    return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(2)}%` : "";
   }
   if (key === "unit") return row.unit || data.unit || "";
   if (key === "lower_limit") return row.lower_limit ?? data.lower_limit;
@@ -3448,6 +3419,7 @@ function renderSummaryListTable(table, payload, mode) {
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
     th.textContent = label + (sortState.column === key ? (sortState.reverse ? " v" : " ^") : "");
+    if (key === "n") th.title = "표준편차 계산에 사용된 유닛 수";
     th.onclick = () => {
       if (sortState.column === key) sortState.reverse = !sortState.reverse;
       else sortState = { column: key, reverse: false };
@@ -5765,20 +5737,39 @@ def selected_summary_rows(app):
         if row.get("result") != "SELECT":
             continue
         metadata = item_metadata(app, row["item"])
-        details = details_for_item(app, row["item"])
+        entry = item_analysis(app, row["item"])
+        details = entry["details"]
+        post_values = entry["post_values"]
         samples = [
             detail["sample"]
             for detail in details
             if detail.get("result") == "SELECT"
         ]
+        n_post = row.get("n_post")
+        pre_mean = row.get("pre_mean")
+        pre_sigma = row.get("pre_sigma")
+        post_mean = row.get("post_mean")
+        post_sigma = row.get("post_sigma")
+        shift = (post_mean - pre_mean) if (post_mean is not None and pre_mean is not None) else None
+        shift_sigma = (shift / pre_sigma) if (shift is not None and pre_sigma not in (None, 0)) else None
         rows.append(
             {
                 "test_number": row.get("test_number", ""),
                 "item": row["item"],
+                "n": n_post,
+                "n_pre": row.get("n_pre"),
                 "unit": metadata["unit"],
                 "lower_limit": metadata["lower_limit"],
                 "upper_limit": metadata["upper_limit"],
+                "avg": post_mean,
+                "stdev": post_sigma,
+                "shift": shift,
+                "shift_sigma": shift_sigma,
+                "diff_mean": row.get("diff_mean"),
+                "min": min(post_values) if post_values else None,
+                "max": max(post_values) if post_values else None,
                 "qty": len(samples),
+                "qty_ratio": (len(samples) / n_post) if n_post else None,
                 "sample_numbers": ", ".join(str(sample) for sample in sorted(samples, key=lambda sample: CdfCompareApp.sample_sort_key(app, sample))),
             }
         )
@@ -5955,14 +5946,24 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             )
         sample_numbers = sorted((detail["sample"] for detail in details), key=natural_key)
         test_number = cell_text_from_records([record for _, record in post_records], "test_number")
+        n_pass = len(pass_post_values)
         summary_rows.append(
             {
                 "test_number": test_number,
                 "item": item,
+                "n": n_pass if n_pass else None,
                 "unit": metadata["unit"],
                 "lower_limit": metadata["lower_limit"],
                 "upper_limit": metadata["upper_limit"],
+                "avg": post_mean if n_pass else None,
+                "stdev": post_sigma if n_pass else None,
+                "shift": None,
+                "shift_sigma": None,
+                "diff_mean": diff_mean if pass_diff_values else None,
+                "min": min(pass_post_values) if n_pass else None,
+                "max": max(pass_post_values) if n_pass else None,
                 "qty": len(details),
+                "qty_ratio": (len(details) / n_pass) if n_pass else None,
                 "sample_numbers": ", ".join(sample_numbers),
             }
         )
@@ -7221,8 +7222,8 @@ def export_summary_rows(mode, payload):
     rows = []
     mode_label = "Fail" if mode == "fail" else "Pass"
     keys = [
-        "test_number", "item", "unit",
-        "lower_limit", "upper_limit", "avg", "stdev", "min", "max", "qty", "sample_numbers", "result",
+        "test_number", "item", "n", "unit", "lower_limit", "upper_limit", "avg", "stdev",
+        "shift", "shift_sigma", "diff_mean", "min", "max", "qty", "qty_ratio", "sample_numbers", "result",
     ]
     rows.append(["Mode", *keys])
     for row in payload.get("selected_summary") or []:
@@ -7246,7 +7247,7 @@ def build_raw_export_workbook(run_id=""):
     if not payloads:
         raise ValueError("Analysis result is not available.")
     raw_rows = [EXPORT_RAW_COLUMNS]
-    summary_rows = [["Mode", "Test No.", "Item", "Unit", "LL", "UL", "Avg.", "Stdev.", "Min.", "Max.", "Q'ty", "Sample No.", "Result"]]
+    summary_rows = [["Mode", "Test No.", "Item", "N", "Unit", "LL", "UL", "Avg.", "Stdev.", "Shift", "Shift/σ", "Δ Mean", "Min.", "Max.", "Q'ty", "%", "Sample No.", "Result"]]
     info_rows = [["Field", "Value"], ["Exported At", datetime.now().strftime("%Y-%m-%d %H:%M:%S")], ["Run ID", run_id]]
     for mode in ("fail", "pass"):
         payload = payloads.get(mode)
