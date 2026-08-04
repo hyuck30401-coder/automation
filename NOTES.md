@@ -115,6 +115,15 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   드롭다운 삭제. `Reliability Items`(고정 9종)는 유지. → 0단계 이전 작업으로 수행.
 - **재시험 대표값** — 마지막 회차 사용 (현재 동작 유지).
 - **회복 유닛** — `Intermittent` 로 분류 (별도 작업 필요, 위 P0 참조).
+- **§U2(e77440c) 이후 fail_type `Tail` → `Slight` 로 바뀐 2건 (2026-08-04, 골든 재생성 시점)**
+  — `BUCK_VREF3V_POST` sample=75 (diff_s=-4.99), `VSTART` sample=73 (diff_s=3.58).
+  원인: `fail_type_for_detail()`의 `Slight` 분기는 `|mea_s|>3 AND |diff_s|>3`인데, §U2
+  이전에는 Pre 조인이 DEVICE_ID 매칭 실패로 `diff_s`가 항상 `None`이라 이 분기 자체에
+  도달이 불가능했음. §U2 가 Pre 조인을 복구하면서 이 두 샘플의 `diff_s`가 처음으로
+  계산되어, 원래 있었지만 도달 못 하던 분기가 열린 것 — 새 버그 아님. 의미상으로도
+  "스펙 살짝 초과 + 통계적으로 유의한 변화" = `Slight` 가 맞는 분류. 골든 스냅샷(commit
+  e77440c 이후, 3d1e1e9 기준)은 이 상태로 재생성함 — 나중에 "왜 Slight 지?" 를 추적할
+  근거로 여기 남겨둔다.
 
 ---
 
