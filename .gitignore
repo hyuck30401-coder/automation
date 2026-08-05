@@ -4,6 +4,9 @@ __pycache__/
 _release/
 tests/golden/*
 !tests/golden/MANIFEST.txt
+# verdict_diff.py --save 기준선. 5MB+ 라 단계마다 재생성하면 히스토리가 폭발한다.
+# 특정 커밋에서 --save 로 언제든 재현 가능 — 비교 리포트만 docs/verdict_reports/ 에 남긴다.
+tests/verdict_base/
 # 검증 데이터는 용량이 커서 제외 — 별도 보관
 Test Data/
 # 벤치마크 전용 합성 데이터 (tools/make_perf_fixture.py 로 생성, 회귀 검증에는 쓰지 않음)

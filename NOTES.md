@@ -133,6 +133,18 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   항목에서 그래프 부호가 Detail 테이블과 반대가 된다.
 - **§S4 diff 부호 = 값 이동 방향 (내려가면 -, 올라가면 +)** — 열화/개선 판단은 툴이 하지
   않고 엔지니어가 LL/UL 을 보고 한다. 2026-08-05 결정.
+- **§S0 `tools/verdict_diff.py` 의 알려진 제약 3가지** (docstring 에도 있지만 다음 세션에서
+  놓치기 쉬워 여기에도 남긴다):
+  1. fail 모드 `device_id` 는 항상 `None` — `analyze_fail_to_json()` 이 `app.post_records`
+     를 `{}` 로 비워두는 게 설계이고, device_id 를 담은 원본 per-sample 레코드는 그 함수
+     내부 지역 변수라 payload/app 어디로도 노출되지 않는다. 기존 소스를 고치지 않는 한
+     복구 불가.
+  2. fail 모드 item 단위는 "스펙 아웃이 한 번이라도 있던 항목"만 존재한다 — pass 모드의
+     `app.post_items`/`payload["results"]` 같은 "전체 항목" 개념이 fail 모드엔 없다
+     (`analyze_fail_to_json` 자체가 스펙 통과 항목을 결과에 안 담기 때문).
+  3. SELECT 임계값은 아직 고정 `FLAG_LIMIT=3` 하나뿐이다. §S3 에서 항목별(n별) Grubbs
+     임계로 바뀌면, verdict_diff.py 리포트 4번 항목("SELECT 에서 빠진 항목")의 임계값
+     표시를 지금의 단일 숫자에서 항목별 threshold 참조로 넓혀야 한다.
 
 ---
 
