@@ -1,13 +1,13 @@
 # tests/golden/MANIFEST.txt - 골든 스냅샷 출처 기록
 # regression_snapshot.py 가 재생성 시마다 자동 갱신한다 (변경 사유 칸은 사람이 직접 채운다)
 
-생성 시각: 2026-08-04 14:03:21
-git commit: 82643ed2135e6982a5f30e273293165a34558937
+생성 시각: 2026-08-05 10:26:19
+git commit: 1114cab2e3643a6c14b237cfa6b2efd54ae189f1
 데이터 루트: C:\파이썬코딩\신뢰성데이터분석툴\Test Data
 
 ## 골든 파일
 파일명                                                          sha256                                                                  바이트
-SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json  f95e6d78885e649f5d873ff4762cdc76852df60c629e62d70566e8a7e6567218    7039452
+SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json  1575db9c975203fce4c2f148cc01deb26d327f5c78206798572ebf08e0d3972b    7082878
 SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json  d0245b5013adbc3166d384107f657ac26f68d18932c73dbfcbfb3f43cce1e90b      12477
 index.json                                                   f53285a63d243be03a95c7c2bec3f5fd75bc2bc4aa767ddaf909fb73e1a6a457        884
 
@@ -17,4 +17,4 @@ SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[pass]              295      295    
 SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[fail]                5        5         24  {'Excessive': 3, 'Slight': 2, 'Tail': 19}
 
 ## 직전 재생성 대비 변경 사유 (사람이 적는 칸)
-- §U2(e77440c) Pre 조인 복구로 fail_type Tail→Slight 2건 반영
+- §V4 reason/severity/flag_limit, §V5 백엔드 σ 필드 추가
