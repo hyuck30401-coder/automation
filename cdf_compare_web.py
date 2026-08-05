@@ -4473,14 +4473,36 @@ function drawSpec(ctx, x, top, bottom, value, label, color, plotRight = null) {
 }
 function drawCdf(ctx, values, x, y, color) {
   const sorted = numericValues(values).sort((a,b) => a-b);
-  if (!sorted.length) return;
+  const n = sorted.length;
+  if (!n) return;
   ctx.fillStyle = color;
-  const pointStep = Math.max(1, Math.ceil(sorted.length / 1200));
-  sorted.forEach((value, index) => {
-    if (index % pointStep !== 0 && index !== sorted.length - 1) return;
-    const cdf = (index + 1) / sorted.length;
-    ctx.beginPath(); ctx.arc(x(value), y(cdf), 2.3, 0, Math.PI * 2); ctx.fill();
-  });
+  const drawPoint = index => {
+    const cdf = (index + 1) / n;
+    ctx.beginPath(); ctx.arc(x(sorted[index]), y(cdf), 2.3, 0, Math.PI * 2); ctx.fill();
+  };
+  // Tail outliers must never be thinned away regardless of where a 3σ/Grubbs cutoff
+  // falls (that threshold lives in a different branch and can change independently),
+  // so the two ends are always drawn in full and only the middle is subsampled.
+  const edgeCount = Math.min(50, n);
+  const middleStart = edgeCount;
+  const middleEnd = n - edgeCount; // exclusive
+  const middleLen = Math.max(0, middleEnd - middleStart);
+  const middleBudget = Math.max(1, 1200 - edgeCount * 2);
+  for (let index = 0; index < middleStart; index++) drawPoint(index);
+  for (let index = Math.max(middleStart, middleEnd); index < n; index++) drawPoint(index);
+  if (middleLen <= middleBudget) {
+    for (let index = middleStart; index < middleEnd; index++) drawPoint(index);
+  } else {
+    // Fractional step + rounding (not integer modulo) so the drawn count lands close
+    // to middleBudget instead of jumping in whole multiples of an integer step.
+    const pointStep = middleLen / middleBudget;
+    let lastIndex = -1;
+    for (let k = 0; ; k++) {
+      const index = middleStart + Math.round(k * pointStep);
+      if (index >= middleEnd) break;
+      if (index !== lastIndex) { drawPoint(index); lastIndex = index; }
+    }
+  }
 }
 function failDirectionCdf(row) {
   const post = Number(row?.post_value);
