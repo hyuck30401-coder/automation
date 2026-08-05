@@ -3630,10 +3630,13 @@ function populationStd(values) {
   return Math.sqrt(values.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / values.length);
 }
 function diffFromPre(preValue, postValue) {
+  // Denominator is abs(pre), not signed pre: pure move-direction (down=negative, up=positive),
+  // not a degradation/improvement judgment. Must match diff_ratio() in cdf_compare_tool.py
+  // exactly. See 통계개선_프롬프트.md §S4.
   const pre = finiteNumber(preValue);
   const post = finiteNumber(postValue);
   if (pre === null || post === null || pre === 0) return null;
-  return post / pre - 1;
+  return (post - pre) / Math.abs(pre);
 }
 function sigmaValue(value, center, spread) {
   const number = finiteNumber(value);
@@ -3688,10 +3691,10 @@ function readoutDetailSeries(data) {
     if (series.stats) {
       // Backend writes m{n}/d{n} (mea_s/diff_s for post_t{n}) onto each detail row (population-
       // dependent, must stay backend-authoritative - read only, never recomputed here). The raw
-      // per-point "diff" is NOT sent by the backend (payload-size fix): it's a pure post/pre-1
-      // ratio with no population ambiguity, identical to diff_ratio() server-side, so rebuilding
-      // it via diffFromPre() here is the doc's permitted "pure display/axis-range calculation" -
-      // not a judgment recomputation.
+      // per-point "diff" is NOT sent by the backend (payload-size fix): it's a pure (post-pre)/
+      // abs(pre) ratio with no population ambiguity, identical to diff_ratio() server-side, so
+      // rebuilding it via diffFromPre() here is the doc's permitted "pure display/axis-range
+      // calculation" - not a judgment recomputation.
       const key = series.key;
       const n = key.replace("post_t", "");
       postValues = numericValues(series.values || []);
@@ -3700,10 +3703,8 @@ function readoutDetailSeries(data) {
           const postValue = finiteNumber(row[key]);
           if (postValue === null) return null;
           const preValue = finiteNumber(row.pre_value);
-          // NOTE: diff 는 post/pre−1 로 백엔드와 동일한 결정적 계산이라 여기서 만들어도 값이 같다.
-          // 단 §S4(diff_ratio 부호·폭발 수정)에서 분모가 abs(pre) 로 바뀌면 이 줄도 반드시 같이
-          // 고쳐야 한다. 안 그러면 pre 가 음수인 항목에서 그래프 부호가 Detail 테이블과 반대가 된다.
-          // 참조: 통계개선_프롬프트.md §S4
+          // diffFromPre() = diff_ratio(): (post-pre)/abs(pre), 결정적 계산이라 여기서 만들어도
+          // 백엔드 값과 항상 같다 (§S4 완료: 2026-08-05, 분모 부호 반전 버그 수정).
           return {
             sample: row.sample,
             pre_value: preValue,
@@ -5092,7 +5093,7 @@ def paired_diffs_for_details(pre_values, post_values):
         valid = np.isfinite(pre) & np.isfinite(post) & (pre != 0)
         diffs = np.empty(count, dtype=float)
         diffs.fill(np.nan)
-        diffs[valid] = post[valid] / pre[valid] - 1.0
+        diffs[valid] = (post[valid] - pre[valid]) / np.abs(pre[valid])
         detail = diffs.tolist()
         for index, value in enumerate(detail):
             result[index] = float(value) if math.isfinite(value) else None
@@ -5566,7 +5567,7 @@ def post_readout_series_entry(index, labels, graph_item_values, detail_rows, fai
     ]
     post_mean, post_sigma = vector_stats(values)
 
-    # Raw per-row diff (post/pre - 1) is NOT serialized here: it is a pure, population-independent
+    # Raw per-row diff ((post-pre)/abs(pre)) is NOT serialized here: it is a pure, population-independent
     # ratio the frontend can rebuild bit-for-bit from pre_value/post_t{n} (both already on the row)
     # via diffFromPre(), which is exactly diff_ratio()'s formula. This is the doc's explicit "pure
     # display/axis-range calculations may remain" carve-out -- unlike mea_s/diff_s below, which

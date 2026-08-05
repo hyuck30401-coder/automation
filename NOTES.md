@@ -55,7 +55,7 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 | `sample_std` (tool:43) | 이름은 sample std 인데 실제로는 **모표준편차** (`np.std()` ddof=0 / `statistics.pstdev`) | `ddof` 파라미터화. Excel STDEV·JMP 와 √(n/(n−1)) 배 차이라 재현 불가 |
 | `FLAG_LIMIT = 3` (tool:17) | 모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측) | `n < 11` → `INSUFFICIENT N` 표시. 이후 Grubbs/GESD 또는 FDR 보정 |
 | Pass/Fail σ 정의 불일치 | Pass 는 `vector_stats`, Fail 은 `sample_std` — 구현이 별개라 경계 동작이 이미 갈라짐 | `stats_core.py` 로 단일화 |
-| `diff_ratio` (tool:75) | 분모가 **부호 있는** `pre_value` → pre 가 음수면 열화/개선 부호 반전. `pre ≈ 0` 폭발 방어 없음 | 분모를 `abs(pre)` + 상대 임계 도입 + 절대 shift 병기 |
+| `diff_ratio` (tool:76) | ~~분모가 부호 있는 `pre_value` → pre 가 음수면 열화/개선 부호 반전~~ **해결됨 (2026-08-05, 분모 `abs(pre)`로 변경)**. `pre ≈ 0` 폭발 방어는 아직 없음 | 상대 임계 도입 + 절대 shift 병기 (§S4 EPS 임계, 남은 과제) |
 | `safe_ratio`/`sigma`/`mean` | 분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨** | `None` 반환 + UI 에 `N/A` / `NOT EVALUATED` |
 
 **§1(payload details 축소)과의 연결**: §1(payload details 축소) 효과는 (전체 항목 수 ÷ SELECT
@@ -127,10 +127,12 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 - **§V5 readoutDetailSeries() 의 diff 프론트 재계산** — mea_s/diff_s 는 백엔드가 계산한
   `m{n}`/`d{n}` 을 읽기만 하고, `diff` 값만 프론트에서 `diffFromPre(preValue, postValue)` 로
   다시 계산한다. payload bytes 를 아끼기 위한 의도적 선택(백엔드가 diff 까지 내려주면 Perf
-  Data 기준 +4%p 늘어 +10% 예산을 넘길 수 있었음). diff 는 post/pre−1 순수 비율이라 population
-  선택에 의존하지 않아 §V5 "backend 단일화" 대상이 아니라고 판단함. 단 §S4 에서 `diff_ratio`
-  분모가 `abs(pre)` 로 바뀌면 `diffFromPre()`(cdf_compare_web.py:3632)도 반드시 같이 고쳐야
-  한다 — 안 그러면 pre 음수 항목에서 그래프 부호가 Detail 테이블과 어긋난다.
+  Data 기준 +4%p 늘어 +10% 예산을 넘길 수 있었음). diff 는 population 선택에 의존하지 않는
+  순수 비율이라 §V5 "backend 단일화" 대상이 아니라고 판단함. `diffFromPre()`는 `diff_ratio()`
+  와 정확히 같은 공식을 써야 하며(현재는 `(post-pre)/abs(pre)`, §S4 완료), 어긋나면 pre 음수
+  항목에서 그래프 부호가 Detail 테이블과 반대가 된다.
+- **§S4 diff 부호 = 값 이동 방향 (내려가면 -, 올라가면 +)** — 열화/개선 판단은 툴이 하지
+  않고 엔지니어가 LL/UL 을 보고 한다. 2026-08-05 결정.
 
 ---
 

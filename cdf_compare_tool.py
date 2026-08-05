@@ -74,13 +74,16 @@ def sigma(value, center, spread):
 
 
 def diff_ratio(pre_value, post_value):
+    # Denominator is abs(pre_value), not the signed pre_value: this is a pure move-direction
+    # indicator (down=negative, up=positive), not a judgment of degradation vs improvement.
+    # A signed denominator flips that sign whenever pre_value<0. See 통계개선_프롬프트.md §S4.
     if pre_value is None or post_value is None:
         return None
     if not math.isfinite(pre_value) or not math.isfinite(post_value):
         return None
     if pre_value == 0:
         return None
-    return safe_ratio(post_value, pre_value) - 1.0
+    return (post_value - pre_value) / abs(pre_value)
 
 
 def fmt(value):
@@ -132,7 +135,7 @@ def paired_diff_values(pre_values, post_values):
         pre = np.asarray(pre_values[:paired_count], dtype=float)
         post = np.asarray(post_values[:paired_count], dtype=float)
         mask = np.isfinite(pre) & np.isfinite(post) & (pre != 0)
-        return ((post[mask] / pre[mask]) - 1.0).tolist()
+        return ((post[mask] - pre[mask]) / np.abs(pre[mask])).tolist()
     return finite_values(diff_ratio(pre_values[i], post_values[i]) for i in range(paired_count))
 
 
