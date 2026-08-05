@@ -124,6 +124,13 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   "스펙 살짝 초과 + 통계적으로 유의한 변화" = `Slight` 가 맞는 분류. 골든 스냅샷(commit
   e77440c 이후, 3d1e1e9 기준)은 이 상태로 재생성함 — 나중에 "왜 Slight 지?" 를 추적할
   근거로 여기 남겨둔다.
+- **§V5 readoutDetailSeries() 의 diff 프론트 재계산** — mea_s/diff_s 는 백엔드가 계산한
+  `m{n}`/`d{n}` 을 읽기만 하고, `diff` 값만 프론트에서 `diffFromPre(preValue, postValue)` 로
+  다시 계산한다. payload bytes 를 아끼기 위한 의도적 선택(백엔드가 diff 까지 내려주면 Perf
+  Data 기준 +4%p 늘어 +10% 예산을 넘길 수 있었음). diff 는 post/pre−1 순수 비율이라 population
+  선택에 의존하지 않아 §V5 "backend 단일화" 대상이 아니라고 판단함. 단 §S4 에서 `diff_ratio`
+  분모가 `abs(pre)` 로 바뀌면 `diffFromPre()`(cdf_compare_web.py:3632)도 반드시 같이 고쳐야
+  한다 — 안 그러면 pre 음수 항목에서 그래프 부호가 Detail 테이블과 어긋난다.
 
 ---
 

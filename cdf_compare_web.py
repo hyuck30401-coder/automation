@@ -1925,7 +1925,7 @@ let itemCache = {};
 let selectedItem = "";
 let highlightSample = null;
 let highlightMode = null;
-let sortState = { column: null, reverse: false };
+let sortState = { column: "severity", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
 let modePayloads = {};
@@ -1983,9 +1983,9 @@ function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
   drawGraphNotice(canvas, "Binary unit item is excluded from graph display.", minWidth, minHeight);
 }
 const passColumns = [
-  ["test_number", "Test No."], ["item", "Item"], ["n", "N (σ 모수)"], ["unit", "Unit"], ["lower_limit", "LL"],
+  ["test_number", "Test No."], ["item", "Item"], ["reason", "Reason"], ["n", "N (σ 모수)"], ["unit", "Unit"], ["lower_limit", "LL"],
   ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev."], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
-  ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["qty", "Q'ty"], ["qty_ratio", "%"],
+  ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["severity", "Max |σ|"], ["qty", "Q'ty"], ["qty_ratio", "%"],
   ["sample_numbers", "Sample No."]
 ];
 const failColumns = passColumns;
@@ -2713,7 +2713,7 @@ function clearAnalysisDisplay(message = "") {
   selectedItem = "";
   highlightSample = null;
   highlightMode = null;
-  sortState = { column: null, reverse: false };
+  sortState = { column: "severity", reverse: true };
   detailSortState = { column: null, reverse: false };
   resetAnalysisFilters();
   renderSummary();
@@ -2727,7 +2727,7 @@ function applyAnalysisPayload(data, remember = true) {
   if (remember) modePayloads[analysis.analysis_mode || analysisMode] = analysis;
   setResultPanelsVisible(true);
   itemCache = analysis.items || {};
-  sortState = { column: null, reverse: false };
+  sortState = { column: "severity", reverse: true };
   detailSortState = { column: null, reverse: false };
   resetAnalysisFilters();
   selectedItem = itemKey(analysis.results?.[0]) || "";
@@ -3500,9 +3500,10 @@ function detailResultLabel(row) {
 }
 function detailSpecOutType(row) {
   if (row.fail_type) return row.fail_type;
-  if (Math.abs(Number(row.mea_s)) > 3 && Math.abs(Number(row.diff_s)) > 3) return "Measured + Delta";
-  if (Math.abs(Number(row.mea_s)) > 3) return "Measured";
-  if (Math.abs(Number(row.diff_s)) > 3) return "Delta";
+  const limit = flagLimit();
+  if (Math.abs(Number(row.mea_s)) > limit && Math.abs(Number(row.diff_s)) > limit) return "Measured + Delta";
+  if (Math.abs(Number(row.mea_s)) > limit) return "Measured";
+  if (Math.abs(Number(row.diff_s)) > limit) return "Delta";
   return "";
 }
 function detailReadoutValue(row, key) {
@@ -3577,7 +3578,7 @@ function renderDetailTable() {
         }
       }
       if (key === "mea_s" || key === "diff_s") {
-        if (Math.abs(Number(d[key])) > 3) {
+        if (Math.abs(Number(d[key])) > flagLimit()) {
           td.classList.add("sigma-fail");
         }
       }
@@ -3657,28 +3658,69 @@ function graphDiffValuesForReadoutSeries(data, series, fallbackValues = []) {
   }
   return numericValues(fallbackValues);
 }
+function readoutDetailSeriesFallback(data, series) {
+  console.warn(`readoutDetailSeries: series "${series.key}" has no backend points (stale cache) - recomputing on the client.`);
+  const points = (data?.details || [])
+    .map(row => {
+      const postValue = finiteNumber(row[series.key]);
+      if (postValue === null) return null;
+      const diff = diffFromPre(row.pre_value, postValue);
+      return { sample: row.sample, pre_value: finiteNumber(row.pre_value), post_value: postValue, diff, row };
+    })
+    .filter(Boolean);
+  const pointPostValues = points.map(point => point.post_value);
+  const pointDiffValues = points.map(point => point.diff).filter(value => value !== null);
+  const postValues = graphValuesForReadoutSeries(data, series, pointPostValues);
+  const diffValues = graphDiffValuesForReadoutSeries(data, series, pointDiffValues);
+  const postMean = meanValue(postValues);
+  const postSigma = populationStd(postValues);
+  const diffMean = meanValue(diffValues);
+  const diffSigma = populationStd(diffValues);
+  points.forEach(point => {
+    point.mea_s = sigmaValue(point.post_value, postMean, postSigma);
+    point.diff_s = point.diff === null ? null : sigmaValue(point.diff, diffMean, diffSigma);
+  });
+  return { postValues, diffValues, points };
+}
 function readoutDetailSeries(data) {
   return postReadoutSeries(data).map((series, index) => {
-    const points = (data?.details || [])
-      .map(row => {
-        const postValue = finiteNumber(row[series.key]);
-        if (postValue === null) return null;
-        const diff = diffFromPre(row.pre_value, postValue);
-        return { sample: row.sample, pre_value: finiteNumber(row.pre_value), post_value: postValue, diff, row };
-      })
-      .filter(Boolean);
-    const pointPostValues = points.map(point => point.post_value);
-    const pointDiffValues = points.map(point => point.diff).filter(value => value !== null);
-    const postValues = graphValuesForReadoutSeries(data, series, pointPostValues);
-    const diffValues = graphDiffValuesForReadoutSeries(data, series, pointDiffValues);
-    const postMean = meanValue(postValues);
-    const postSigma = populationStd(postValues);
-    const diffMean = meanValue(diffValues);
-    const diffSigma = populationStd(diffValues);
-    points.forEach(point => {
-      point.mea_s = sigmaValue(point.post_value, postMean, postSigma);
-      point.diff_s = point.diff === null ? null : sigmaValue(point.diff, diffMean, diffSigma);
-    });
+    let postValues, diffValues, points;
+    if (series.stats) {
+      // Backend writes m{n}/d{n} (mea_s/diff_s for post_t{n}) onto each detail row (population-
+      // dependent, must stay backend-authoritative - read only, never recomputed here). The raw
+      // per-point "diff" is NOT sent by the backend (payload-size fix): it's a pure post/pre-1
+      // ratio with no population ambiguity, identical to diff_ratio() server-side, so rebuilding
+      // it via diffFromPre() here is the doc's permitted "pure display/axis-range calculation" -
+      // not a judgment recomputation.
+      const key = series.key;
+      const n = key.replace("post_t", "");
+      postValues = numericValues(series.values || []);
+      points = (data?.details || [])
+        .map(row => {
+          const postValue = finiteNumber(row[key]);
+          if (postValue === null) return null;
+          const preValue = finiteNumber(row.pre_value);
+          // NOTE: diff 는 post/pre−1 로 백엔드와 동일한 결정적 계산이라 여기서 만들어도 값이 같다.
+          // 단 §S4(diff_ratio 부호·폭발 수정)에서 분모가 abs(pre) 로 바뀌면 이 줄도 반드시 같이
+          // 고쳐야 한다. 안 그러면 pre 가 음수인 항목에서 그래프 부호가 Detail 테이블과 반대가 된다.
+          // 참조: 통계개선_프롬프트.md §S4
+          return {
+            sample: row.sample,
+            pre_value: preValue,
+            post_value: postValue,
+            diff: diffFromPre(preValue, postValue),
+            mea_s: row[`m${n}`] ?? null,
+            diff_s: row[`d${n}`] ?? null,
+          };
+        })
+        .filter(Boolean);
+      const mode = analysis?.analysis_mode || analysisMode;
+      diffValues = (mode === "fail" && key === "post_t1")
+        ? numericValues(data?.pass_diff_values || [])
+        : points.map(point => point.diff).filter(value => value !== null && value !== undefined);
+    } else {
+      ({ postValues, diffValues, points } = readoutDetailSeriesFallback(data, series));
+    }
     return { ...series, values: postValues, color: readoutColor(series.key, index), points, post_values: postValues, diff_values: diffValues };
   }).filter(series => series.points.length || series.values.length);
 }
@@ -4253,7 +4295,8 @@ function drawDiffCdfChart() {
   ctx.textAlign = "center";
   [min, (min + max) / 2, max].forEach(value => ctx.fillText(fmt(value), x(value), h - mb + 18));
   if (Number.isFinite(sigma) && sigma > 0) {
-    [avg - 3 * sigma, avg + 3 * sigma].forEach((value, index) => {
+    const limit = flagLimit();
+    [avg - limit * sigma, avg + limit * sigma].forEach((value, index) => {
       ctx.save();
       ctx.strokeStyle = getCss("--red");
       ctx.fillStyle = getCss("--red");
@@ -4266,7 +4309,7 @@ function drawDiffCdfChart() {
       ctx.setLineDash([]);
       ctx.font = "10px Segoe UI";
       ctx.textAlign = index === 0 ? "left" : "right";
-      ctx.fillText(index === 0 ? "-3σ" : "+3σ", x(value) + (index === 0 ? 4 : -4), mt + 14);
+      ctx.fillText(`${index === 0 ? "-" : "+"}${fmt(limit)}σ`, x(value) + (index === 0 ? 4 : -4), mt + 14);
       ctx.restore();
     });
   }
@@ -4366,8 +4409,9 @@ function drawScatterPlot() {
   const y = value => bottom - (value - minY) / (maxY - minY) * (bottom - top);
   const xTicks = uniqueTicks([minX, -9, -6, -3, 0, 3, 6, 9, maxX]);
   const yTicks = uniqueTicks([minY, -9, -6, -3, 0, 3, 6, 9, maxY]);
+  const scatterLimit = flagLimit();
   ctx.fillStyle = "rgba(31, 119, 180, 0.20)";
-  ctx.fillRect(x(-3), y(3), x(3) - x(-3), y(-3) - y(3));
+  ctx.fillRect(x(-scatterLimit), y(scatterLimit), x(scatterLimit) - x(-scatterLimit), y(-scatterLimit) - y(scatterLimit));
   ctx.font = "10px Segoe UI";
   ctx.textAlign = "center";
   xTicks.forEach(value => {
@@ -4390,7 +4434,7 @@ function drawScatterPlot() {
   rows.forEach(row => {
     const px = x(Number(row.diff_s));
     const py = y(Number(row.mea_s));
-    const fail = Math.abs(Number(row.diff_s)) > 3 || Math.abs(Number(row.mea_s)) > 3;
+    const fail = Math.abs(Number(row.diff_s)) > scatterLimit || Math.abs(Number(row.mea_s)) > scatterLimit;
     ctx.fillStyle = row.overlay_fail ? "#ff4d4f" : hasReadoutSeries ? row.color : fail ? getCss("--red") : getCss("--blue");
     ctx.beginPath(); ctx.arc(px, py, 4.2, 0, Math.PI * 2); ctx.fill();
     if (hasReadoutSeries && fail) {
@@ -4446,8 +4490,11 @@ function failDirectionCdf(row) {
   if (Number.isFinite(upper) && Number.isFinite(post) && post > upper) return 1;
   return 0.5;
 }
+function flagLimit() {
+  return Number(analysis?.flag_limit ?? 3);
+}
 function sigmaOver3(row, key) {
-  return Math.abs(Number(row?.[key])) > 3;
+  return Math.abs(Number(row?.[key])) > flagLimit();
 }
 function drawFailDirectionMarkers(ctx, rows, valueKey, x, y) {
   ctx.save();
@@ -4484,8 +4531,8 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
       const label = series.label || series.key;
       const px = x(postValue);
       const py = y(cdf);
-      const showMeasurement = forceSampleHighlight || (point ? Math.abs(Number(point.mea_s)) > 3 : sigmaOver3(d, "mea_s"));
-      const showShift = forceSampleHighlight || (point ? Math.abs(Number(point.diff_s)) > 3 : sigmaOver3(d, "diff_s"));
+      const showMeasurement = forceSampleHighlight || (point ? Math.abs(Number(point.mea_s)) > flagLimit() : sigmaOver3(d, "mea_s"));
+      const showShift = forceSampleHighlight || (point ? Math.abs(Number(point.diff_s)) > flagLimit() : sigmaOver3(d, "diff_s"));
       if (showMeasurement) {
         drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`);
       }
@@ -5438,18 +5485,8 @@ def apply_post_readout_history_to_payload(payload, post_history):
             }
         graph_item_values = pass_values.get(item, {}) if fail_mode else detail_item_values
         item_payload["post_readout_labels"] = labels
-        item_payload["post_readout_values"] = [
-            {
-                "key": f"post_t{index}",
-                "label": labels[index - 1] if index - 1 < len(labels) else f"T{index}",
-                "values": [
-                    to_jsonable(sample_values.get(f"post_t{index}"))
-                    for sample_values in graph_item_values.values()
-                    if sample_values.get(f"post_t{index}") is not None
-                ],
-            }
-            for index in range(1, 4)
-        ]
+
+        # Join post_t{index} onto detail rows first so post_readout_series_entry below can reuse them.
         for detail_key in ("details", "normal_details"):
             detail_rows = item_payload.get(detail_key, [])
             if not detail_rows:
@@ -5470,7 +5507,91 @@ def apply_post_readout_history_to_payload(payload, post_history):
                 sample_values = row_item_values.get(str(detail.get("sample", "")), {})
                 for index in range(1, 4):
                     detail[f"post_t{index}"] = sample_values.get(f"post_t{index}")
+
+        pass_diff_values = item_payload.get("pass_diff_values") or []
+        item_payload["post_readout_values"] = [
+            post_readout_series_entry(
+                index, labels, graph_item_values, item_payload.get("details", []),
+                fail_mode, pass_diff_values,
+            )
+            for index in range(1, 4)
+        ]
     return payload
+
+
+def round_for_wire(value, sig=6):
+    # UI only ever displays these via fmt()'s toPrecision(6) (see fmt() in the embedded script),
+    # so shipping full float64 precision over the wire is pure payload bloat with no display
+    # benefit. Rounds to `sig` significant digits instead of raw round(value, n) since these
+    # per-point diff/mea_s/diff_s values span several orders of magnitude.
+    if value is None or value == 0 or not math.isfinite(value):
+        return value
+    digits = sig - int(math.floor(math.log10(abs(value)))) - 1
+    return round(value, digits)
+
+
+def post_readout_series_entry(index, labels, graph_item_values, detail_rows, fail_mode, pass_diff_values):
+    # detail_rows already carry sample/pre_value/post_t{index} (joined by the caller), so the
+    # per-point diff/mea_s/diff_s are written back onto those same dicts instead of a separate
+    # "points" array -- duplicating sample/pre_value/post_value per point blew up payload size
+    # by ~44% on the 1000-item/2900-detail-row perf fixture (see v5_perf_bench.py results).
+    key = f"post_t{index}"
+    label = labels[index - 1] if index - 1 < len(labels) else f"T{index}"
+    values = [
+        value
+        for value in (finite_number(sample_values.get(key)) for sample_values in graph_item_values.values())
+        if value is not None
+    ]
+    post_mean, post_sigma = vector_stats(values)
+
+    # Raw per-row diff (post/pre - 1) is NOT serialized here: it is a pure, population-independent
+    # ratio the frontend can rebuild bit-for-bit from pre_value/post_t{n} (both already on the row)
+    # via diffFromPre(), which is exactly diff_ratio()'s formula. This is the doc's explicit "pure
+    # display/axis-range calculations may remain" carve-out -- unlike mea_s/diff_s below, which
+    # depend on a population mean/sigma choice (the actual source of the original bug) and must
+    # stay backend-authoritative. Skipping it here saved ~1/3 of this series' payload cost.
+    rows_with_value = []
+    diffs = []
+    for detail in detail_rows:
+        post_value = finite_number(detail.get(key))
+        if post_value is None:
+            continue
+        pre_value = finite_number(detail.get("pre_value"))
+        diff = diff_ratio(pre_value, post_value)
+        rows_with_value.append((detail, post_value, diff))
+        diffs.append(diff)
+
+    # Matches the frontend's existing special case: for fail-mode post_t1, the diff
+    # population is the item's own pass-baseline diffs, not this series' own points.
+    if fail_mode and key == "post_t1":
+        diff_population = pass_diff_values
+    else:
+        diff_population = [diff for diff in diffs if diff is not None]
+    diff_mean, diff_sigma = vector_stats(diff_population)
+
+    post_value_list = [post_value for _, post_value, _ in rows_with_value]
+    mea_s_list = vector_sigmas(post_value_list, post_mean, post_sigma)
+    diff_s_list = vector_sigmas(diffs, diff_mean, diff_sigma)
+    # Short keys (m{n}/d{n} instead of post_t{n}_mea_s/post_t{n}_diff_s): these two fields alone are
+    # written onto ~2.9M detail rows on the perf fixture, so key-name length is a direct payload
+    # size lever (see v5_bytes_quick.py measurements: shortening these closed the last ~2.4pp gap
+    # to the +10% budget).
+    for (detail, _, diff), mea_s, diff_s in zip(rows_with_value, mea_s_list, diff_s_list):
+        detail[f"m{index}"] = to_jsonable(round_for_wire(mea_s))
+        detail[f"d{index}"] = to_jsonable(round_for_wire(diff_s)) if diff is not None else None
+
+    return {
+        "key": key,
+        "label": label,
+        "values": [to_jsonable(value) for value in values],
+        "stats": {
+            "mean": to_jsonable(post_mean),
+            "sigma": to_jsonable(post_sigma),
+            "diff_mean": to_jsonable(diff_mean),
+            "diff_sigma": to_jsonable(diff_sigma),
+            "n": len(values),
+        },
+    }
 
 def has_base_analysis_selection(selection):
     required = ["device", "ver", "purpose", "lot"]
@@ -5725,7 +5846,7 @@ def fail_type_for_detail(initial_record, history, value, lower_limit, upper_limi
     if (
         mea_s is not None and diff_s is not None
         and math.isfinite(mea_s) and math.isfinite(diff_s)
-        and abs(mea_s) > 3 and abs(diff_s) > 3
+        and abs(mea_s) > FLAG_LIMIT and abs(diff_s) > FLAG_LIMIT
     ):
         return "Slight"
     return "Tail"
@@ -5752,6 +5873,23 @@ def selected_summary_rows(app):
         post_sigma = row.get("post_sigma")
         shift = (post_mean - pre_mean) if (post_mean is not None and pre_mean is not None) else None
         shift_sigma = (shift / pre_sigma) if (shift is not None and pre_sigma not in (None, 0)) else None
+        max_mea_s = row.get("mea_s")
+        max_diff_s = row.get("diff_s")
+        mea_s_flag = max_mea_s is not None and math.isfinite(max_mea_s) and abs(max_mea_s) > FLAG_LIMIT
+        diff_s_flag = max_diff_s is not None and math.isfinite(max_diff_s) and abs(max_diff_s) > FLAG_LIMIT
+        if mea_s_flag and diff_s_flag:
+            reason = "Measured + Delta"
+        elif mea_s_flag:
+            reason = "Measured"
+        elif diff_s_flag:
+            reason = "Delta"
+        else:
+            reason = ""
+        severity_candidates = [
+            abs(value) for value in (max_mea_s, max_diff_s)
+            if value is not None and math.isfinite(value)
+        ]
+        severity = max(severity_candidates) if severity_candidates else None
         rows.append(
             {
                 "test_number": row.get("test_number", ""),
@@ -5768,6 +5906,10 @@ def selected_summary_rows(app):
                 "diff_mean": row.get("diff_mean"),
                 "min": min(post_values) if post_values else None,
                 "max": max(post_values) if post_values else None,
+                "max_mea_s": max_mea_s,
+                "max_diff_s": max_diff_s,
+                "severity": severity,
+                "reason": reason,
                 "qty": len(samples),
                 "qty_ratio": (len(samples) / n_post) if n_post else None,
                 "sample_numbers": ", ".join(str(sample) for sample in sorted(samples, key=lambda sample: CdfCompareApp.sample_sort_key(app, sample))),
@@ -5793,6 +5935,7 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "selected_summary": selected_summary,
         "over_sigma": over_rows,
         "select_count": CdfCompareApp.count_flags(app),
+        "flag_limit": FLAG_LIMIT,
     }
     if include_pre:
         match_summary = match_summary_for_files(
@@ -5992,6 +6135,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
         "message": message,
+        "flag_limit": FLAG_LIMIT,
     }
     if match_summary:
         payload["match_summary"] = match_summary
