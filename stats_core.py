@@ -70,14 +70,16 @@ def _clean_finite(values):
 def mean_of(values):
     """유한값의 산술평균.
 
-    - 빈 입력(또는 전부 비유한값): 0.0 을 반환한다.
+    - 빈 입력(또는 전부 비유한값): None(정의 불가) — §S5. "평균 0" 이 아니라 "잴 수
+      없음"이므로, 0.0 이 아니라 None 이어야 호출부가 이 둘을 구분해서 판정/표시할 수
+      있다. §S5 이전에는 0.0 을 반환해 "완벽히 평균값"과 "데이터 없음"이 구분 불가했다.
     - n=1: 그 값 그대로 반환한다.
     - None/nan/inf 는 평균 계산에서 제외한다 (0 으로 취급하지 않는다).
     - numpy 유무와 무관하게 같은 값을 반환한다.
     """
     data = _clean_finite(values)
     if not data:
-        return 0.0
+        return None
     if np is not None:
         return float(np.asarray(data, dtype=float).mean())
     return sum(data) / len(data)
@@ -91,17 +93,18 @@ def std_of(values, ddof=1):
       ddof=0(모표준편차, cdf_compare_web.vector_stats / cdf_compare_tool.sample_std 의
       과거 동작)이 기본값이었다 — 판정용 호출부는 모두 명시적으로 ddof=1 을 넘기므로
       이 기본값 자체에 의존하지 않는다(호출부에서 의도가 보이도록 하는 것이 목적).
-    - 빈 입력, 또는 n <= ddof (예: ddof=1 일 때 n<=1, ddof=0 일 때 n=0): 0.0 을 반환한다.
-      n=1,ddof=0 은 이 가드에 걸리지 않고 정상적으로 계산되지만, 값 하나짜리 모표준편차는
-      수학적으로도 0.0 이라 결과는 같다 — 별도 특수 케이스가 필요 없다. n=1,ddof=1 은
-      표본표준편차가 정의되지 않는 경우라 0.0 으로 가드한다(0 나눗셈 방지).
+    - 빈 입력, 또는 n <= ddof (예: ddof=1 일 때 n<=1, ddof=0 일 때 n=0): None(정의 불가)
+      을 반환한다 — §S5. n=1,ddof=1(표본표준편차)은 수학적으로 정의되지 않는 경우이지,
+      "표준편차가 0"이 아니다. §S5 이전에는 0.0 으로 가드했는데, 그 0.0 이 진짜 sigma=0
+      (전 표본 동일값)과 구분되지 않아 "표본이 부족해서 모른다"가 "완전히 균일하다"로
+      둔갑했다.
     - None/nan/inf 는 계산에서 제외한다.
     - numpy 유무와 무관하게 같은 값을 반환한다.
     """
     data = _clean_finite(values)
     n = len(data)
     if n - ddof <= 0:
-        return 0.0
+        return None
     if np is not None:
         return float(np.asarray(data, dtype=float).std(ddof=ddof))
     avg = sum(data) / n
@@ -111,9 +114,16 @@ def std_of(values, ddof=1):
 def zscore(values, center, spread):
     """values 각 원소의 z-score 리스트. 입력과 같은 길이/순서를 유지한다.
 
+    - center 또는 spread 가 None(mean_of/std_of 가 정의 불가로 None 을 반환한 경우, §S5):
+      전체를 None 으로 채운다 — 기준(center) 또는 척도(spread) 자체가 없으면 z-score는
+      원천적으로 계산 불가하다.
     - None, nan, inf, 숫자로 변환 불가한 값: 그 자리에 None 을 채운다 (건너뛰지 않는다 —
       호출자가 원본 인덱스와 대응시킬 수 있어야 하기 때문).
-    - spread == 0: 유한값은 0.0 (0 나눗셈 대신), 비유한값은 None.
+    - spread == 0: None(정의 불가) — §S5. 모든 표본이 center 와 같아 (value-center)=0 이라
+      "z=0" 처럼 보이지만 0/0 은 수학적으로 정의되지 않는다. §S5 이전에는 0.0 으로
+      대체했는데, 이 0.0 이 "이상치 없음(z=0)"과 "애초에 비교 불가(sigma=0)"를 구분하지
+      못해 진짜 이상치를 가렸다 — flag_result 쪽 sigma_is_negligible() 이 이 축을
+      NOT EVALUATED 로 처리하는 것과 일치시킨다.
     - 결과 자체가 비유한(inf/nan)이면 None 으로 바꾼다 (center/spread 가 항상 유한하다는
       전제 하에 이 프로젝트에서는 실질적으로 발생하지 않지만, numpy 유무에 관계없이
       동일한 결과를 보장하기 위해 두 경로 모두 이 처리를 한다).
@@ -131,11 +141,13 @@ def zscore(values, center, spread):
             continue
         cleaned.append(number if math.isfinite(number) else None)
 
+    if center is None or spread is None:
+        return [None] * len(cleaned)
+
     if np is not None:
         data = np.asarray([math.nan if value is None else value for value in cleaned], dtype=float)
         if spread == 0:
-            result = np.zeros(data.shape, dtype=float)
-            result[~np.isfinite(data)] = np.nan
+            result = np.full(data.shape, np.nan, dtype=float)
         else:
             result = (data - center) / spread
             result[~np.isfinite(result)] = np.nan
@@ -146,7 +158,7 @@ def zscore(values, center, spread):
         if value is None:
             result.append(None)
         elif spread == 0:
-            result.append(0.0)
+            result.append(None)
         else:
             z = (value - center) / spread
             result.append(z if math.isfinite(z) else None)
@@ -154,10 +166,12 @@ def zscore(values, center, spread):
 
 
 def max_abs_z(values, center, spread):
-    """zscore(values, center, spread) 중 절댓값 최대. 유한값이 없으면 0.0."""
+    """zscore(values, center, spread) 중 절댓값 최대. 유한한 z-score 가 하나도 없으면
+    None(정의 불가) — §S5. 예전에는 0.0 이라 "이상치 없음"과 "잴 수 없음"이 구분 안 됐다.
+    """
     scores = zscore(values, center, spread)
     nums = [abs(z) for z in scores if z is not None]
-    return max(nums) if nums else 0.0
+    return max(nums) if nums else None
 
 
 def diff_ratio(pre_value, post_value, pre_scale=None, eps_rel=None):
@@ -243,13 +257,33 @@ def _branch_status(z, n, sigma, mean, alpha, fixed_limit, mode, threshold=_UNSET
     threshold 를 넘기면(호출부가 같은 n 에 대해 이미 threshold_for() 로 계산해둔 값)
     grubbs_critical() 재호출을 건너뛴다 — 항목당 한 번이면 되는 계산을 표본 수만큼
     반복하지 않기 위한 최적화(§S3 후속). 안 넘기면(_UNSET) 기존처럼 여기서 계산한다.
+
+    mode == "grubbs" 에서는 "sigma 를 못 구했다(None) 또는 사실상 0" 인지를 z 가 None
+    인지보다 먼저 확인한다(§S5). mean_of/std_of/zscore 가 이제 계산 불가 시 0.0 대신
+    None 을 반환하므로(§S5), 이 순서를 바꾸지 않으면 "그 축이 원래 없음(예: pre 데이터
+    자체가 없음)"과 "그 축을 시도는 했는데 sigma 를 못 구했거나 사실상 0"이 똑같이
+    z=None 으로 뭉개져 flag_result 가 그 축을 통째로 건너뛰고 다른 축에만 기대게 된다
+    (§S3 이전 "σ=0 인 항목은 조용히 OK" 버그가 형태를 바꿔 재발하는 것과 같다). sigma 가
+    None 인 경우까지 NOT EVALUATED 로 묶는 이유: 이 함수 차원에서는 "그 축이 원래 없음"과
+    "시도했지만 정의 불가"를 구분할 방법이 없다 — 어느 쪽이든 이 축으로는 판정할 수
+    없다는 결론은 같으므로, "판정 불가"를 명시하는 쪽(NOT EVALUATED)이 "조용히 무시하고
+    다른 축에 의존"보다 항상 더 정직하다. (실제로 "그 축이 원래 없음" 케이스는 이미
+    item_analysis/detail 쪽에서 "NO PRE ITEM"/"NO PRE SAMPLE" 로 이 결과보다 먼저 또는
+    나중에 덮어써지므로, 여기서 NOT EVALUATED 로 잡혀도 최종 사용자에게 보이는 라벨은
+    바뀌지 않는다.)
+    mode == "fixed" 는 §S2 이전 회귀 비교 기준이라 이 재정렬을 적용하지 않는다 — z 가
+    None 이면(그 축이 없거나 spread==0) 곧바로 None 을 반환해 그 축을 판정에서 제외한다.
+    OK 는 최하위 우선순위라 "그 축이 명시적으로 OK"와 "그 축이 제외됨"은 최종 결과에서
+    동일하게 작용하므로, 이 경로는 §S2 이전 고정 임계 동작과 결과가 달라지지 않는다.
     """
+    if mode == "fixed":
+        if z is None:
+            return None
+        return "SELECT" if (math.isfinite(z) and abs(z) > fixed_limit) else "OK"
+    if sigma is None or sigma_is_negligible(sigma, mean):
+        return "NOT EVALUATED"
     if z is None:
         return None
-    if mode == "fixed":
-        return "SELECT" if (math.isfinite(z) and abs(z) > fixed_limit) else "OK"
-    if sigma_is_negligible(sigma, mean):
-        return "NOT EVALUATED"
     if threshold is _UNSET:
         threshold = grubbs_critical(n, alpha)
     if threshold is None:

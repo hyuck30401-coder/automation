@@ -2295,6 +2295,11 @@ function fmt(v) {
   if (typeof v === "number") return Number(v.toPrecision(6)).toString();
   return v;
 }
+function fmtCell(v) {
+  // Summary/Detail 표 전용: null(§S5 "정의 불가")은 빈칸이 아니라 "N/A"로 명시한다.
+  if (v === null || v === undefined || (typeof v === "number" && Number.isNaN(v))) return "N/A";
+  return fmt(v);
+}
 function naturalKey(v) {
   const text = String(v ?? "");
   return text.replace(/_/g, ".").split(".").map(p => {
@@ -3297,15 +3302,21 @@ function renderItemSelect() {
   sel.value = selectedItem;
 }
 function numericValues(values) {
-  return (values || []).map(Number).filter(value => Number.isFinite(value));
+  // §S5: finiteNumber() 와 동일한 이유 -- Number(null)===0 이라 null 을 그냥 Number() 에
+  // 넣으면 유효한 0 처럼 필터를 통과해버린다.
+  return (values || []).map(finiteNumber).filter(value => value !== null);
 }
 function summaryCellValue(row, key, payload = analysis) {
   const data = (payload?.items || itemCache)[itemKey(row)] || {};
   if (key === "qty_ratio") {
+    // §S5: null(정의 불가, n_pass=0)을 Number()로 강제 변환하면 0 이 되어 "0.0%"로
+    // 새어나간다 -- null 은 계산 전에 걸러 N/A(fmtCell)로 떨어지게 한다.
+    if (row.qty_ratio === null || row.qty_ratio === undefined) return null;
     const ratio = Number(row.qty_ratio);
     return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : "";
   }
   if (key === "diff_mean") {
+    if (row.diff_mean === null || row.diff_mean === undefined) return null;
     const ratio = Number(row.diff_mean);
     return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(2)}%` : "";
   }
@@ -3449,7 +3460,7 @@ function renderSummaryListTable(table, payload, mode) {
     };
     cols.forEach(([key]) => {
       const td = tr.insertCell();
-      td.textContent = fmt(summaryCellValue(r, key, payload));
+      td.textContent = fmtCell(summaryCellValue(r, key, payload));
       if (key === "item") td.className = "item";
       if (key === "sample_numbers") td.className = "item";
     });
@@ -3562,7 +3573,7 @@ function renderDetailTable() {
         td.appendChild(checkbox);
         return;
       }
-      td.textContent = fmt(detailCellValue(d, key));
+      td.textContent = fmtCell(detailCellValue(d, key));
       if (key === "sample") {
         td.classList.add("sigma-action");
         td.title = "Show this sample on CDF Distribution and Scattered Plot";
@@ -3618,6 +3629,10 @@ function readoutColor(key, index = 0) {
   return palette[index % palette.length] || { post_t1: "#d62728", post_t2: "#ff7f0e", post_t3: "#2ca02c" }[key] || palette[0];
 }
 function finiteNumber(value) {
+  // §S5: null/undefined("정의 불가")을 그냥 Number()에 넣으면 0 으로 굳어버려(Number(null)===0),
+  // 이 함수를 쓰는 모든 그래프/포인트 필터("=== null 이면 점을 안 찍는다")가 무력화된다.
+  // 숫자 변환 이전에 명시적으로 걸러야 한다.
+  if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -4258,9 +4273,9 @@ function drawDiffCdfChart() {
   const ml = 58, mr = hasReadoutSeries ? 180 : 26, mt = 34, mb = 58;
   const plotRight = w - mr;
   const values = hasReadoutSeries ? readoutSeries.flatMap(series => series.diff_values) : fallbackPostSelected && !hideFailData ? data.details
-    .map(row => Number(row.diff))
-    .filter(value => Number.isFinite(value)) : [];
-  const passValues = hasReadoutSeries || !fallbackPostSelected ? [] : (data.pass_diff_values || []).map(Number).filter(value => Number.isFinite(value));
+    .map(row => finiteNumber(row.diff))
+    .filter(value => value !== null) : [];
+  const passValues = hasReadoutSeries || !fallbackPostSelected ? [] : numericValues(data.pass_diff_values || []);
   const failOverlayDiffs = fallbackPostSelected ? numericValues((selectedFailItemData()?.details || []).map(row => row.diff)) : [];
   if (!values.length && !passValues.length && !failOverlayDiffs.length) return;
   const failBaselineValues = hasReadoutSeries ? values : passValues.length ? passValues : values;
@@ -4348,8 +4363,8 @@ function drawDiffCdfChart() {
       });
     } else if (fallbackPostSelected) {
       const row = data.details.find(detail => String(detail.sample) === String(highlightSample));
-      const diffValue = row ? Number(row.diff) : NaN;
-      if (Number.isFinite(diffValue) && sigmaOver3(row, "diff_s")) {
+      const diffValue = row ? finiteNumber(row.diff) : null;
+      if (diffValue !== null && sigmaOver3(row, "diff_s")) {
         const cdf = mode === "fail" ? failDirectionCdf(row) : cdfFraction(values, diffValue);
         drawHighlightPoint(ctx, x(diffValue), y(cdf), "#b00020", `#${highlightSample} Diff ${fmt(diffValue)}`);
       }
@@ -4388,13 +4403,13 @@ function drawScatterPlot() {
   ctx.restore();
   let rows = hasReadoutSeries ? readoutSeries.flatMap(series =>
     series.points
-      .filter(point => Number.isFinite(Number(point.diff_s)) && Number.isFinite(Number(point.mea_s)))
+      .filter(point => finiteNumber(point.diff_s) !== null && finiteNumber(point.mea_s) !== null)
       .map(point => ({ ...point, series_label: series.label || series.key, color: series.color }))
   ) : fallbackPostSelected && !hideFailData ? [...data.details].filter(row =>
-    Number.isFinite(Number(row.diff_s)) && Number.isFinite(Number(row.mea_s))
+    finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null
   ) : [];
   const failScatterRows = fallbackPostSelected ? (selectedFailItemData()?.details || [])
-    .filter(row => Number.isFinite(Number(row.diff_s)) && Number.isFinite(Number(row.mea_s)))
+    .filter(row => finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null)
     .map(row => ({ ...row, color: "#ff4d4f", overlay_fail: true })) : [];
   rows = rows.concat(failScatterRows);
   const xValues = rows.map(row => Number(row.diff_s));
@@ -5049,8 +5064,10 @@ def vector_sigmas(values, center, spread):
 
 
 def max_abs_finite(values):
+    # 유한값이 하나도 없으면 None(정의 불가) — §S5. stats_core.max_abs_z 와 동일한 이유로
+    # 0.0("이상치 없음")과 "잴 수 없음"을 구분해야 한다.
     nums = [abs(value) for value in values if value is not None and math.isfinite(value)]
-    return max(nums) if nums else 0.0
+    return max(nums) if nums else None
 
 
 def paired_diffs_for_details(pre_values, post_values, pre_scale=None):
