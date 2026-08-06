@@ -30,7 +30,10 @@ from cdf_compare_tool import (
     fmt,
     read_table,
 )
-from stats_core import _UNSET, FLAG_ALPHA, FLAG_LIMIT, FLAG_MODE, diff_ratio, flag_result, mean_of, std_of, threshold_for, zscore
+from stats_core import (
+    _UNSET, EPS_REL, FLAG_ALPHA, FLAG_LIMIT, FLAG_MODE, diff_ratio, flag_result, mean_of,
+    robust_pre_scale, std_of, threshold_for, zscore,
+)
 
 
 HOST = "127.0.0.1"
@@ -5050,7 +5053,7 @@ def max_abs_finite(values):
     return max(nums) if nums else 0.0
 
 
-def paired_diffs_for_details(pre_values, post_values):
+def paired_diffs_for_details(pre_values, post_values, pre_scale=None):
     count = min(len(pre_values), len(post_values))
     result = [None] * len(post_values)
     if count <= 0:
@@ -5061,6 +5064,11 @@ def paired_diffs_for_details(pre_values, post_values):
         pre = np.asarray([math.nan if value is None else value for value in pre_clean], dtype=float)
         post = np.asarray([math.nan if value is None else value for value in post_clean], dtype=float)
         valid = np.isfinite(pre) & np.isfinite(post) & (pre != 0)
+        if pre_scale is not None and pre_scale > 0:
+            # §S4(범위 축소판): pre 가 항목 스케일 대비 0 에 가까우면 diff_ratio 가
+            # 폭발한다 — numpy 경로도 diff_ratio() 와 동일한 상대 임계로 걸러야 두 경로
+            # 결과가 갈리지 않는다.
+            valid &= np.abs(pre) >= (EPS_REL * pre_scale)
         diffs = np.empty(count, dtype=float)
         diffs.fill(np.nan)
         diffs[valid] = (post[valid] - pre[valid]) / np.abs(pre[valid])
@@ -5072,7 +5080,10 @@ def paired_diffs_for_details(pre_values, post_values):
     for index in range(count):
         pre_value = pre_clean[index]
         post_value = post_clean[index]
-        diff = diff_ratio(pre_value, post_value) if pre_value is not None and post_value is not None else None
+        diff = (
+            diff_ratio(pre_value, post_value, pre_scale=pre_scale)
+            if pre_value is not None and post_value is not None else None
+        )
         result[index] = diff
         if diff is not None and math.isfinite(diff):
             diff_values.append(diff)
@@ -5108,7 +5119,8 @@ def item_analysis(app, item):
     post_mean, post_sigma = vector_stats(post_values)
     pre_mean, pre_sigma = vector_stats(pre_values)
     mea_s_values = vector_sigmas(post_values, post_mean, post_sigma)
-    diff_detail_values, diff_values = paired_diffs_for_details(paired_pre_values, post_values)
+    pre_scale = robust_pre_scale(pre_values)
+    diff_detail_values, diff_values = paired_diffs_for_details(paired_pre_values, post_values, pre_scale=pre_scale)
     diff_mean, diff_sigma = vector_stats(diff_values)
     diff_s_values = vector_sigmas(diff_detail_values, diff_mean, diff_sigma)
     pre_mea_s_values = vector_sigmas(paired_pre_values, pre_mean, pre_sigma)
@@ -5516,10 +5528,14 @@ def apply_post_readout_history_to_payload(payload, post_history):
                     detail[f"post_t{index}"] = sample_values.get(f"post_t{index}")
 
         pass_diff_values = item_payload.get("pass_diff_values") or []
+        # §S4(범위 축소판): 이 항목의 정상(pass) pre 스케일 — normal_details 가 있으면(fail
+        # 모드) 그쪽이 왜곡되지 않은 pre 모집단이고, 없으면(pass 모드) details 자체가 그것.
+        detail_source = item_payload.get("normal_details") or item_payload.get("details") or []
+        pre_scale = robust_pre_scale([detail.get("pre_value") for detail in detail_source])
         item_payload["post_readout_values"] = [
             post_readout_series_entry(
                 index, labels, graph_item_values, item_payload.get("details", []),
-                fail_mode, pass_diff_values,
+                fail_mode, pass_diff_values, pre_scale,
             )
             for index in range(1, 4)
         ]
@@ -5537,7 +5553,7 @@ def round_for_wire(value, sig=6):
     return round(value, digits)
 
 
-def post_readout_series_entry(index, labels, graph_item_values, detail_rows, fail_mode, pass_diff_values):
+def post_readout_series_entry(index, labels, graph_item_values, detail_rows, fail_mode, pass_diff_values, pre_scale=None):
     # detail_rows already carry sample/pre_value/post_t{index} (joined by the caller), so the
     # per-point diff/mea_s/diff_s are written back onto those same dicts instead of a separate
     # "points" array -- duplicating sample/pre_value/post_value per point blew up payload size
@@ -5564,7 +5580,7 @@ def post_readout_series_entry(index, labels, graph_item_values, detail_rows, fai
         if post_value is None:
             continue
         pre_value = finite_number(detail.get("pre_value"))
-        diff = diff_ratio(pre_value, post_value)
+        diff = diff_ratio(pre_value, post_value, pre_scale=pre_scale)
         rows_with_value.append((detail, post_value, diff))
         diffs.append(diff)
 
@@ -6062,7 +6078,12 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             pass_post_values.append(pass_record["value"])
             pass_pre_values.append(pre_value)
             pass_pairs.append((sample, pass_record, pre_value))
-        pass_detail_diffs, pass_diff_values = paired_diffs_for_details(pass_pre_values, pass_post_values)
+        # pass 표본의 pre 값이 이 항목의 정상 스케일을 대표한다 — fail 표본의 pre 는 고장으로
+        # 왜곡됐을 수 있어 스케일 기준으로 쓰지 않는다. §S4(범위 축소판).
+        pre_scale = robust_pre_scale(pass_pre_values)
+        pass_detail_diffs, pass_diff_values = paired_diffs_for_details(
+            pass_pre_values, pass_post_values, pre_scale=pre_scale
+        )
         post_mean = mean_of(pass_post_values)
         post_sigma = std_of(pass_post_values, ddof=1)  # 판정용 sigma. §S2.
         diff_mean = mean_of(pass_diff_values)
@@ -6070,7 +6091,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         pass_mea_s_values = vector_sigmas(pass_post_values, post_mean, post_sigma)
         pass_diff_s_values = vector_sigmas(pass_detail_diffs, diff_mean, diff_sigma)
         mea_s_values = vector_sigmas(post_values, post_mean, post_sigma)
-        detail_diffs, _detail_diff_values = paired_diffs_for_details(post_pre_values, post_values)
+        detail_diffs, _detail_diff_values = paired_diffs_for_details(post_pre_values, post_values, pre_scale=pre_scale)
         diff_s_values = vector_sigmas(detail_diffs, diff_mean, diff_sigma)
         metadata = metadata_from_records([record for _, record in post_records])
         details = []

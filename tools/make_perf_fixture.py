@@ -122,7 +122,7 @@ def make_true_values(n_items, device_id_index, device_ids, item_mu, item_sigma, 
 def generate_table(
     n_items, device_id_index, device_ids, rng, is_pre, serial_start,
     true_values, item_noise_sigma, item_sigma, item_drift,
-    outlier_items, outlier_unit_ratio,
+    outlier_items, outlier_unit_ratio, zero_pre_targets=None,
 ):
     n_units = len(device_ids)
     item_names = make_item_names(n_items, device_id_index)
@@ -154,12 +154,14 @@ def generate_table(
     # 남는다(§S3 후속 Task 2 재작업).
     n_outlier = round(n_units * outlier_unit_ratio) if not is_pre else 0
     outlier_serials = set(rng.sample(range(n_units), n_outlier)) if n_outlier else set()
+    zero_pre_targets = zero_pre_targets or set()
 
     for i in range(n_units):
         serial = serial_start + i if is_pre else i + 1
         bin_code = 1 if i not in fail_serials else rng.choice((2, 4, 5, 8))
         row = [1, serial, bin_code, "N/A", "N/A"]
-        base = true_values[device_ids[i]]
+        device_id = device_ids[i]
+        base = true_values[device_id]
         is_outlier_unit = i in outlier_serials
         outlier_sign = rng.choice((-1, 1))
         outlier_mag = rng.uniform(15.0, 40.0)
@@ -170,6 +172,13 @@ def generate_table(
                 value += item_drift[j]
                 if is_outlier_unit and j in outlier_items:
                     value += outlier_sign * item_sigma[j] * outlier_mag
+            elif (device_id, j) in zero_pre_targets:
+                # §S4(범위 축소판, 2026-08-07) 진단용: 이 항목은 정상 스케일(mu~2~20)인데
+                # 이 유닛의 pre 만 글리치로 0 근처를 읽은 상황을 흉내낸다. 항목 스케일의
+                # 최소값(2.0) 기준으로도 EPS_REL(1e-3) 임계(0.002)보다 한참 작아야 하고,
+                # round(...,4) 로도 정확히 0 이 되면 안 된다(그러면 기존 pre==0 분기만
+                # 타서 새 상대 임계 방어를 검증할 수 없다) — 그래서 0.0001~0.0008 범위를 쓴다.
+                value = rng.uniform(0.0001, 0.0008) * rng.choice((-1, 1))
             measured.append(round(value, 4))
         measured[device_id_index] = device_ids[i]
         row.extend(measured)
@@ -192,6 +201,7 @@ def main():
     parser.add_argument("--out", default=os.path.join(PROJECT_ROOT, "Perf Data"))
     parser.add_argument("--outlier-item-ratio", type=float, default=0.5, help="이상치를 심을 항목의 비율")
     parser.add_argument("--outlier-unit-ratio", type=float, default=0.015, help="이상치 항목 안에서 이상치가 될 유닛의 비율")
+    parser.add_argument("--zero-pre-count", type=int, default=5, help="§S4 근접-0 pre 방어 검증용: pre 값만 0 근처(0.0001~0.0008)로 덮어쓸 (유닛,항목) 소량 표본 수")
     args = parser.parse_args()
 
     if args.items < 2:
@@ -219,12 +229,22 @@ def main():
     n_outlier_items = round(len(candidate_items) * args.outlier_item_ratio)
     outlier_items = set(rng.sample(candidate_items, n_outlier_items)) if n_outlier_items else set()
 
+    # §S4(범위 축소판): pre 가 0 근처인 유닛을 소량 심어서 relative-threshold 방어가
+    # 실제로 발동하는지 검증한다. post_device_ids 는 pre_device_ids 의 부분집합이라
+    # 여기서 뽑은 device_id 는 Pre 테이블에도 반드시 존재한다.
+    zero_pre_targets = set()
+    if args.zero_pre_count > 0:
+        pool = [(d, i) for d in post_device_ids for i in candidate_items]
+        n_zero_pre = min(args.zero_pre_count, len(pool))
+        zero_pre_targets = set(rng.sample(pool, n_zero_pre))
+
     post_rows = generate_table(
         args.items, device_id_index, post_device_ids, rng,
         is_pre=False, serial_start=1,
         true_values=true_values, item_noise_sigma=item_noise_sigma,
         item_sigma=item_sigma, item_drift=item_drift,
         outlier_items=outlier_items, outlier_unit_ratio=args.outlier_unit_ratio,
+        zero_pre_targets=zero_pre_targets,
     )
     pre_rows = generate_table(
         args.items, device_id_index, pre_device_ids, rng,
@@ -232,6 +252,7 @@ def main():
         true_values=true_values, item_noise_sigma=item_noise_sigma,
         item_sigma=item_sigma, item_drift=item_drift,
         outlier_items=outlier_items, outlier_unit_ratio=args.outlier_unit_ratio,
+        zero_pre_targets=zero_pre_targets,
     )
 
     base = os.path.join(args.out, DEVICE, CONDITION_FOLDER)
@@ -245,6 +266,7 @@ def main():
     print(f"Pre : {pre_path} ({pre_units} units, {args.items} items)")
     print(f"DEVICE_ID 겹침: Post {len(set(post_device_ids))}건 전부 Pre 에 포함")
     print(f"이상치 항목: {len(outlier_items)}/{len(candidate_items)}건 (ratio={args.outlier_item_ratio}), 항목당 이상치 유닛 비율={args.outlier_unit_ratio}")
+    print(f"§S4 근접-0 pre 시드: {len(zero_pre_targets)}건 (요청 {args.zero_pre_count}건)")
 
 
 if __name__ == "__main__":

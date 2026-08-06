@@ -35,6 +35,20 @@ try:
 except (TypeError, ValueError):
     FLAG_ALPHA = 0.05
 
+# diff_ratio 의 "pre 가 0 은 아니지만 항목 스케일 대비 0 에 가까움" 방어 상대 임계.
+# §S4(범위 축소판: pre≈0 폭발 방어만, 2026-08-07). abs(pre) < EPS_REL * robust_pre_scale(item)
+# 이면 diff_ratio 는 None(정의 불가)을 반환한다.
+#
+# 1e-3(항목 스케일의 0.1%)을 기본값으로 잡은 근거: 정상적인 재측정 잡음(§S4 이전 perf
+# fixture 설계 기준 item_noise_sigma = item_sigma * 0.05, 즉 스케일의 5% 수준)보다 50배
+# 작다 — 정상 표본의 pre 값이 이 임계에 우연히 걸릴 일은 없고, "1000배 이상 스케일이
+# 다른" 진짜 병리적 근접-0 케이스만 걸러낸다. 실측(Test Data)으로 이 값이 과하거나
+# 부족하면 CDFTOOL_DIFF_EPS_REL 로 조정할 수 있게 환경변수로도 노출한다.
+try:
+    EPS_REL = float(os.environ.get("CDFTOOL_DIFF_EPS_REL", "1e-3"))
+except (TypeError, ValueError):
+    EPS_REL = 1e-3
+
 _UNSET = object()  # flag_result(mea_threshold=...) 미지정과 None(INSUFFICIENT N) 을 구분하는 센티널
 
 
@@ -146,7 +160,7 @@ def max_abs_z(values, center, spread):
     return max(nums) if nums else 0.0
 
 
-def diff_ratio(pre_value, post_value):
+def diff_ratio(pre_value, post_value, pre_scale=None, eps_rel=None):
     """(post - pre) / abs(pre) — 값이 이동한 방향(내려가면 -, 올라가면 +)만 나타내는
     순수 변화율이다. 열화/개선 판단이 아니다 (엔지니어가 LL/UL 로 판단). pre_value 가
     부호를 바꿔도(음수여도) 분모가 abs(pre_value) 라 부호 왜곡이 없다. §S4 에서 확정된
@@ -154,6 +168,13 @@ def diff_ratio(pre_value, post_value):
 
     - pre_value/post_value 중 하나라도 None/nan/inf 면 None.
     - pre_value == 0 이면 None (0 나눗셈 방지).
+    - pre_scale 을 넘기고 abs(pre_value) < eps_rel(기본 EPS_REL) * pre_scale 이면 None.
+      pre 가 정확히 0 은 아니지만 그 항목의 정상 스케일 대비 0 에 가까운 경우를 막는다 —
+      분모가 스케일 대비 매우 작으면 절대 변화량이 작아도 비율이 수천~수만으로 폭발해
+      diff_sigma 를 부풀리고 진짜 이상치를 가린다(masking, 같은 메커니즘을 §S3 Task 2 에서
+      Grubbs "이상치 1개" 가정이 무너질 때도 확인했다). 호출부가 robust_pre_scale() 로
+      항목의 median(abs(pre)) 를 구해 넘긴다 — pre_scale 이 None/0 이면 이 검사는
+      건너뛴다(호출부가 아직 넘기지 않는 경로와의 하위호환).
     """
     if pre_value is None or post_value is None:
         return None
@@ -161,7 +182,34 @@ def diff_ratio(pre_value, post_value):
         return None
     if pre_value == 0:
         return None
+    if pre_scale is not None and pre_scale > 0:
+        eps = EPS_REL if eps_rel is None else eps_rel
+        if abs(pre_value) < eps * pre_scale:
+            return None
     return (post_value - pre_value) / abs(pre_value)
+
+
+def robust_pre_scale(pre_values):
+    """항목의 pre 값들 중 median(abs(pre)) — diff_ratio 의 상대 임계 기준 스케일. §S4.
+
+    mean 대신 median 을 쓰는 이유: 이 스케일 자체가 diff_ratio 폭발을 막으려는 목적인데
+    mean 은 이미 폭발 후보(비정상적으로 작은 pre)나 극단값에 흔들리지만, median 은 절반
+    이상이 정상 스케일이면 오염되지 않는다.
+
+    유효(None/nan/inf 아닌) pre 값이 하나도 없으면 None — 호출부는 None 을 받으면 상대
+    임계 검사를 건너뛰고(즉 diff_ratio 는 pre_value==0 절대 검사만 적용) 기존 동작을
+    유지한다.
+    """
+    finite = [abs(value) for value in pre_values if value is not None and math.isfinite(value)]
+    if not finite:
+        return None
+    if np is not None:
+        return float(np.median(np.asarray(finite, dtype=float)))
+    finite.sort()
+    mid = len(finite) // 2
+    if len(finite) % 2:
+        return finite[mid]
+    return (finite[mid - 1] + finite[mid]) / 2.0
 
 
 def sigma_is_negligible(sigma, mean):

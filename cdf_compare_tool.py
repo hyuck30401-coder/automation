@@ -11,7 +11,10 @@ try:
 except ImportError:
     np = None
 
-from stats_core import FLAG_LIMIT, diff_ratio, flag_result, max_abs_z, mean_of, std_of, threshold_for, zscore
+from stats_core import (
+    EPS_REL, FLAG_LIMIT, diff_ratio, flag_result, max_abs_z, mean_of, robust_pre_scale,
+    std_of, threshold_for, zscore,
+)
 
 
 APP_TITLE = "Pre/Post CDF Sigma Compare Tool"
@@ -76,7 +79,7 @@ def max_abs_sigma(values, center, spread):
     return max_abs_z(values, center, spread)
 
 
-def paired_diff_values(pre_values, post_values):
+def paired_diff_values(pre_values, post_values, pre_scale=None):
     paired_count = min(len(pre_values), len(post_values))
     if paired_count <= 0:
         return []
@@ -84,8 +87,15 @@ def paired_diff_values(pre_values, post_values):
         pre = np.asarray(pre_values[:paired_count], dtype=float)
         post = np.asarray(post_values[:paired_count], dtype=float)
         mask = np.isfinite(pre) & np.isfinite(post) & (pre != 0)
+        if pre_scale is not None and pre_scale > 0:
+            # §S4(범위 축소판): pre 가 절대 0 은 아니지만 항목 스케일 대비 0 에 가까우면
+            # diff_ratio 가 폭발해 diff_sigma 를 부풀린다 — numpy 경로도 diff_ratio() 와
+            # 동일한 상대 임계로 걸러야 두 경로 결과가 갈리지 않는다.
+            mask &= np.abs(pre) >= (EPS_REL * pre_scale)
         return ((post[mask] - pre[mask]) / np.abs(pre[mask])).tolist()
-    return finite_values(diff_ratio(pre_values[i], post_values[i]) for i in range(paired_count))
+    return finite_values(
+        diff_ratio(pre_values[i], post_values[i], pre_scale=pre_scale) for i in range(paired_count)
+    )
 
 
 def natural_sort_key(value):
@@ -618,7 +628,8 @@ class CdfCompareApp(tk.Tk):
             if pre_values:
                 pre_mean = mean(pre_values)
                 pre_sigma = sample_std(pre_values)
-                diffs = paired_diff_values(pre_values, post_values)
+                pre_scale = robust_pre_scale(pre_values)
+                diffs = paired_diff_values(pre_values, post_values, pre_scale=pre_scale)
                 diff_mean = mean(diffs)
                 diff_sigma = sample_std(diffs)
                 diff_s = max_abs_sigma(diffs, diff_mean, diff_sigma)
@@ -710,7 +721,8 @@ class CdfCompareApp(tk.Tk):
             post_values = [record["value"] for record in post_records]
             post_mean = mean(post_values)
             post_sigma = sample_std(post_values)
-            diffs = paired_diff_values(pre_values, post_values)
+            pre_scale = robust_pre_scale(pre_values)
+            diffs = paired_diff_values(pre_values, post_values, pre_scale=pre_scale)
             diff_mean = mean(diffs)
             diff_sigma = sample_std(diffs)
             n_post = len(post_values)
@@ -723,7 +735,7 @@ class CdfCompareApp(tk.Tk):
                 post_value = post_record["value"]
                 pre_value = pre_values[index] if index < len(pre_values) else None
                 mea_s = sigma(post_value, post_mean, post_sigma)
-                diff = diff_ratio(pre_value, post_value) if pre_value is not None else None
+                diff = diff_ratio(pre_value, post_value, pre_scale=pre_scale) if pre_value is not None else None
                 diff_s = sigma(diff, diff_mean, diff_sigma) if diff is not None else None
                 # 각 branch 를 독립적으로 flag_result 로 평가 — item 의 n(post/diff)에 따른
                 # Grubbs 임계값 기준. §S3.
@@ -835,7 +847,8 @@ class CdfCompareApp(tk.Tk):
         pre_sigma = sample_std(pre_values)
         post_mean = mean(post_values)
         post_sigma = sample_std(post_values)
-        diffs = paired_diff_values(pre_values, post_values)
+        pre_scale = robust_pre_scale(pre_values)
+        diffs = paired_diff_values(pre_values, post_values, pre_scale=pre_scale)
         diff_mean = mean(diffs)
         diff_sigma = sample_std(diffs)
         n_post = len(post_values)
@@ -850,7 +863,7 @@ class CdfCompareApp(tk.Tk):
             post_value = post_record["value"]
             pre_value = pre_values[index] if index < len(pre_values) else None
             mea_s = sigma(post_value, post_mean, post_sigma)
-            diff = diff_ratio(pre_value, post_value) if pre_value is not None else None
+            diff = diff_ratio(pre_value, post_value, pre_scale=pre_scale) if pre_value is not None else None
             diff_s = sigma(diff, diff_mean, diff_sigma) if diff is not None else None
             result = flag_result(
                 mea_s, diff_s, n_post, sigma=post_sigma, mean=post_mean,
@@ -1050,7 +1063,11 @@ class CdfCompareApp(tk.Tk):
 
     def diff_rows(self, pre_records, post_records):
         paired_count = min(len(pre_records), len(post_records))
-        diffs = [diff_ratio(pre_records[i]["value"], post_records[i]["value"]) for i in range(paired_count)]
+        pre_scale = robust_pre_scale([record["value"] for record in pre_records])
+        diffs = [
+            diff_ratio(pre_records[i]["value"], post_records[i]["value"], pre_scale=pre_scale)
+            for i in range(paired_count)
+        ]
         diffs = finite_values(diffs)
         diff_mean = mean(diffs)
         diff_sigma = sample_std(diffs)
