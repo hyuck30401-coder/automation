@@ -1,7 +1,6 @@
 import csv
 import math
 import os
-import statistics
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from xml.etree import ElementTree as ET
@@ -11,6 +10,8 @@ try:
     import numpy as np
 except ImportError:
     np = None
+
+from stats_core import diff_ratio, max_abs_z, mean_of, std_of, zscore
 
 
 APP_TITLE = "Pre/Post CDF Sigma Compare Tool"
@@ -34,27 +35,12 @@ def to_float(value):
 
 
 def mean(values):
-    if np is not None:
-        data = finite_array(values)
-        return float(data.mean()) if data.size else 0.0
-    values = [value for value in values if value is not None and math.isfinite(value)]
-    return sum(values) / len(values) if values else 0.0
+    return mean_of(values)
 
 
 def sample_std(values):
-    if np is not None:
-        data = finite_array(values)
-        return float(data.std()) if data.size >= 2 else 0.0
-    values = [value for value in values if value is not None and math.isfinite(value)]
-    if len(values) < 2:
-        return 0.0
-    return statistics.pstdev(values)
-
-
-def safe_ratio(numerator, denominator):
-    if denominator == 0:
-        return 0.0
-    return numerator / denominator
+    # 이름은 sample_std 지만 실제로는 모표준편차(ddof=0)다 — stats_core.std_of() 참고.
+    return std_of(values)
 
 
 def normal_cdf(z_value):
@@ -68,22 +54,7 @@ def normal_cdf(z_value):
 
 
 def sigma(value, center, spread):
-    if value is None or not math.isfinite(value):
-        return None
-    return safe_ratio(value - center, spread)
-
-
-def diff_ratio(pre_value, post_value):
-    # Denominator is abs(pre_value), not the signed pre_value: this is a pure move-direction
-    # indicator (down=negative, up=positive), not a judgment of degradation vs improvement.
-    # A signed denominator flips that sign whenever pre_value<0. See 통계개선_프롬프트.md §S4.
-    if pre_value is None or post_value is None:
-        return None
-    if not math.isfinite(pre_value) or not math.isfinite(post_value):
-        return None
-    if pre_value == 0:
-        return None
-    return (post_value - pre_value) / abs(pre_value)
+    return zscore([value], center, spread)[0]
 
 
 def fmt(value):
@@ -102,29 +73,8 @@ def finite_values(values):
     return [value for value in values if value is not None and math.isfinite(value)]
 
 
-def finite_array(values):
-    if np is None:
-        return None
-    sequence = list(values)
-    try:
-        data = np.asarray(sequence, dtype=float)
-    except (TypeError, ValueError):
-        data = np.asarray([value for value in sequence if value is not None], dtype=float)
-    return data[np.isfinite(data)]
-
-
 def max_abs_sigma(values, center, spread):
-    if np is not None:
-        data = finite_array(values)
-        if data.size == 0 or spread == 0:
-            return 0.0
-        return float(np.max(np.abs((data - center) / spread)))
-    sigmas = []
-    for value in values:
-        item_sigma = sigma(value, center, spread)
-        if item_sigma is not None and math.isfinite(item_sigma):
-            sigmas.append(abs(item_sigma))
-    return max(sigmas) if sigmas else 0.0
+    return max_abs_z(values, center, spread)
 
 
 def paired_diff_values(pre_values, post_values):

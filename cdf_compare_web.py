@@ -29,12 +29,9 @@ from cdf_compare_tool import (
     extract_item_records,
     filter_records_to_last_sample,
     fmt,
-    mean,
     read_table,
-    sample_std,
-    sigma,
-    diff_ratio,
 )
+from stats_core import diff_ratio, mean_of, std_of, zscore
 
 
 HOST = "127.0.0.1"
@@ -5031,48 +5028,12 @@ def match_summary_for_files(pre_records_raw, post_records_raw):
     }
 
 
-def vector_array(values):
-    clean = [finite_number(value) for value in values]
-    clean = [value for value in clean if value is not None]
-    if np is not None:
-        return np.asarray(clean, dtype=float)
-    return clean
-
-
 def vector_stats(values):
-    data = vector_array(values)
-    if np is not None:
-        if data.size == 0:
-            return 0.0, 0.0
-        return float(data.mean()), float(data.std()) if data.size >= 2 else 0.0
-    if not data:
-        return 0.0, 0.0
-    avg = sum(data) / len(data)
-    if len(data) < 2:
-        return avg, 0.0
-    return avg, math.sqrt(sum((value - avg) ** 2 for value in data) / len(data))
+    return mean_of(values), std_of(values)
 
 
 def vector_sigmas(values, center, spread):
-    clean = [finite_number(value) for value in values]
-    if np is not None:
-        data = np.asarray([math.nan if value is None else value for value in clean], dtype=float)
-        if spread == 0:
-            result = np.zeros(data.shape, dtype=float)
-            result[~np.isfinite(data)] = np.nan
-            return [float(value) if math.isfinite(value) else None for value in result.tolist()]
-        result = (data - center) / spread
-        result[~np.isfinite(result)] = np.nan
-        return [float(value) if math.isfinite(value) else None for value in result.tolist()]
-    result = []
-    for value in clean:
-        if value is None:
-            result.append(None)
-        elif spread == 0:
-            result.append(0.0)
-        else:
-            result.append((value - center) / spread)
-    return result
+    return zscore(values, center, spread)
 
 
 def max_abs_finite(values):
@@ -6052,10 +6013,10 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             pass_pre_values.append(pre_value)
             pass_pairs.append((sample, pass_record, pre_value))
         pass_detail_diffs, pass_diff_values = paired_diffs_for_details(pass_pre_values, pass_post_values)
-        post_mean = mean(pass_post_values)
-        post_sigma = sample_std(pass_post_values)
-        diff_mean = mean(pass_diff_values)
-        diff_sigma = sample_std(pass_diff_values)
+        post_mean = mean_of(pass_post_values)
+        post_sigma = std_of(pass_post_values)
+        diff_mean = mean_of(pass_diff_values)
+        diff_sigma = std_of(pass_diff_values)
         pass_mea_s_values = vector_sigmas(pass_post_values, post_mean, post_sigma)
         pass_diff_s_values = vector_sigmas(pass_detail_diffs, diff_mean, diff_sigma)
         mea_s_values = vector_sigmas(post_values, post_mean, post_sigma)
