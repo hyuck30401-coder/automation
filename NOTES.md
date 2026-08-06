@@ -53,10 +53,10 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 | 항목 | 문제 | 조치 방향 |
 |---|---|---|
 | ~~`sample_std` (tool:43)~~ | ~~이름은 sample std 인데 실제로는 **모표준편차** (`np.std()` ddof=0 / `statistics.pstdev`)~~ | **완료 (§S2, 2026-08-06)**. `stats_core.std_of(ddof=1)` 로 전환, 판정용 호출부는 모두 명시적으로 `ddof=1` 전달. Excel STDEV/JMP 와 값 일치 확인 |
-| `FLAG_LIMIT = 3` (tool:17) | 모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측) | `n < 11` → `INSUFFICIENT N` 표시. 이후 Grubbs/GESD 또는 FDR 보정 (§S3) |
+| ~~`FLAG_LIMIT = 3` (tool:17)~~ | ~~모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측)~~ | **완료 (§S3, 2026-08-06)**. `stats_core.grubbs_critical(n, alpha)` 기반 `flag_result`/`threshold_for` 로 전환, `CDFTOOL_FLAG_MODE=fixed` 로 구모드 재현 가능(byte-identical 검증). 항목별 threshold 를 payload/UI 에 노출 |
 | ~~Pass/Fail σ 정의 불일치~~ | ~~Pass 는 `vector_stats`, Fail 은 `sample_std` — 구현이 별개라 경계 동작이 이미 갈라짐~~ | **완료 (§S1)**. `stats_core.py` 로 단일화, 기존 이름은 얇은 위임 함수로 유지 |
 | `diff_ratio` (tool:76) | ~~분모가 부호 있는 `pre_value` → pre 가 음수면 열화/개선 부호 반전~~ **해결됨 (2026-08-05, 분모 `abs(pre)`로 변경)**. `pre ≈ 0` 폭발 방어는 아직 없음 | 상대 임계 도입 + 절대 shift 병기 (§S4 EPS 임계, 남은 과제) |
-| `safe_ratio`/`sigma`/`mean` | 분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨** | `None` 반환 + UI 에 `N/A` / `NOT EVALUATED` |
+| ~~`safe_ratio`/`sigma`/`mean`~~ | ~~분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨**~~ | **완료 (§S3)**. `sigma_is_negligible`(상대 임계 `sigma <= abs(mean)*1e-12`) 도입, 해당 시 `flag_result` 가 `"NOT EVALUATED"` 반환. n<3 은 `"INSUFFICIENT N"`. Test Data 실측: `BUCK_NOCP_LX_V`/`ICL1_V` 2건이 진짜 all-identical-value NOT EVALUATED 로 정상 포착됨 |
 
 **§1(payload details 축소)과의 연결**: §1(payload details 축소) 효과는 (전체 항목 수 ÷ SELECT
 항목 수)가 상한이다. Test Data 실측: 466 ÷ 295 = 1.58배 (측정 1.5배). SELECT 비율 63%는 3σ 고정
@@ -80,6 +80,47 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 
 > `fast_datalog.py` 에 위 항목들의 수정본이 이미 구현되어 있다. 3단계에서 파서를
 > 교체할 때 함께 반영할 수 있으나, **판정 결과가 바뀌는 항목은 별도 커밋으로 분리**할 것.
+
+---
+
+## 🟠 P1 — 계측 장비 센티널 원시값이 통계에 그대로 섞여 들어간다
+
+`Test Data/SM3502Q/00_MVT0-0_1111_111/01_Post/SM3502Q_RR04_AAA_R017_ROOM_HTOL_1000hrs.CSV`
+row 185(`Serial #`=75, `Bin`=17)의 `BUCK_SS` 원시 셀 문자열은 `3.40E+36` (스펙
+2.1~3.3 mS 대비 압도적으로 큰 값) — 파서가 만든 값이 아니라 **원본 CSV 파일에 그대로
+이렇게 적혀 있음**을 직접 셀 단위로 확인함(§S3 후속, 2026-08-06). 참고로 이전 §S3
+보고서/가설에서는 "float32 최대값(3.4028235e38)일 것"이라 짐작했지만, 실측 문자열은
+`3.40E+36`으로 float32 최댓값보다 정확히 두 자릿수(100배) 작다 — 계측 장비가 float32
+최댓값을 그대로 뱉은 것은 아니고, 다른(아직 특정 못 한) 계측/파싱 단계의 실패 코드일
+가능성이 높다. 같은 파일 전체를 스캔한 결과 `3.40E+36` 류의 비정상 값은 이 셀
+하나뿐(반복되는 고정 센티널 패턴은 아님).
+
+같은 serial(75)에 대해 데이터 행이 4개 중복 존재하고(182~185), 앞의 3개는 `BUCK_SS`
+값이 빈칸이며 마지막 행(185)에만 값이 채워져 있다 — `filter_records_to_last_sample`
+로직상 이 마지막 행이 실제 분석에 쓰이는 값이다. 이런 손상값이 통계에 섞이면 그
+항목의 mean/sigma 전체가 오염된다(§S3 진단: 이 사례는 `post_sigma=0.0742`로 정상
+범위였지만, `fail_type`이 스펙 마진비 체크에 먼저 걸려 "Excessive"로 분류되는 경로라
+우연히 σ 오염이 겉으로 드러나지 않았을 뿐 — 다른 항목/사례에서는 여전히 위험함).
+
+**이번에 고치지 않음** — 센티널 값 판정 기준(예: 물리적으로 불가능한 범위를 어떻게
+정의할지, 또 다른 센티널 값이 있는지)은 Eden 님 확인이 필요해 리스트업만 해둔다.
+
+---
+
+## 🟠 P1 — Grubbs 검정의 masking: 한 항목에 이상치가 여럿이면 서로를 가린다
+
+Grubbs 는 "이상치 1개" 가정의 검정이라, 한 항목에 이상치가 여럿이면 이상치 자신이
+sigma 를 부풀려 서로를 가린다(masking).
+
+실측: 3000 유닛 중 1.5%(45개)를 15~40 sigma 로 심었을 때 sigma 가 3.86배 부풀어,
+fixed(3.0) 와 grubbs(4.299) 가 거의 동일한 결과를 냈다.
+
+방향은 과소검출이다. 열화가 광범위한 항목일수록 덜 걸린다.
+
+대안: GESD(반복 제거형 ESD) 또는 robust sigma(median/MAD 기반). GESD 는 상한 r 을
+정해야 하고 임계값 표가 별도로 필요하다.
+
+**이번 브랜치에서는 고치지 않는다.** 별도 작업으로 판단.
 
 ---
 
@@ -144,6 +185,34 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   이 폴백 경로에는 적용되지 않는다. **아직 고치지 않음** — HTML 문자열 수정은 §S2 에서
   헤더 라벨 한정으로만 허용되어 로직 변경은 범위 밖. 실제로 이 폴백이 얼마나 자주 발동하는지
   확인 후 별도 단계에서 `ddof=1` 로 맞출지 결정 필요.
+- **[발견] `BUCK_SS[fail]` sample 75 는 σ≈0 이 아니라 손상된 원시값이다 (§S3, 2026-08-06)**
+  — §S3 착수 배경이었던 가설("σ≈0 이라 3σ 판정이 무의미해지는 사례")을 검증하려고 직접
+  뜯어봤더니, 이 샘플의 `post_value=3.4e+36`(스펙 2.1~3.3 mS)은 계측/파싱 단계에서 생긴
+  손상값이고 `post_sigma=0.0742`(정상 범위)이라 σ≈0 케이스가 전혀 아니었다. `fail_type`이
+  `"Excessive"`로 정확히 분류되는 것도 스펙 마진비 체크가 Grubbs 체크보다 먼저 걸리기
+  때문. 항목 단위 `"result"`는 fail 모드에서 "스펙 아웃이 한 번이라도 있으면 SELECT"라는
+  무조건 규칙이라 이 항목 자체가 `NOT EVALUATED` 로 바뀌는 일도 없다(설계상 의도된 동작,
+  버그 아님). `sigma_is_negligible`/`NOT EVALUATED` 가드 자체는 정상 작동함 — 다만 이
+  특정 사례에 적용될 사례가 아니었다는 뜻. 손상값 방어(예: 물리적으로 불가능한 범위의
+  원시값을 파싱 단계에서 걸러내는 것)는 §S3 범위 밖의 별개 과제.
+- **[발견] `Perf Data` 는 diff_s 가 항상 30~50 대라 Grubbs 임계 상향(3.0→4.3)으로도 항목별
+  SELECT 총계가 안 줄어든다 (§S3, 2026-08-06)** — mea_s 만 놓고 보면 Grubbs 도입 효과가
+  뚜렷하다(999개 중 mea_s>threshold 인 항목이 999→45로 급감, 의도한 대로 동작). 하지만
+  항목별 `"result"`는 mea_s/diff_s 중 하나라도 SELECT 면 SELECT 인데, `diff_s`는 999개
+  항목 전부 30~50대 값을 가져서(threshold 4.3보다 한 자리 위) 고정 임계(3.0) 때든 Grubbs
+  임계(4.3) 때든 상관없이 전부 SELECT 로 남는다. `tools/make_perf_fixture.py`가 Pre/Post
+  값을 항목별로 **완전히 독립적인** `rng.gauss(0.0, 1.0)`로 생성하기 때문으로 보이며(실제
+  계측 데이터의 pre/post 상관관계를 흉내내지 않음), diff_s 계산 로직 자체는 §S3 에서
+  건드리지 않았고 fixed/grubbs 모드에서 diff_s 값이 동일함을 확인함 — §S3 구현 버그가
+  아니라 벤치마크 전용 합성 데이터(회귀 검증에 안 쓰는 이유가 바로 이거)의 성질. 실제
+  계측 데이터(Test Data)에서는 SELECT 289→223으로 정상적으로 감소함.
+- **[발견] Grubbs 도입으로 `calculate_results_vectorized` 가 2.3배 느려짐 (§S3, 2026-08-06)**
+  — `bench.py --data-root "Perf Data" --repeat 3` 재측정 결과 TOTAL(median) 이 209.5s→
+  241.2s(+15.1%)로 늘었다. payload 크기·행 수는 SELECT 총계가 안 바뀌어 거의 그대로지만,
+  `calculate_results_vectorized` 구간만 27.9s(13.3%)→65.1s(27.0%)로 2.3배 늘었다. 항목마다
+  `grubbs_table` 보간으로 임계값을 계산하는 비용(고정 상수 3.0 비교 대신)이 999개 항목 ×
+  n≈2910 규모에서 누적된 것으로 보임. §S3 요구 범위 밖이라 최적화하지 않았고 그대로 둠 —
+  다음에 이 구간을 만지게 되면(예: `threshold_for` 결과를 n 별로 캐싱) 참고할 것.
 - **§S0 `tools/verdict_diff.py` 의 알려진 제약 3가지** (docstring 에도 있지만 다음 세션에서
   놓치기 쉬워 여기에도 남긴다):
   1. fail 모드 `device_id` 는 항상 `None` — `analyze_fail_to_json()` 이 `app.post_records`
@@ -153,9 +222,13 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   2. fail 모드 item 단위는 "스펙 아웃이 한 번이라도 있던 항목"만 존재한다 — pass 모드의
      `app.post_items`/`payload["results"]` 같은 "전체 항목" 개념이 fail 모드엔 없다
      (`analyze_fail_to_json` 자체가 스펙 통과 항목을 결과에 안 담기 때문).
-  3. SELECT 임계값은 아직 고정 `FLAG_LIMIT=3` 하나뿐이다. §S3 에서 항목별(n별) Grubbs
+  3. ~~SELECT 임계값은 아직 고정 `FLAG_LIMIT=3` 하나뿐이다. §S3 에서 항목별(n별) Grubbs
      임계로 바뀌면, verdict_diff.py 리포트 4번 항목("SELECT 에서 빠진 항목")의 임계값
-     표시를 지금의 단일 숫자에서 항목별 threshold 참조로 넓혀야 한다.
+     표시를 지금의 단일 숫자에서 항목별 threshold 참조로 넓혀야 한다.~~ **예견대로 발생함
+     (§S3, 2026-08-06)**: `docs/verdict_reports/S3.md` 4번 항목이 "현재 임계값=3.0" 이라고
+     찍는데 실제로는 항목별 Grubbs 임계(n=57 → 3.1799)가 쓰였다 — 표시만 stale, 판정 로직
+     자체는 정확함(전이 행렬로 확인). `verdict_diff.py:344` 의 `getattr(web, "FLAG_LIMIT", 3.0)`
+     참조를 항목별 threshold 로 바꾸는 건 여전히 두 파일 편집 범위 밖이라 손대지 않음.
 
 ---
 

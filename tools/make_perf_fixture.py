@@ -38,6 +38,16 @@ TEMP_CODE = "RR01"  # ft_temp_from_code: 'rr'로 시작 -> Room
 LEAD_COLS = ["Site #", "Serial #", "Bin", "XCoord", "YCoord"]
 FAIL_RATE = 0.03
 
+# 실측 페어(Pre/Post 같은 유닛) 상관 구조. 기존에는 Pre/Post 를 완전 독립
+# rng.gauss(0,1) 로 뽑아 diff_ratio=(post-pre)/abs(pre) 의 분모(pre)가 0 근처를
+# 자주 지나며 팻테일(diff_s 30~50대)을 만들었다 — 실측 데이터처럼 항목 평균이
+# 0 에서 멀리 떨어져 있으면 이 문제가 생기지 않는다. §S3 후속(Perf fixture 현실화).
+#
+# 이상치를 "모든 항목"에 심으면 항목 전체가 SELECT 되어(999/999) 정상 항목이 아예
+# 없어진다 — Test Data 실측(SELECT 223/471=47%)과 다른 구조다. --outlier-item-ratio
+# 로 이상치를 심을 항목 자체의 비율을 조절해 나머지 항목은 순수 페어 상관만 있는
+# 정상 항목으로 남긴다. §S3 후속 Task 2 재작업(2026-08-07).
+
 
 def make_item_names(n_items, device_id_index):
     names = [f"ITEM_{i:05d}_V" for i in range(n_items)]
@@ -75,7 +85,46 @@ def build_meta_rows(item_names, test_numbers, lower_limits, upper_limits, units)
     }
 
 
-def generate_table(n_items, n_units, device_id_index, device_ids, rng, is_pre, serial_start):
+def make_item_scales(n_items, device_id_index, rng):
+    """항목별 (평균, 표준편차, 재측정잡음, 드리프트). 평균을 0 에서 멀리 두는 게 핵심 —
+    diff_ratio=(post-pre)/abs(pre) 의 분모가 0 근처를 지나지 않게 해서 팻테일을 막는다.
+    """
+    item_mu = [0.0] * n_items
+    item_sigma = [1.0] * n_items
+    item_noise_sigma = [0.0] * n_items
+    item_drift = [0.0] * n_items
+    for i in range(n_items):
+        if i == device_id_index:
+            continue
+        mu = rng.uniform(2.0, 20.0) * rng.choice((-1, 1))
+        cv = rng.uniform(0.01, 0.03)  # 1~3% 변동계수 (실측 스케일 잡음)
+        sigma = abs(mu) * cv
+        item_mu[i] = mu
+        item_sigma[i] = sigma
+        item_noise_sigma[i] = sigma * 0.05  # Pre/Post 재측정 잡음은 모집단 분산의 5%
+        item_drift[i] = rng.gauss(0.0, sigma * 0.1)  # 항목별 소량의 열화/드리프트
+    return item_mu, item_sigma, item_noise_sigma, item_drift
+
+
+def make_true_values(n_items, device_id_index, device_ids, item_mu, item_sigma, rng):
+    """device_id -> 항목별 '참값'(고장 이전의 실제 유닛 특성치). Pre/Post 는 이 참값에
+    작은 잡음(+Post 는 드리프트)만 더해 만든다 — 실측처럼 같은 유닛을 두 번 잰 값이라
+    서로 강하게 상관된다."""
+    return {
+        device_id: [
+            0.0 if j == device_id_index else rng.gauss(item_mu[j], item_sigma[j])
+            for j in range(n_items)
+        ]
+        for device_id in device_ids
+    }
+
+
+def generate_table(
+    n_items, device_id_index, device_ids, rng, is_pre, serial_start,
+    true_values, item_noise_sigma, item_sigma, item_drift,
+    outlier_items, outlier_unit_ratio,
+):
+    n_units = len(device_ids)
     item_names = make_item_names(n_items, device_id_index)
     test_numbers = [f"{i // 20 + 1}.{i % 20 + 1}" for i in range(n_items)]
     lower_limits = ["-50"] * n_items
@@ -99,11 +148,29 @@ def generate_table(n_items, n_units, device_id_index, device_ids, rng, is_pre, s
     n_fail = 0 if is_pre else max(1, round(n_units * FAIL_RATE))
     fail_serials = set(rng.sample(range(n_units), n_fail)) if n_fail else set()
 
+    # Post 에서만, outlier_items 에 속한 항목에 한해 일부 유닛에 큰 편차(진짜 이상치)를
+    # 주입한다 — 측정 중 고장/글리치를 흉내낸다. Pre 는 건드리지 않아 그 유닛의 diff 도
+    # 함께 크게 튄다. outlier_items 밖의 항목은 이상치 없이 페어 상관만 있는 정상 항목으로
+    # 남는다(§S3 후속 Task 2 재작업).
+    n_outlier = round(n_units * outlier_unit_ratio) if not is_pre else 0
+    outlier_serials = set(rng.sample(range(n_units), n_outlier)) if n_outlier else set()
+
     for i in range(n_units):
         serial = serial_start + i if is_pre else i + 1
         bin_code = 1 if i not in fail_serials else rng.choice((2, 4, 5, 8))
         row = [1, serial, bin_code, "N/A", "N/A"]
-        measured = [round(rng.gauss(0.0, 1.0), 4) for _ in range(n_items)]
+        base = true_values[device_ids[i]]
+        is_outlier_unit = i in outlier_serials
+        outlier_sign = rng.choice((-1, 1))
+        outlier_mag = rng.uniform(15.0, 40.0)
+        measured = []
+        for j in range(n_items):
+            value = base[j] + rng.gauss(0.0, item_noise_sigma[j])
+            if not is_pre:
+                value += item_drift[j]
+                if is_outlier_unit and j in outlier_items:
+                    value += outlier_sign * item_sigma[j] * outlier_mag
+            measured.append(round(value, 4))
         measured[device_id_index] = device_ids[i]
         row.extend(measured)
         rows.append(row)
@@ -123,6 +190,8 @@ def main():
     parser.add_argument("--units", type=int, default=3000, help="Post 유닛(행) 수. Pre 는 이 3배")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=os.path.join(PROJECT_ROOT, "Perf Data"))
+    parser.add_argument("--outlier-item-ratio", type=float, default=0.5, help="이상치를 심을 항목의 비율")
+    parser.add_argument("--outlier-unit-ratio", type=float, default=0.015, help="이상치 항목 안에서 이상치가 될 유닛의 비율")
     args = parser.parse_args()
 
     if args.items < 2:
@@ -141,13 +210,28 @@ def main():
     pre_device_ids = post_device_ids + extra_ids
     rng.shuffle(pre_device_ids)
 
+    item_mu, item_sigma, item_noise_sigma, item_drift = make_item_scales(args.items, device_id_index, rng)
+    # pre_device_ids 가 post_device_ids 를 전부 포함하는 상위집합이라 참값도 이 전체
+    # 집합에 대해 한 번만 만들면 Pre/Post 양쪽에서 같은 유닛은 같은 참값을 공유한다.
+    true_values = make_true_values(args.items, device_id_index, pre_device_ids, item_mu, item_sigma, rng)
+
+    candidate_items = [i for i in range(args.items) if i != device_id_index]
+    n_outlier_items = round(len(candidate_items) * args.outlier_item_ratio)
+    outlier_items = set(rng.sample(candidate_items, n_outlier_items)) if n_outlier_items else set()
+
     post_rows = generate_table(
-        args.items, post_units, device_id_index, post_device_ids, rng,
+        args.items, device_id_index, post_device_ids, rng,
         is_pre=False, serial_start=1,
+        true_values=true_values, item_noise_sigma=item_noise_sigma,
+        item_sigma=item_sigma, item_drift=item_drift,
+        outlier_items=outlier_items, outlier_unit_ratio=args.outlier_unit_ratio,
     )
     pre_rows = generate_table(
-        args.items, pre_units, device_id_index, pre_device_ids, rng,
+        args.items, device_id_index, pre_device_ids, rng,
         is_pre=True, serial_start=100_000,
+        true_values=true_values, item_noise_sigma=item_noise_sigma,
+        item_sigma=item_sigma, item_drift=item_drift,
+        outlier_items=outlier_items, outlier_unit_ratio=args.outlier_unit_ratio,
     )
 
     base = os.path.join(args.out, DEVICE, CONDITION_FOLDER)
@@ -160,6 +244,7 @@ def main():
     print(f"Post: {post_path} ({post_units} units, {args.items} items)")
     print(f"Pre : {pre_path} ({pre_units} units, {args.items} items)")
     print(f"DEVICE_ID 겹침: Post {len(set(post_device_ids))}건 전부 Pre 에 포함")
+    print(f"이상치 항목: {len(outlier_items)}/{len(candidate_items)}건 (ratio={args.outlier_item_ratio}), 항목당 이상치 유닛 비율={args.outlier_unit_ratio}")
 
 
 if __name__ == "__main__":
