@@ -39,8 +39,8 @@ def mean(values):
 
 
 def sample_std(values):
-    # 이름은 sample_std 지만 실제로는 모표준편차(ddof=0)다 — stats_core.std_of() 참고.
-    return std_of(values)
+    # 판정용 sigma: 표본표준편차(ddof=1), Excel STDEV/JMP 와 일치. §S2.
+    return std_of(values, ddof=1)
 
 
 def normal_cdf(z_value):
@@ -477,8 +477,8 @@ class CdfCompareApp(tk.Tk):
             "post_sigma", "mea_s", "diff_mean", "diff_sigma", "diff_s", "result",
         )
         headings = (
-            "Test Number", "Item", "N Pre", "N Post", "Pre Mean", "Pre Sigma", "Post Mean",
-            "Post Sigma", "Mea_S", "Diff Mean", "Diff Sigma", "Diff_S", "Result",
+            "Test Number", "Item", "N Pre", "N Post", "Pre Mean", "Pre Sigma (n-1)", "Post Mean",
+            "Post Sigma (n-1)", "Mea_S", "Diff Mean", "Diff Sigma (n-1)", "Diff_S", "Result",
         )
         widths = (86, 170, 55, 55, 82, 82, 82, 82, 70, 82, 82, 70, 78)
         self.tree = ttk.Treeview(result_frame, columns=columns, show="headings", height=16)
@@ -1067,7 +1067,7 @@ class CdfCompareApp(tk.Tk):
             for item in matched_items + post_only_items + pre_only_items:
                 row1.extend([item] * 6)
                 row2.extend(["Pre", "Pre", "Post", "Post", "Diff.", "Diff."])
-                row3.extend(["Measured", "Sigma", "Measured", "Sigma", "Measured", "Sigma"])
+                row3.extend(["Measured", "Sigma (n-1)", "Measured", "Sigma (n-1)", "Measured", "Sigma (n-1)"])
             writer.writerow(row1)
             writer.writerow(row2)
             writer.writerow(row3)

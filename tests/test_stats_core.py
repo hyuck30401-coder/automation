@@ -50,11 +50,12 @@ def test_std_of():
     check("빈 입력 -> 0.0", sc.std_of([]) == 0.0)
     check("n=1 -> 0.0", sc.std_of([5.0]) == 0.0)
     check("전부 동일값(sigma=0)", sc.std_of([3.0, 3.0, 3.0]) == 0.0)
-    check("n=2, ddof=0 (모표준편차)", close(sc.std_of([1.0, 2.0]), 0.5))
-    check("n=2, ddof=1 (표본표준편차)", close(sc.std_of([1.0, 2.0], ddof=1), math.sqrt(0.5)))
-    check("nan 포함 -> 제외 후 계산", close(sc.std_of([1.0, 2.0, float("nan")]), 0.5))
-    check("inf 포함 -> 제외 후 계산", close(sc.std_of([1.0, 2.0, float("inf")]), 0.5))
-    check("n=1, ddof=1 -> 0.0 (n<=ddof 가드)", sc.std_of([5.0], ddof=1) == 0.0)
+    check("n=2, ddof=0 (모표준편차)", close(sc.std_of([1.0, 2.0], ddof=0), 0.5))
+    check("n=2, ddof=1 (표본표준편차, §S2 기본값)", close(sc.std_of([1.0, 2.0]), math.sqrt(0.5)))
+    check("nan 포함 -> 제외 후 계산 (ddof=0)", close(sc.std_of([1.0, 2.0, float("nan")], ddof=0), 0.5))
+    check("inf 포함 -> 제외 후 계산 (ddof=1)", close(sc.std_of([1.0, 2.0, float("inf")]), math.sqrt(0.5)))
+    check("n=1, ddof=1(기본값) -> 0.0 (n<=ddof 가드)", sc.std_of([5.0]) == 0.0)
+    check("n=1, ddof=0 -> 0.0 (값 하나는 편차 0)", sc.std_of([5.0], ddof=0) == 0.0)
 
 
 def test_zscore():

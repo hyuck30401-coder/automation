@@ -1980,8 +1980,8 @@ function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
   drawGraphNotice(canvas, "Binary unit item is excluded from graph display.", minWidth, minHeight);
 }
 const passColumns = [
-  ["test_number", "Test No."], ["item", "Item"], ["reason", "Reason"], ["n", "N (σ 모수)"], ["unit", "Unit"], ["lower_limit", "LL"],
-  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev."], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
+  ["test_number", "Test No."], ["item", "Item"], ["reason", "Reason"], ["n", "N (σ n-1)"], ["unit", "Unit"], ["lower_limit", "LL"],
+  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev. (n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
   ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["severity", "Max |σ|"], ["qty", "Q'ty"], ["qty_ratio", "%"],
   ["sample_numbers", "Sample No."]
 ];
@@ -5029,7 +5029,8 @@ def match_summary_for_files(pre_records_raw, post_records_raw):
 
 
 def vector_stats(values):
-    return mean_of(values), std_of(values)
+    # 판정용 sigma: 표본표준편차(ddof=1). §S2.
+    return mean_of(values), std_of(values, ddof=1)
 
 
 def vector_sigmas(values, center, spread):
@@ -6014,9 +6015,9 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             pass_pairs.append((sample, pass_record, pre_value))
         pass_detail_diffs, pass_diff_values = paired_diffs_for_details(pass_pre_values, pass_post_values)
         post_mean = mean_of(pass_post_values)
-        post_sigma = std_of(pass_post_values)
+        post_sigma = std_of(pass_post_values, ddof=1)  # 판정용 sigma. §S2.
         diff_mean = mean_of(pass_diff_values)
-        diff_sigma = std_of(pass_diff_values)
+        diff_sigma = std_of(pass_diff_values, ddof=1)  # 판정용 sigma. §S2.
         pass_mea_s_values = vector_sigmas(pass_post_values, post_mean, post_sigma)
         pass_diff_s_values = vector_sigmas(pass_detail_diffs, diff_mean, diff_sigma)
         mea_s_values = vector_sigmas(post_values, post_mean, post_sigma)

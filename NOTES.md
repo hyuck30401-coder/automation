@@ -52,9 +52,9 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
 
 | 항목 | 문제 | 조치 방향 |
 |---|---|---|
-| `sample_std` (tool:43) | 이름은 sample std 인데 실제로는 **모표준편차** (`np.std()` ddof=0 / `statistics.pstdev`) | `ddof` 파라미터화. Excel STDEV·JMP 와 √(n/(n−1)) 배 차이라 재현 불가 |
-| `FLAG_LIMIT = 3` (tool:17) | 모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측) | `n < 11` → `INSUFFICIENT N` 표시. 이후 Grubbs/GESD 또는 FDR 보정 |
-| Pass/Fail σ 정의 불일치 | Pass 는 `vector_stats`, Fail 은 `sample_std` — 구현이 별개라 경계 동작이 이미 갈라짐 | `stats_core.py` 로 단일화 |
+| ~~`sample_std` (tool:43)~~ | ~~이름은 sample std 인데 실제로는 **모표준편차** (`np.std()` ddof=0 / `statistics.pstdev`)~~ | **완료 (§S2, 2026-08-06)**. `stats_core.std_of(ddof=1)` 로 전환, 판정용 호출부는 모두 명시적으로 `ddof=1` 전달. Excel STDEV/JMP 와 값 일치 확인 |
+| `FLAG_LIMIT = 3` (tool:17) | 모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측) | `n < 11` → `INSUFFICIENT N` 표시. 이후 Grubbs/GESD 또는 FDR 보정 (§S3) |
+| ~~Pass/Fail σ 정의 불일치~~ | ~~Pass 는 `vector_stats`, Fail 은 `sample_std` — 구현이 별개라 경계 동작이 이미 갈라짐~~ | **완료 (§S1)**. `stats_core.py` 로 단일화, 기존 이름은 얇은 위임 함수로 유지 |
 | `diff_ratio` (tool:76) | ~~분모가 부호 있는 `pre_value` → pre 가 음수면 열화/개선 부호 반전~~ **해결됨 (2026-08-05, 분모 `abs(pre)`로 변경)**. `pre ≈ 0` 폭발 방어는 아직 없음 | 상대 임계 도입 + 절대 shift 병기 (§S4 EPS 임계, 남은 과제) |
 | `safe_ratio`/`sigma`/`mean` | 분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨** | `None` 반환 + UI 에 `N/A` / `NOT EVALUATED` |
 
@@ -133,6 +133,17 @@ is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequenc
   항목에서 그래프 부호가 Detail 테이블과 반대가 된다.
 - **§S4 diff 부호 = 값 이동 방향 (내려가면 -, 올라가면 +)** — 열화/개선 판단은 툴이 하지
   않고 엔지니어가 LL/UL 을 보고 한다. 2026-08-05 결정.
+- **[미해결 발견] `readoutDetailSeriesFallback()` 의 ddof=0 프론트 재계산 (§S2 조사 중 발견)**
+  — `cdf_compare_web.py` HTML 문자열 내 `readoutDetailSeriesFallback()`(약 3661~3684행)이
+  "stale cache" 상황(`series.stats` 가 없을 때, 콘솔에 `has no backend points (stale cache)`
+  경고)에서 `mea_s`/`diff_s` 를 클라이언트에서 직접 재계산하는데, 이때 쓰는 `sigmaValue()` →
+  `populationStd()`(약 3624~3628행)가 **ddof=0 로 하드코딩**되어 있다. §S2 로 백엔드 판정이
+  ddof=1 로 바뀐 뒤에도 이 JS 폴백 경로는 그대로라, stale cache 가 발생하는 드문 경우에 한해
+  브라우저가 보여주는 z-score 가 백엔드 판정과 어긋날 수 있다. 위 `§V5` 항목의 "mea_s/diff_s
+  는 백엔드가 계산한 값을 읽기만 한다"는 설명은 `series.stats` 가 있는 정상 경로에는 맞지만
+  이 폴백 경로에는 적용되지 않는다. **아직 고치지 않음** — HTML 문자열 수정은 §S2 에서
+  헤더 라벨 한정으로만 허용되어 로직 변경은 범위 밖. 실제로 이 폴백이 얼마나 자주 발동하는지
+  확인 후 별도 단계에서 `ddof=1` 로 맞출지 결정 필요.
 - **§S0 `tools/verdict_diff.py` 의 알려진 제약 3가지** (docstring 에도 있지만 다음 세션에서
   놓치기 쉬워 여기에도 남긴다):
   1. fail 모드 `device_id` 는 항상 `None` — `analyze_fail_to_json()` 이 `app.post_records`

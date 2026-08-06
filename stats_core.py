@@ -52,15 +52,18 @@ def mean_of(values):
     return sum(data) / len(data)
 
 
-def std_of(values, ddof=0):
+def std_of(values, ddof=1):
     """유한값의 표준편차.
 
-    - ddof=0(기본값): 모표준편차 — cdf_compare_web.vector_stats /
-      cdf_compare_tool.sample_std 의 기존 동작(둘 다 np.std() 기본 ddof=0)과 동일하다.
-      §S2 에서 이 기본값을 ddof=1 로 바꿀 계획이다.
-    - 빈 입력, 또는 n <= ddof (예: ddof=0 일 때 n=0): 0.0 을 반환한다. n=1,ddof=0 은
-      이 가드에 걸리지 않고 정상적으로 계산되지만, 값 하나짜리 표본편차는 수학적으로도
-      0.0 이라 결과는 같다 — 별도 특수 케이스가 필요 없다.
+    - ddof=1(기본값, §S2): 표본표준편차 — Excel STDEV/JMP/Minitab 과 값이 일치한다.
+      신뢰성 시험 데이터는 모집단 전수가 아니라 표본이라는 게 §S2 의 근거다. §S1 까지는
+      ddof=0(모표준편차, cdf_compare_web.vector_stats / cdf_compare_tool.sample_std 의
+      과거 동작)이 기본값이었다 — 판정용 호출부는 모두 명시적으로 ddof=1 을 넘기므로
+      이 기본값 자체에 의존하지 않는다(호출부에서 의도가 보이도록 하는 것이 목적).
+    - 빈 입력, 또는 n <= ddof (예: ddof=1 일 때 n<=1, ddof=0 일 때 n=0): 0.0 을 반환한다.
+      n=1,ddof=0 은 이 가드에 걸리지 않고 정상적으로 계산되지만, 값 하나짜리 모표준편차는
+      수학적으로도 0.0 이라 결과는 같다 — 별도 특수 케이스가 필요 없다. n=1,ddof=1 은
+      표본표준편차가 정의되지 않는 경우라 0.0 으로 가드한다(0 나눗셈 방지).
     - None/nan/inf 는 계산에서 제외한다.
     - numpy 유무와 무관하게 같은 값을 반환한다.
     """
