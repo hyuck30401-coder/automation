@@ -25,13 +25,12 @@ except ImportError:
 from cdf_compare_tool import (
     APP_TITLE,
     CdfCompareApp,
-    FLAG_LIMIT,
     extract_item_records,
     filter_records_to_last_sample,
     fmt,
     read_table,
 )
-from stats_core import diff_ratio, mean_of, std_of, zscore
+from stats_core import _UNSET, FLAG_ALPHA, FLAG_LIMIT, FLAG_MODE, diff_ratio, flag_result, mean_of, std_of, threshold_for, zscore
 
 
 HOST = "127.0.0.1"
@@ -3497,10 +3496,11 @@ function detailResultLabel(row) {
 }
 function detailSpecOutType(row) {
   if (row.fail_type) return row.fail_type;
-  const limit = flagLimit();
-  if (Math.abs(Number(row.mea_s)) > limit && Math.abs(Number(row.diff_s)) > limit) return "Measured + Delta";
-  if (Math.abs(Number(row.mea_s)) > limit) return "Measured";
-  if (Math.abs(Number(row.diff_s)) > limit) return "Delta";
+  const meaLimit = flagLimit("mea_s");
+  const diffLimit = flagLimit("diff_s");
+  if (Math.abs(Number(row.mea_s)) > meaLimit && Math.abs(Number(row.diff_s)) > diffLimit) return "Measured + Delta";
+  if (Math.abs(Number(row.mea_s)) > meaLimit) return "Measured";
+  if (Math.abs(Number(row.diff_s)) > diffLimit) return "Delta";
   return "";
 }
 function detailReadoutValue(row, key) {
@@ -3575,7 +3575,7 @@ function renderDetailTable() {
         }
       }
       if (key === "mea_s" || key === "diff_s") {
-        if (Math.abs(Number(d[key])) > flagLimit()) {
+        if (Math.abs(Number(d[key])) > flagLimit(key)) {
           td.classList.add("sigma-fail");
         }
       }
@@ -4293,7 +4293,7 @@ function drawDiffCdfChart() {
   ctx.textAlign = "center";
   [min, (min + max) / 2, max].forEach(value => ctx.fillText(fmt(value), x(value), h - mb + 18));
   if (Number.isFinite(sigma) && sigma > 0) {
-    const limit = flagLimit();
+    const limit = flagLimit("mea_s");
     [avg - limit * sigma, avg + limit * sigma].forEach((value, index) => {
       ctx.save();
       ctx.strokeStyle = getCss("--red");
@@ -4407,9 +4407,10 @@ function drawScatterPlot() {
   const y = value => bottom - (value - minY) / (maxY - minY) * (bottom - top);
   const xTicks = uniqueTicks([minX, -9, -6, -3, 0, 3, 6, 9, maxX]);
   const yTicks = uniqueTicks([minY, -9, -6, -3, 0, 3, 6, 9, maxY]);
-  const scatterLimit = flagLimit();
+  const diffLimit = flagLimit("diff_s");
+  const meaLimit = flagLimit("mea_s");
   ctx.fillStyle = "rgba(31, 119, 180, 0.20)";
-  ctx.fillRect(x(-scatterLimit), y(scatterLimit), x(scatterLimit) - x(-scatterLimit), y(-scatterLimit) - y(scatterLimit));
+  ctx.fillRect(x(-diffLimit), y(meaLimit), x(diffLimit) - x(-diffLimit), y(-meaLimit) - y(meaLimit));
   ctx.font = "10px Segoe UI";
   ctx.textAlign = "center";
   xTicks.forEach(value => {
@@ -4432,7 +4433,7 @@ function drawScatterPlot() {
   rows.forEach(row => {
     const px = x(Number(row.diff_s));
     const py = y(Number(row.mea_s));
-    const fail = Math.abs(Number(row.diff_s)) > scatterLimit || Math.abs(Number(row.mea_s)) > scatterLimit;
+    const fail = Math.abs(Number(row.diff_s)) > diffLimit || Math.abs(Number(row.mea_s)) > meaLimit;
     ctx.fillStyle = row.overlay_fail ? "#ff4d4f" : hasReadoutSeries ? row.color : fail ? getCss("--red") : getCss("--blue");
     ctx.beginPath(); ctx.arc(px, py, 4.2, 0, Math.PI * 2); ctx.fill();
     if (hasReadoutSeries && fail) {
@@ -4510,11 +4511,18 @@ function failDirectionCdf(row) {
   if (Number.isFinite(upper) && Number.isFinite(post) && post > upper) return 1;
   return 0.5;
 }
-function flagLimit() {
+function flagLimit(key) {
+  // 항목마다 n 이 달라 Grubbs 임계값도 다르다 — 현재 선택된 item 의 payload 에 실린
+  // mea_threshold/diff_threshold(§S3) 를 우선 쓰고, 없으면(구 데이터/전역 표시용) 서버가
+  // 내려준 flag_limit(고정 모드 값)으로 대체한다.
+  const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
+  const perItem = key === "diff_s" ? data.diff_threshold : data.mea_threshold;
+  const value = Number(perItem);
+  if (Number.isFinite(value)) return value;
   return Number(analysis?.flag_limit ?? 3);
 }
 function sigmaOver3(row, key) {
-  return Math.abs(Number(row?.[key])) > flagLimit();
+  return Math.abs(Number(row?.[key])) > flagLimit(key);
 }
 function drawFailDirectionMarkers(ctx, rows, valueKey, x, y) {
   ctx.save();
@@ -4551,8 +4559,8 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
       const label = series.label || series.key;
       const px = x(postValue);
       const py = y(cdf);
-      const showMeasurement = forceSampleHighlight || (point ? Math.abs(Number(point.mea_s)) > flagLimit() : sigmaOver3(d, "mea_s"));
-      const showShift = forceSampleHighlight || (point ? Math.abs(Number(point.diff_s)) > flagLimit() : sigmaOver3(d, "diff_s"));
+      const showMeasurement = forceSampleHighlight || (point ? Math.abs(Number(point.mea_s)) > flagLimit("mea_s") : sigmaOver3(d, "mea_s"));
+      const showShift = forceSampleHighlight || (point ? Math.abs(Number(point.diff_s)) > flagLimit("diff_s") : sigmaOver3(d, "diff_s"));
       if (showMeasurement) {
         drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`);
       }
@@ -5106,12 +5114,22 @@ def item_analysis(app, item):
     pre_mea_s_values = vector_sigmas(paired_pre_values, pre_mean, pre_sigma)
     mea_s_max = max_abs_finite(mea_s_values)
     diff_s_max = max_abs_finite(diff_s_values)
+    n_post = len(post_values)
+    n_diff = len(diff_values)
+    # 판정 임계: mea_s 는 post 표본(n_post), diff_s 는 유효 diff 쌍(n_diff) 기준 — 표본이
+    # 다를 수 있어 각자의 n 으로 독립 평가한다 (§S3).
+    mea_threshold = threshold_for(n_post)
+    diff_threshold = threshold_for(n_diff)
     result = "NO PRE ITEM"
     include_pre = app.__dict__.get("include_pre", True)
     if not include_pre:
-        result = "SELECT" if mea_s_max > FLAG_LIMIT else "OK"
+        result = flag_result(mea_s_max, None, n_post, sigma=post_sigma, mean=post_mean, mea_threshold=mea_threshold)
     elif pre_values:
-        result = "SELECT" if mea_s_max > FLAG_LIMIT or diff_s_max > FLAG_LIMIT else "OK"
+        result = flag_result(
+            mea_s_max, diff_s_max, n_post, sigma=post_sigma, mean=post_mean,
+            diff_n=n_diff, diff_sigma=diff_sigma, diff_mean=diff_mean,
+            mea_threshold=mea_threshold, diff_threshold=diff_threshold,
+        )
     metadata = item_metadata(app, item)
     details = []
     for index, post_record in enumerate(post_records):
@@ -5121,10 +5139,11 @@ def item_analysis(app, item):
         diff = diff_detail_values[index] if index < len(diff_detail_values) else None
         diff_s = diff_s_values[index] if index < len(diff_s_values) else None
         pre_mea_s = pre_mea_s_values[index] if index < len(pre_mea_s_values) else None
-        flagged = (mea_s is not None and math.isfinite(mea_s) and abs(mea_s) > FLAG_LIMIT) or (
-            diff_s is not None and math.isfinite(diff_s) and abs(diff_s) > FLAG_LIMIT
+        detail_result = flag_result(
+            mea_s, diff_s, n_post, sigma=post_sigma, mean=post_mean,
+            diff_n=n_diff, diff_sigma=diff_sigma, diff_mean=diff_mean,
+            mea_threshold=mea_threshold, diff_threshold=diff_threshold,
         )
-        detail_result = "SELECT" if flagged else "OK"
         if include_pre and pre_value is None:
             detail_result = "NO PRE SAMPLE"
         details.append(
@@ -5147,14 +5166,17 @@ def item_analysis(app, item):
             "item": item,
             "n_pre": len(pre_values),
             "n_post": len(post_values),
+            "n_diff": n_diff if pre_values else None,
             "pre_mean": pre_mean if pre_values else None,
             "pre_sigma": pre_sigma if pre_values else None,
             "post_mean": post_mean,
             "post_sigma": post_sigma,
             "mea_s": mea_s_max,
+            "mea_threshold": mea_threshold,
             "diff_mean": diff_mean if pre_values else None,
             "diff_sigma": diff_sigma if pre_values else None,
             "diff_s": diff_s_max if pre_values else None,
+            "diff_threshold": diff_threshold if pre_values else None,
             "result": result,
         },
         "details": details,
@@ -5816,7 +5838,11 @@ def item_history_for_sample(state, item):
     return history
 
 
-def fail_type_for_detail(initial_record, history, value, lower_limit, upper_limit, mea_s, diff_s):
+def fail_type_for_detail(
+    initial_record, history, value, lower_limit, upper_limit, mea_s, diff_s,
+    n, sigma, mean, diff_n=None, diff_sigma=None, diff_mean=None,
+    mea_threshold=_UNSET, diff_threshold=_UNSET,
+):
     initial_failed = initial_record is not None and spec_status(
         initial_record.get("value"), initial_record.get("lower_limit"), initial_record.get("upper_limit")
     ) in ("low", "high")
@@ -5828,11 +5854,16 @@ def fail_type_for_detail(initial_record, history, value, lower_limit, upper_limi
                 return "Intermittent"
     if spec_margin_ratio(value, lower_limit, upper_limit) >= 0.01:
         return "Excessive"
-    if (
-        mea_s is not None and diff_s is not None
-        and math.isfinite(mea_s) and math.isfinite(diff_s)
-        and abs(mea_s) > FLAG_LIMIT and abs(diff_s) > FLAG_LIMIT
-    ):
+    # mea/diff 를 독립적으로 flag_result 로 평가 — pass 모집단(n, sigma, mean)의 Grubbs 임계값
+    # 기준. §S3. mea_threshold/diff_threshold 를 넘기면(호출부가 루프 밖에서 한 번만 계산해둔
+    # 값) grubbs_critical 재계산을 건너뛴다 — §S3 후속(성능).
+    mea_status = flag_result(mea_s, None, n, sigma=sigma, mean=mean, mea_threshold=mea_threshold)
+    diff_status = (
+        flag_result(None, diff_s, n, sigma=sigma, mean=mean, diff_n=diff_n, diff_sigma=diff_sigma, diff_mean=diff_mean,
+                    diff_threshold=diff_threshold)
+        if diff_n is not None else None
+    )
+    if mea_status == "SELECT" and diff_status == "SELECT":
         return "Slight"
     return "Tail"
 
@@ -5852,16 +5883,30 @@ def selected_summary_rows(app):
             if detail.get("result") == "SELECT"
         ]
         n_post = row.get("n_post")
+        n_diff = row.get("n_diff")
         pre_mean = row.get("pre_mean")
         pre_sigma = row.get("pre_sigma")
         post_mean = row.get("post_mean")
         post_sigma = row.get("post_sigma")
+        diff_mean = row.get("diff_mean")
+        diff_sigma = row.get("diff_sigma")
         shift = (post_mean - pre_mean) if (post_mean is not None and pre_mean is not None) else None
         shift_sigma = (shift / pre_sigma) if (shift is not None and pre_sigma not in (None, 0)) else None
         max_mea_s = row.get("mea_s")
         max_diff_s = row.get("diff_s")
-        mea_s_flag = max_mea_s is not None and math.isfinite(max_mea_s) and abs(max_mea_s) > FLAG_LIMIT
-        diff_s_flag = max_diff_s is not None and math.isfinite(max_diff_s) and abs(max_diff_s) > FLAG_LIMIT
+        # 항목별 임계값(threshold_for)이 branch 마다 다를 수 있어, reason 은 mea/diff 를
+        # flag_result 로 각각 독립 평가해 얻는다 — NOT EVALUATED/INSUFFICIENT N 인 branch 는
+        # SELECT 사유에서 제외된다 (§S3).
+        mea_status = flag_result(max_mea_s, None, n_post, sigma=post_sigma, mean=post_mean,
+                                  mea_threshold=row.get("mea_threshold"))
+        diff_status = (
+            flag_result(None, max_diff_s, n_post, sigma=post_sigma, mean=post_mean,
+                        diff_n=n_diff, diff_sigma=diff_sigma, diff_mean=diff_mean,
+                        diff_threshold=row.get("diff_threshold"))
+            if n_diff is not None else None
+        )
+        mea_s_flag = mea_status == "SELECT"
+        diff_s_flag = diff_status == "SELECT"
         if mea_s_flag and diff_s_flag:
             reason = "Measured + Delta"
         elif mea_s_flag:
@@ -5893,6 +5938,8 @@ def selected_summary_rows(app):
                 "max": max(post_values) if post_values else None,
                 "max_mea_s": max_mea_s,
                 "max_diff_s": max_diff_s,
+                "mea_threshold": row.get("mea_threshold"),
+                "diff_threshold": row.get("diff_threshold"),
                 "severity": severity,
                 "reason": reason,
                 "qty": len(samples),
@@ -5920,7 +5967,9 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "selected_summary": selected_summary,
         "over_sigma": over_rows,
         "select_count": CdfCompareApp.count_flags(app),
-        "flag_limit": FLAG_LIMIT,
+        "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
+        "flag_mode": FLAG_MODE,
+        "flag_alpha": FLAG_ALPHA,
     }
     if include_pre:
         match_summary = match_summary_for_files(
@@ -6046,6 +6095,12 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                     "result": "OK",
                 }
             )
+        # n_pass/diff 쌍 개수는 이 항목 안에서 고정이라 임계값을 루프 밖에서 한 번만 계산해
+        # 재사용한다(§S3 후속 성능) — fail_type_for_detail 을 표본마다 부르며 매번 다시
+        # grubbs_critical 을 계산하지 않도록.
+        n_pass = len(pass_post_values)
+        mea_threshold = threshold_for(n_pass) if n_pass else None
+        diff_threshold = threshold_for(len(pass_diff_values)) if pass_diff_values else None
         for index, (sample, record) in enumerate(post_records):
             value = post_values[index]
             pre_value = post_pre_values[index]
@@ -6068,13 +6123,17 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                     "mea_s": mea_s,
                     "diff": diff,
                     "diff_s": diff_s,
-                    "fail_type": fail_type_for_detail(initial_record, history, value, lower, upper, mea_s, diff_s),
+                    "fail_type": fail_type_for_detail(
+                        initial_record, history, value, lower, upper, mea_s, diff_s,
+                        n_pass, post_sigma, post_mean,
+                        diff_n=len(pass_diff_values), diff_sigma=diff_sigma, diff_mean=diff_mean,
+                        mea_threshold=mea_threshold, diff_threshold=diff_threshold,
+                    ),
                     "result": "SELECT",
                 }
             )
         sample_numbers = sorted((detail["sample"] for detail in details), key=natural_key)
         test_number = cell_text_from_records([record for _, record in post_records], "test_number")
-        n_pass = len(pass_post_values)
         summary_rows.append(
             {
                 "test_number": test_number,
@@ -6088,6 +6147,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                 "shift": None,
                 "shift_sigma": None,
                 "diff_mean": diff_mean if pass_diff_values else None,
+                "mea_threshold": mea_threshold,
+                "diff_threshold": diff_threshold,
                 "min": min(pass_post_values) if n_pass else None,
                 "max": max(pass_post_values) if n_pass else None,
                 "qty": len(details),
@@ -6102,6 +6163,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             "post_values": [to_jsonable(value) for value in post_values],
             "pass_post_values": [to_jsonable(value) for value in pass_post_values],
             "pass_diff_values": [to_jsonable(value) for value in pass_diff_values],
+            "mea_threshold": to_jsonable(mea_threshold),
+            "diff_threshold": to_jsonable(diff_threshold),
             "lower_limit": to_jsonable(metadata["lower_limit"]),
             "upper_limit": to_jsonable(metadata["upper_limit"]),
             "details": [{key: to_jsonable(value) for key, value in row.items()} for row in details],
@@ -6120,7 +6183,9 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
         "message": message,
-        "flag_limit": FLAG_LIMIT,
+        "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
+        "flag_mode": FLAG_MODE,
+        "flag_alpha": FLAG_ALPHA,
     }
     if match_summary:
         payload["match_summary"] = match_summary
@@ -6178,6 +6243,8 @@ def item_to_json(app, item):
         "lower_limit": to_jsonable(lower),
         "upper_limit": to_jsonable(upper),
         "details": [{k: to_jsonable(v) for k, v in row.items()} for row in details],
+        "mea_threshold": to_jsonable(analysis_entry["result_row"].get("mea_threshold")),
+        "diff_threshold": to_jsonable(analysis_entry["result_row"].get("diff_threshold")),
     }
 
 

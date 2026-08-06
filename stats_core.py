@@ -14,11 +14,28 @@ numpy 유무에 따라 반환값이 달라지지 않도록 두 경로 모두 같
 (None/nan/inf 는 계산에서 제외)과 같은 나눗셈 규칙(0 나눗셈 방지)을 쓴다.
 """
 import math
+import os
 
 try:
     import numpy as np
 except ImportError:
     np = None
+
+from grubbs_table import grubbs_critical
+
+FLAG_LIMIT = 3.0  # 고정 임계(mode="fixed") — §S2 이전까지 유일했던 값, 회귀 비교용으로 남겨둔다.
+
+_VALID_FLAG_MODES = ("fixed", "grubbs")
+FLAG_MODE = os.environ.get("CDFTOOL_FLAG_MODE", "grubbs")
+if FLAG_MODE not in _VALID_FLAG_MODES:
+    FLAG_MODE = "grubbs"
+
+try:
+    FLAG_ALPHA = float(os.environ.get("CDFTOOL_FLAG_ALPHA", "0.05"))
+except (TypeError, ValueError):
+    FLAG_ALPHA = 0.05
+
+_UNSET = object()  # flag_result(mea_threshold=...) 미지정과 None(INSUFFICIENT N) 을 구분하는 센티널
 
 
 def _clean_finite(values):
@@ -147,12 +164,105 @@ def diff_ratio(pre_value, post_value):
     return (post_value - pre_value) / abs(pre_value)
 
 
-def flag_result(mea_s, diff_s, limit=3.0):
-    """mea_s 또는 diff_s 의 절댓값이 limit 을 초과하면 True(SELECT 감), 아니면 False(OK).
+def sigma_is_negligible(sigma, mean):
+    """상대 기준으로 sigma≈0(사실상 전 표본이 동일값)인지 판정한다. §S3.
 
-    None/nan/inf 인 입력은 그 항목만 플래그에 기여하지 않는다(전체가 False 가 되는 게
-    아니라 나머지 하나로 판단한다). 둘 다 None/비유한이면 False.
+    절대 0 비교 대신 mean 스케일 대비 상대오차로 판정한다 — 부동소수점 연산 잔차(예:
+    1e-38 대의 잔여 오차)가 "sigma==0 아님"으로 통과해버리면 z=(value-mean)/residual 이
+    발산해 사실상 판정 불가인 항목이 "확실한 이상(SELECT)"으로 잘못 표시된다.
+    기준: sigma <= abs(mean) * 1e-12. mean 이 0(또는 0 에 가까워 상대 기준이 무의미)이면
+    sigma <= 1e-300 (사실상 0)이라는 절대 하한을 대신 쓴다.
+
+    sigma 가 None 이면(호출부가 이 통계축을 아직 계산하지 않았거나 해당 없음) 판정하지
+    않고 False 를 반환한다 — "모르면 정상"이 아니라 "모르면 이 검사를 건너뛴다"는 뜻이며,
+    호출부가 반드시 실제 sigma 를 넘겨야 이 가드가 의미를 갖는다.
     """
-    mea_flag = mea_s is not None and math.isfinite(mea_s) and abs(mea_s) > limit
-    diff_flag = diff_s is not None and math.isfinite(diff_s) and abs(diff_s) > limit
-    return mea_flag or diff_flag
+    if sigma is None:
+        return False
+    if not math.isfinite(sigma):
+        return True
+    if mean is None or not math.isfinite(mean) or mean == 0:
+        return sigma <= 1e-300
+    return sigma <= abs(mean) * 1e-12
+
+
+_STATUS_PRIORITY = {"SELECT": 3, "NOT EVALUATED": 2, "INSUFFICIENT N": 1, "OK": 0}
+
+
+def _branch_status(z, n, sigma, mean, alpha, fixed_limit, mode, threshold=_UNSET):
+    """z-score 하나(mea_s 또는 diff_s)에 대한 판정. z 가 None 이면 None(해당 통계 없음).
+
+    threshold 를 넘기면(호출부가 같은 n 에 대해 이미 threshold_for() 로 계산해둔 값)
+    grubbs_critical() 재호출을 건너뛴다 — 항목당 한 번이면 되는 계산을 표본 수만큼
+    반복하지 않기 위한 최적화(§S3 후속). 안 넘기면(_UNSET) 기존처럼 여기서 계산한다.
+    """
+    if z is None:
+        return None
+    if mode == "fixed":
+        return "SELECT" if (math.isfinite(z) and abs(z) > fixed_limit) else "OK"
+    if sigma_is_negligible(sigma, mean):
+        return "NOT EVALUATED"
+    if threshold is _UNSET:
+        threshold = grubbs_critical(n, alpha)
+    if threshold is None:
+        return "INSUFFICIENT N"
+    return "SELECT" if (math.isfinite(z) and abs(z) > threshold) else "OK"
+
+
+def flag_result(
+    mea_s, diff_s, n, sigma=None, mean=None,
+    diff_n=None, diff_sigma=None, diff_mean=None,
+    alpha=None, ddof=1, mode=None, fixed_limit=FLAG_LIMIT,
+    mea_threshold=_UNSET, diff_threshold=_UNSET,
+):
+    """mea_s/diff_s 로부터 "SELECT"/"OK"/"INSUFFICIENT N"/"NOT EVALUATED" 를 반환한다. §S3.
+
+    mea_s 는 n(=post 표본 크기)/sigma/mean 분포에서, diff_s 는 diff_n(=유효 diff 쌍
+    개수)/diff_sigma/diff_mean 분포에서 나온 z 라 서로 다른 표본일 수 있다 — 각각 독립
+    평가한 뒤 결합한다. diff_* 를 안 넘기면 mea_s 와 같은 n/sigma/mean 을 공유한다고
+    본다(같은 표본에서 나온 두 값을 함께 판정하는 호출부용 단축 경로).
+
+    - mode == "fixed": 기존 |z| > fixed_limit 동작 그대로(§S2 이전과 완전히 동일해야
+      회귀 비교의 기준으로 쓸 수 있다) — n/sigma/mean 의 영향을 전혀 받지 않는다.
+    - mode == "grubbs"(기본값, CDFTOOL_FLAG_MODE 로 전역 설정 가능): 임계값을
+      grubbs_critical(n, alpha) 로 계산한다. n<3 이거나 표에서 계산 불가하면
+      "INSUFFICIENT N". sigma_is_negligible() 이 True 면 "NOT EVALUATED"
+      (그 표본은 사실상 전부 같은 값이라 z 자체가 정의상 무의미 — Grubbs 임계와 무관).
+    - 두 축의 상태가 다르면 "SELECT" > "NOT EVALUATED" > "INSUFFICIENT N" > "OK" 순으로
+      더 심각한/더 정보성 있는 쪽을 최종 결과로 삼는다. 둘 다 None(mea_s/diff_s 모두
+      없음)이면 "OK".
+
+    mea_threshold/diff_threshold: 호출부가 같은 n 에 대해 이미 threshold_for(n) 를
+    계산해뒀다면(예: 한 항목의 표본 수천 개를 순회하며 매 샘플 flag_result 를 부르는
+    루프) 여기로 넘겨서 grubbs_critical 재계산을 건너뛴다. 안 넘기면(기본값) 예전처럼
+    이 함수 안에서 계산한다 — 동작은 동일하고 속도만 다르다. §S3 후속(성능) 최적화.
+    """
+    mode = mode or FLAG_MODE
+    if mode not in _VALID_FLAG_MODES:
+        raise ValueError(f"알 수 없는 flag mode: {mode!r}")
+    if mode == "grubbs" and ddof != 1:
+        raise ValueError("grubbs 모드는 ddof=1(표본표준편차) 을 전제로 한다 — grubbs_table.py 의 임계값이 그 기준으로 계산됨")
+    alpha = FLAG_ALPHA if alpha is None else alpha
+    diff_n = n if diff_n is None else diff_n
+    diff_sigma = sigma if diff_sigma is None else diff_sigma
+    diff_mean = mean if diff_mean is None else diff_mean
+
+    mea_status = _branch_status(mea_s, n, sigma, mean, alpha, fixed_limit, mode, threshold=mea_threshold)
+    diff_status = _branch_status(diff_s, diff_n, diff_sigma, diff_mean, alpha, fixed_limit, mode, threshold=diff_threshold)
+    statuses = [status for status in (mea_status, diff_status) if status is not None]
+    if not statuses:
+        return "OK"
+    return max(statuses, key=lambda status: _STATUS_PRIORITY[status])
+
+
+def threshold_for(n, mode=None, alpha=None, fixed_limit=FLAG_LIMIT):
+    """이 n 에서 실제로 쓰인 임계값(숫자). UI 에 "왜 이게 SELECT 인가" 표시용. §S3.
+
+    mode="fixed" 면 n 과 무관하게 fixed_limit. mode="grubbs" 면 grubbs_critical(n, alpha)
+    — n<3 등으로 정의 불가하면 None (호출부가 INSUFFICIENT N 표시에 씀).
+    """
+    mode = mode or FLAG_MODE
+    if mode == "fixed":
+        return fixed_limit
+    alpha = FLAG_ALPHA if alpha is None else alpha
+    return grubbs_critical(n, alpha)

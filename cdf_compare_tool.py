@@ -11,11 +11,10 @@ try:
 except ImportError:
     np = None
 
-from stats_core import diff_ratio, max_abs_z, mean_of, std_of, zscore
+from stats_core import FLAG_LIMIT, diff_ratio, flag_result, max_abs_z, mean_of, std_of, threshold_for, zscore
 
 
 APP_TITLE = "Pre/Post CDF Sigma Compare Tool"
-FLAG_LIMIT = 3
 ID_ITEM_NAMES = ("DEVICE_ID",)
 
 
@@ -598,6 +597,7 @@ class CdfCompareApp(tk.Tk):
             post_mean = mean(post_values)
             post_sigma = sample_std(post_values)
             mea_s = max_abs_sigma(post_values, post_mean, post_sigma)
+            mea_threshold = threshold_for(len(post_values))
             row = {
                 "test_number": test_number,
                 "item": item,
@@ -608,9 +608,11 @@ class CdfCompareApp(tk.Tk):
                 "post_mean": post_mean,
                 "post_sigma": post_sigma,
                 "mea_s": mea_s,
+                "mea_threshold": mea_threshold,
                 "diff_mean": None,
                 "diff_sigma": None,
                 "diff_s": None,
+                "diff_threshold": None,
                 "result": "NO PRE ITEM",
             }
             if pre_values:
@@ -620,7 +622,12 @@ class CdfCompareApp(tk.Tk):
                 diff_mean = mean(diffs)
                 diff_sigma = sample_std(diffs)
                 diff_s = max_abs_sigma(diffs, diff_mean, diff_sigma)
-                flagged = mea_s > FLAG_LIMIT or diff_s > FLAG_LIMIT
+                diff_threshold = threshold_for(len(diffs))
+                result = flag_result(
+                    mea_s, diff_s, len(post_values), sigma=post_sigma, mean=post_mean,
+                    diff_n=len(diffs), diff_sigma=diff_sigma, diff_mean=diff_mean,
+                    mea_threshold=mea_threshold, diff_threshold=diff_threshold,
+                )
                 row.update(
                     {
                         "pre_mean": pre_mean,
@@ -628,7 +635,8 @@ class CdfCompareApp(tk.Tk):
                         "diff_mean": diff_mean,
                         "diff_sigma": diff_sigma,
                         "diff_s": diff_s,
-                        "result": "SELECT" if flagged else "OK",
+                        "diff_threshold": diff_threshold,
+                        "result": result,
                     }
                 )
             results.append(row)
@@ -705,23 +713,28 @@ class CdfCompareApp(tk.Tk):
             diffs = paired_diff_values(pre_values, post_values)
             diff_mean = mean(diffs)
             diff_sigma = sample_std(diffs)
+            n_post = len(post_values)
+            n_diff = len(diffs)
+            # n_post/n_diff 는 이 item 안에서 고정이라 임계값을 루프 밖에서 한 번만 계산해
+            # 재사용한다 — 표본마다 grubbs_critical 을 다시 계산하지 않기 위해. §S3 후속(성능).
+            mea_threshold = threshold_for(n_post)
+            diff_threshold = threshold_for(n_diff)
             for index, post_record in enumerate(post_records):
                 post_value = post_record["value"]
                 pre_value = pre_values[index] if index < len(pre_values) else None
                 mea_s = sigma(post_value, post_mean, post_sigma)
                 diff = diff_ratio(pre_value, post_value) if pre_value is not None else None
                 diff_s = sigma(diff, diff_mean, diff_sigma) if diff is not None else None
-                flagged = (
-                    mea_s is not None
-                    and abs(mea_s) > FLAG_LIMIT
-                ) or (
-                    diff_s is not None
-                    and math.isfinite(diff_s)
-                    and abs(diff_s) > FLAG_LIMIT
-                )
+                # 각 branch 를 독립적으로 flag_result 로 평가 — item 의 n(post/diff)에 따른
+                # Grubbs 임계값 기준. §S3.
+                mea_fail = mea_s is not None and flag_result(mea_s, None, n_post, sigma=post_sigma, mean=post_mean, mea_threshold=mea_threshold) == "SELECT"
+                diff_fail = diff_s is not None and math.isfinite(diff_s) and flag_result(
+                    None, diff_s, n_post, sigma=post_sigma, mean=post_mean,
+                    diff_n=n_diff, diff_sigma=diff_sigma, diff_mean=diff_mean,
+                    diff_threshold=diff_threshold,
+                ) == "SELECT"
+                flagged = mea_fail or diff_fail
                 if flagged:
-                    mea_fail = mea_s is not None and abs(mea_s) > FLAG_LIMIT
-                    diff_fail = diff_s is not None and math.isfinite(diff_s) and abs(diff_s) > FLAG_LIMIT
                     if mea_fail and diff_fail:
                         trigger = "Mea_S + Diff_S"
                     elif mea_fail:
@@ -825,6 +838,12 @@ class CdfCompareApp(tk.Tk):
         diffs = paired_diff_values(pre_values, post_values)
         diff_mean = mean(diffs)
         diff_sigma = sample_std(diffs)
+        n_post = len(post_values)
+        n_diff = len(diffs)
+        # 이 item 안에서 n_post/n_diff 는 고정이라 임계값을 루프 밖에서 한 번만 계산해
+        # 재사용한다. §S3 후속(성능).
+        mea_threshold = threshold_for(n_post)
+        diff_threshold = threshold_for(n_diff)
 
         details = []
         for index, post_record in enumerate(post_records):
@@ -833,15 +852,11 @@ class CdfCompareApp(tk.Tk):
             mea_s = sigma(post_value, post_mean, post_sigma)
             diff = diff_ratio(pre_value, post_value) if pre_value is not None else None
             diff_s = sigma(diff, diff_mean, diff_sigma) if diff is not None else None
-            flagged = (
-                mea_s is not None
-                and abs(mea_s) > FLAG_LIMIT
-            ) or (
-                diff_s is not None
-                and math.isfinite(diff_s)
-                and abs(diff_s) > FLAG_LIMIT
+            result = flag_result(
+                mea_s, diff_s, n_post, sigma=post_sigma, mean=post_mean,
+                diff_n=n_diff, diff_sigma=diff_sigma, diff_mean=diff_mean,
+                mea_threshold=mea_threshold, diff_threshold=diff_threshold,
             )
-            result = "SELECT" if flagged else "OK"
             if pre_value is None:
                 result = "NO PRE SAMPLE"
             details.append(
