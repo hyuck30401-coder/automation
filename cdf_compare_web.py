@@ -5945,8 +5945,21 @@ def item_history_for_sample(state, item):
 def fail_type_for_detail(
     initial_record, history, value, lower_limit, upper_limit, mea_s, diff_s,
     n, sigma, mean, diff_n=None, diff_sigma=None, diff_mean=None,
-    mea_threshold=_UNSET, diff_threshold=_UNSET,
+    mea_threshold=_UNSET, diff_threshold=_UNSET, unit_recovered=False,
 ):
+    # 분류 우선순위(암묵적이던 순서를 명시): Intermittent -> Unstable -> Excessive ->
+    # Slight -> Tail. §S6b.
+    #   Intermittent: 유닛 레벨. 1회차 fail, 마지막 회차 Bin pass (unit_recovered ==
+    #     state["is_intermittent"], bin_sequence 기준) -- 유닛이 최종적으로 살아났으므로
+    #     벤치(FA) 대상에서 제외한다.
+    #   Unstable: 항목(item) 레벨. 유닛은 최종 fail 이지만 이 항목의 회차별 spec_status 가
+    #     fail -> pass -> fail 로 오간다 -- 스펙 경계에서 불안정하다는 신호라 벤치 대상,
+    #     오히려 주목해야 한다.
+    # 유닛이 회복했다면(unit_recovered) 그게 더 상위 사실이므로 Intermittent 가 우선이고,
+    # 이 항목이 개별적으로 flip-flop 했는지는 더 따지지 않는다(Bin pass 는 그 회차의 모든
+    # 항목이 스펙 안이라는 뜻이라 항상 참이 된다).
+    if unit_recovered:
+        return "Intermittent"
     initial_failed = initial_record is not None and spec_status(
         initial_record.get("value"), initial_record.get("lower_limit"), initial_record.get("upper_limit")
     ) in ("low", "high")
@@ -5955,7 +5968,7 @@ def fail_type_for_detail(
             if stage_index == 0:
                 continue
             if spec_status(record.get("value"), record.get("lower_limit"), record.get("upper_limit")) == "pass":
-                return "Intermittent"
+                return "Unstable"
     if spec_margin_ratio(value, lower_limit, upper_limit) >= 0.01:
         return "Excessive"
     # mea/diff 를 독립적으로 flag_result 로 평가 — pass 모집단(n, sigma, mean)의 Grubbs 임계값
@@ -6249,6 +6262,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                         n_pass, post_sigma, post_mean,
                         diff_n=len(pass_diff_values), diff_sigma=diff_sigma, diff_mean=diff_mean,
                         mea_threshold=mea_threshold, diff_threshold=diff_threshold,
+                        unit_recovered=bool(state.get("is_intermittent")),
                     ),
                     "result": "SELECT",
                 }

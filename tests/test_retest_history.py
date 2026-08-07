@@ -40,13 +40,20 @@ def rec(sample, value, bin_, row_index, device_id="", lower=LOWER, upper=UPPER):
 
 
 def build_synthetic_records():
-    """4개 유닛을 담은 가상의 '파일 하나' 를 만든다.
+    """6개 유닛을 담은 가상의 '파일 하나' 를 만든다.
 
     S1 (DEVICE_ID=D1): 1회차 fail(Bin15) -> 2회차 fail(Bin17) -> 3회차 pass(Bin1)
-        => Intermittent, row_index 1-3.
+        => 유닛 회복, row_index 1-3.
     S2: 1회차~3회차 전부 fail(Bin15)                => 기존 분류 유지, row_index 4-6.
     S3: 1회차만 존재, pass(Bin1) (재시험 없음)        => 영향 없음, row_index 7.
-    S4: 1회차~4회차 fail(Bin15) -> 5회차 pass(Bin1)   => 재시험 4회 이상, Intermittent, row_index 8-12.
+    S4: 1회차~4회차 fail(Bin15) -> 5회차 pass(Bin1)   => 재시험 4회 이상, 유닛 회복, row_index 8-12.
+    S5: 1회차 fail -> 2회차 pass(단, Bin 은 여전히 fail, 다른 항목이 물고 있음) ->
+        3회차 fail -> 4회차 pass(Bin1, 유닛 회복)      => 유닛 회복 + 항목 flip-flop 동시,
+        row_index 13-16. §S6b 시나리오 1: Intermittent 가 우선.
+    S6: 1회차 fail -> 2회차 pass(Bin 은 여전히 fail) -> 3회차 fail -> 4회차 fail(Bin
+        도 fail, 유닛 최종 fail)                        => 항목 flip-flop 이지만 유닛은
+        회복하지 못함, row_index 17-20. §S6b 시나리오 2: Unstable. (실데이터 VSTART
+        Serial 25/62 와 동일한 패턴.)
 
     V2 는 S1 의 각 행에만 곁들여, row_index 로 항목을 같은 물리적 행으로 묶는 로직이
     항목 간에 뒤섞이지 않는지 함께 확인한다.
@@ -76,6 +83,18 @@ def build_synthetic_records():
     records["V1"].append(rec("S4", 18.0, "15", 10))
     records["V1"].append(rec("S4", 17.0, "15", 11))
     records["V1"].append(rec("S4", 5.0, "1", 12))
+
+    # S5: row_index 13-16, 유닛 회복(Bin1) + 항목 중간 flip-flop 동시
+    records["V1"].append(rec("S5", 15.0, "15", 13))
+    records["V1"].append(rec("S5", 5.0, "17", 14))
+    records["V1"].append(rec("S5", 15.0, "15", 15))
+    records["V1"].append(rec("S5", 5.0, "1", 16))
+
+    # S6: row_index 17-20, 항목 flip-flop 하지만 유닛은 최종 fail (실데이터 VSTART 25/62 패턴)
+    records["V1"].append(rec("S6", 15.0, "15", 17))
+    records["V1"].append(rec("S6", 5.0, "17", 18))
+    records["V1"].append(rec("S6", 15.0, "15", 19))
+    records["V1"].append(rec("S6", 15.0, "15", 20))
 
     return records
 
@@ -135,7 +154,7 @@ def test_sample_states_from_history():
 
 
 def test_fail_type_for_detail_intermittent():
-    print("fail_type_for_detail (Intermittent 분기)")
+    print("fail_type_for_detail (Intermittent / Unstable 분기, §S6b)")
     records = build_synthetic_records()
     history = w.stage_history_from_records(records)
     states = w.sample_states_from_history(history)
@@ -147,18 +166,31 @@ def test_fail_type_for_detail_intermittent():
         return w.fail_type_for_detail(
             initial_record, item_history, value, LOWER, UPPER,
             mea_s=0.0, diff_s=None, n=0, sigma=None, mean=None,
+            unit_recovered=bool(state.get("is_intermittent")),
         )
 
-    # 시나리오 1: 1회차 fail -> 2회차 fail -> 3회차 pass => Intermittent
-    check("S1/V1 => Intermittent", classify(states["S1"], "V1") == "Intermittent")
+    # 시나리오 1: 1회차 fail -> 2회차 fail -> 3회차 pass, 유닛 회복(unit_recovered) => Intermittent
+    check("S1/V1 => Intermittent (유닛 회복)", classify(states["S1"], "V1") == "Intermittent")
 
-    # 시나리오 2: 1회차 fail -> ... -> 마지막 fail => 기존 분류 유지 (Intermittent 아님)
+    # 시나리오 2: 1회차 fail -> ... -> 마지막 fail, 항목도 계속 fail => 기존 분류 유지
     result_s2 = classify(states["S2"], "V1")
-    check("S2/V1 => Intermittent 아님 (기존 분류 유지)", result_s2 != "Intermittent")
-    check("S2/V1 => Excessive (margin >= 1%, 회복 아니므로 기존 로직 그대로)", result_s2 == "Excessive")
+    check("S2/V1 => Intermittent 아님 (유닛 회복 아님)", result_s2 != "Intermittent")
+    check("S2/V1 => Unstable 아님 (항목이 중간에 pass 한 적 없음)", result_s2 != "Unstable")
+    check("S2/V1 => Excessive (margin >= 1%, 기존 로직 그대로)", result_s2 == "Excessive")
 
-    # 재시험 4회 이상에서도 Intermittent 가 정상 검출되는지
-    check("S4/V1 => Intermittent (재시험 4회 후 회복)", classify(states["S4"], "V1") == "Intermittent")
+    # 재시험 4회 이상에서도 유닛 회복이 정상 검출되는지 => Intermittent
+    check("S4/V1 => Intermittent (재시험 4회 후 유닛 회복)", classify(states["S4"], "V1") == "Intermittent")
+
+    # 시나리오(§S6b 요구 1): 유닛 회복 + 항목도 중간에 flip-flop => Intermittent 우선
+    # (유닛이 살아났으면 그게 더 상위 사실이므로, 항목이 개별적으로 흔들렸는지는 따지지 않는다)
+    check("S5/V1 => Intermittent (유닛 회복 + 항목 flip-flop 동시, 우선순위 검증)",
+          classify(states["S5"], "V1") == "Intermittent")
+
+    # 시나리오(§S6b 요구 2): 유닛 최종 fail + 항목만 중간에 flip-flop => Unstable
+    # (실데이터 VSTART Serial 25/62 와 동일한 패턴 -- 유닛은 안 살아났으므로 벤치 대상)
+    check("S6/V1 => Unstable (유닛 최종 fail, 항목만 flip-flop)",
+          classify(states["S6"], "V1") == "Unstable")
+    check("S6/V1 => Intermittent 아님 (유닛 회복 아님)", classify(states["S6"], "V1") != "Intermittent")
 
 
 def test_analyze_bypass_condition():
