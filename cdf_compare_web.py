@@ -5810,28 +5810,99 @@ def stage_sort_key(path):
     return (stage, natural_key(name))
 
 
+def stage_history_from_records(records):
+    """records(item -> [record,...], 파일 하나를 raw 파싱한 결과)에서 같은 물리적
+    행(row_index)에 속한 항목별 레코드를 하나의 occurrence 로 묶고, join_key
+    (record_sample_id — DEVICE_ID 우선) 별로 등장 순서를 보존한 재시험 이력을 만든다.
+
+    §S6: 실제 데이터는 재시험이 별도 파일이 아니라 같은 파일 안에서 Serial # 가
+    반복되는 행으로 나타난다 (CLAUDE.md §3-4). bin 은 행 단위 메타데이터라 그 행에
+    속한 모든 item 레코드에서 동일한 값이므로, 그 행을 처음 만든 레코드의 bin 을
+    그대로 쓰면 된다(항목 간 뒤섞임 없음).
+    """
+    rows_by_index = {}
+    for item, item_records in records.items():
+        for record in item_records:
+            row_index = record.get("row_index")
+            sample = str(record.get("sample", "")).strip()
+            if row_index is None or not sample:
+                continue
+            row = rows_by_index.get(row_index)
+            if row is None:
+                row = {
+                    "source_sample": sample,
+                    "join_key": record_sample_id(record),
+                    "bin": record.get("bin", ""),
+                    "items": {},
+                }
+                rows_by_index[row_index] = row
+            elif not row.get("join_key") and record_sample_id(record):
+                row["join_key"] = record_sample_id(record)
+            row["items"][item] = record
+    history = {}
+    for row_index in sorted(rows_by_index):
+        row = rows_by_index[row_index]
+        key = row.get("join_key") or row.get("source_sample")
+        if not key:
+            continue
+        history.setdefault(key, []).append(row)
+    return history
+
+
+def sample_states_from_history(history_by_key):
+    """stage_history_from_records() 의 결과(join_key -> 등장 순서 보존 occurrence 리스트)를
+    merged_fail_rows() 가 쓰는 sample_states 형태로 변환한다. 실데이터 파일 없이도
+    단위 테스트할 수 있도록 순수 함수로 분리했다 (§S6).
+
+    대표 측정값 = 마지막 occurrence (요구사항 1, 기존 동작 유지).
+    Bin 출처 통일: 이전에는 Bin=첫 회차, 측정값=마지막 회차로 출처가 어긋났다
+    (CLAUDE.md §3-4). 대표 측정값이 마지막 회차이므로 Bin 도 마지막 회차로 통일한다.
+    """
+    sample_states = {}
+    ordered_keys = sorted(
+        history_by_key,
+        key=lambda key: natural_key(history_by_key[key][0].get("source_sample", "")),
+    )
+    for key in ordered_keys:
+        occurrences = history_by_key[key]
+        first = occurrences[0]
+        last = occurrences[-1]
+        sample = str(last.get("source_sample", "")).strip() or key
+        stages = [
+            {
+                "name": "FT" if index == 0 else f"Retest {index}",
+                "items": occ["items"],
+                "bin": occ.get("bin", ""),
+                "spec_fail": row_has_spec_fail(occ),
+            }
+            for index, occ in enumerate(occurrences)
+        ]
+        sample_states[sample] = {
+            "sample": sample,
+            "serial": sample,
+            "join_key": key,
+            "final_bin": last.get("bin", ""),
+            "final_spec_fail": row_has_spec_fail(last),
+            "final_pass": row_is_pass(last),
+            # 1회차 fail -> 마지막 회차 Bin1 로 회복 = Intermittent (NOTES.md P0 확정 요구사항 2).
+            "is_intermittent": (not bin_is_pass(first.get("bin", ""))) and bin_is_pass(last.get("bin", "")),
+            "stages": stages,
+        }
+    return sample_states
+
+
 def merged_fail_rows(post_files):
     if not post_files:
         raise ValueError("No Post data file was found.")
     files = sorted(post_files, key=stage_sort_key)
-    primary_rows = read_post_stage_rows(files[0], sort_by_sample=True)
-    sample_states = {}
-    previous_retest_samples = []
-    for row in primary_rows:
-        sample = str(row.get("source_sample", "")).strip()
-        if not sample:
-            sample = str(len(sample_states) + 1)
-        sample_states[sample] = {
-            "sample": sample,
-            "serial": sample,
-            "join_key": row.get("join_key", "") or sample,
-            "final_bin": row.get("bin", ""),
-            "final_spec_fail": row_has_spec_fail(row),
-            "final_pass": row_is_pass(row),
-            "stages": [{"name": "FT", "items": row["items"], "bin": row.get("bin", ""), "spec_fail": row_has_spec_fail(row)}],
-        }
-        if not bin_is_pass(row.get("bin", "")):
-            previous_retest_samples.append(sample)
+    primary_records = cached_item_records(files[0])
+    history_by_key = stage_history_from_records(primary_records)
+    sample_states = sample_states_from_history(history_by_key)
+    previous_retest_samples = [
+        sample
+        for sample in sorted(sample_states, key=natural_key)
+        if not bin_is_pass(sample_states[sample].get("final_bin", ""))
+    ]
     if len(files) == 1:
         return sample_states, files
     for stage_index, path in enumerate(files[1:], start=1):
@@ -6036,7 +6107,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     fail_samples = [
         sample
         for sample, state in sample_states.items()
-        if not state_is_pass(state)
+        if not state_is_pass(state) or state.get("is_intermittent")
     ]
     pass_samples = [
         sample
@@ -6067,7 +6138,19 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             lower = latest.get("lower_limit")
             upper = latest.get("upper_limit")
             if spec_status(latest.get("value"), lower, upper) not in ("low", "high"):
-                continue
+                # 회복(Intermittent) 유닛은 마지막 회차 값이 정상이라 이 게이트에 걸리지만,
+                # 1회차에 이 항목이 실제로 실패했다면 fail_type_for_detail 이 이력을 보고
+                # "Intermittent" 로 분류할 수 있도록 통과시킨다. §S6.
+                if not state.get("is_intermittent"):
+                    continue
+                history = item_history_for_sample(state, item)
+                initial_item_failed = bool(history) and spec_status(
+                    history[0][1].get("value"),
+                    history[0][1].get("lower_limit"),
+                    history[0][1].get("upper_limit"),
+                ) in ("low", "high")
+                if not initial_item_failed:
+                    continue
             post_records.append((sample, latest))
             join_key = state.get("join_key") or sample
             pre_record = pre_by_sample.get(join_key, {}).get("items", {}).get(item)
@@ -6323,7 +6406,7 @@ def app_base_dir():
 CACHE_SCHEMA = 20  # 19->20: cache_key_for 에 pre_stamp/post_stamps 추가 (§2)
 CACHE_DIR = os.path.join(app_base_dir(), ".analysis_cache")
 
-PARSE_CACHE_VERSION = 1
+PARSE_CACHE_VERSION = 2  # 1->2: record 에 row_index 추가 (§S6, 파일 내 재시험 이력)
 PARSE_CACHE_DIR = os.path.join(CACHE_DIR, "parse")
 PARSE_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2GB
 PARSE_CACHE_LOCK = threading.Lock()
@@ -6357,6 +6440,7 @@ def save_parse_cache(path, stamp, records):
                 "device_ids": [r.get("device_id", "") for r in item_records],
                 "bins": [r.get("bin") for r in item_records],
                 "sites": [r.get("site") for r in item_records],
+                "row_indexes": [r.get("row_index") for r in item_records],
                 "test_number": item_records[0].get("test_number") if item_records else None,
                 "unit": item_records[0].get("unit") if item_records else None,
                 "lower_limit": item_records[0].get("lower_limit") if item_records else None,
@@ -6422,6 +6506,8 @@ def load_parse_cache(path, stamp):
                     record["bin"] = m["bins"][i]
                 if m["sites"][i] is not None:
                     record["site"] = m["sites"][i]
+                if "row_indexes" in m and m["row_indexes"][i] is not None:
+                    record["row_index"] = m["row_indexes"][i]
                 item_records.append(record)
             records[item] = item_records
         return records

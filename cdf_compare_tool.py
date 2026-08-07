@@ -368,7 +368,9 @@ def extract_item_records_from_meta_table(table, test_name_index, data_header_ind
             if value is None:
                 continue
             sample = cell_text(row_value_at(row, serial_col)) or str(row_index)
-            record = {"sample": sample, "value": value, "device_id": device_id_by_row.get(row_index, "")}
+            # row_index: 같은 Serial # 가 파일 안에서 반복되는 재시험 이력을 물리적 행
+            # 단위로 재구성하기 위한 키 (§S6, stage_history_from_records 에서 사용).
+            record = {"sample": sample, "value": value, "device_id": device_id_by_row.get(row_index, ""), "row_index": row_index}
             test_number = cell_text(row_value_at(test_number_row, col))
             if test_number:
                 record["test_number"] = test_number
@@ -413,7 +415,7 @@ def extract_item_records_from_legacy_table(table):
             if value is None:
                 continue
             sample = cell_text(row_value_at(row, sample_col)) or str(row_index)
-            records[item_name].append({"sample": sample, "value": value, "device_id": ""})
+            records[item_name].append({"sample": sample, "value": value, "device_id": "", "row_index": row_index})
 
     if not records:
         raise ValueError("No numeric Test Item columns were found.")
