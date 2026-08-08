@@ -1991,6 +1991,7 @@ const passColumns = [
 ];
 const failColumns = passColumns;
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
+const AUTO_LATEST_READOUT = "__latest__";
 const lookupOrder = [
   ["ver", "verSelect"],
   ["lot", "lotSelect"],
@@ -2127,7 +2128,34 @@ function setSelectOptions(selectId, options, placeholder = "", disabled = false)
   if (options.includes(previous)) sel.value = previous;
 }
 function setReadoutOptions(options, placeholder = "Select") {
-  setSelectOptions("readoutSelect", options, placeholder, !lookupState.item || options.length === 0);
+  const sel = document.getElementById("readoutSelect");
+  const previous = sel.value;
+  sel.innerHTML = "";
+  sel.disabled = !lookupState.item || options.length === 0;
+  if (options.length) {
+    // 맨 위 "최신 자동" 이 기본값이다 - 특정 회차를 고르면 그 시점 기준으로
+    // 판정하는 기존 동작은 그대로 유지된다.
+    const auto = document.createElement("option");
+    auto.value = AUTO_LATEST_READOUT;
+    auto.textContent = "최신 자동";
+    sel.appendChild(auto);
+  } else {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = placeholder;
+    sel.appendChild(empty);
+  }
+  options.forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value;
+    sel.appendChild(opt);
+  });
+  const nextValue = options.length
+    ? (previous === AUTO_LATEST_READOUT || options.includes(previous) ? previous : AUTO_LATEST_READOUT)
+    : "";
+  sel.value = nextValue;
+  lookupState.readout = nextValue;
 }
 function setFtTempOptions(options, placeholder = "Select") {
   setSelectOptions("ftTempSelect", options, placeholder, !lookupState.readout || options.length === 0);
@@ -2198,6 +2226,7 @@ async function refreshLookup(field) {
       if (entry) {
         if (field === "readout") {
           setReadoutOptions(data.options || [], (data.options || []).length ? "Select" : "No data");
+          if (lookupState.readout) await refreshLookup("ft_temp");
         } else if (field === "ft_temp") {
           setFtTempOptions(data.options || [], (data.options || []).length ? "Select" : "No data");
         } else {
@@ -5679,30 +5708,45 @@ def reliability_sort_key(value):
 
 
 def total_analysis_combinations(selection):
+    # §W0: 조합 키에서 readout 을 뺀다 - 판정은 "분석 시점 기준 마지막 Read-out" 하나로만
+    # 한다. T0~T3 (post_history) 는 추세 비교용일 뿐 판정에는 쓰지 않는다.
     base_path = selected_data_path(selection)
     post_dir = child_dir_containing(base_path, "post")
     groups = {}
+    filename_warnings = []
     for path in data_files(post_dir):
         parsed = parse_post_file_name(path)
         if not parsed:
             continue
+        if parsed.get("readout_missing"):
+            filename_warnings.append({
+                "file": os.path.basename(path),
+                "reason": "readout_not_found",
+                "used": parsed["readout"],
+            })
         temps = file_ft_temps(path)
         if not temps:
             temp = ft_temp_from_code(parsed["temp_code"])
             temps = [temp] if temp else []
         for temp in temps:
-            key = (parsed["item"], parsed["readout"], temp)
-            groups.setdefault(key, []).append(path)
+            key = (parsed["item"], temp)
+            groups.setdefault(key, {}).setdefault(parsed["readout"], []).append(path)
     combos = []
-    for (item, readout, ft_temp), files in groups.items():
+    for (item, ft_temp), readout_files in groups.items():
+        # post_history_files_by_readout() 와 동일하게 readout_sort_key 로 정렬해
+        # "마지막 회차"를 고른다 (재사용: 같은 정렬 기준을 두 곳에서 어긋나지 않게 유지).
+        readout_history = sorted(readout_files.keys(), key=readout_sort_key)
+        judged_readout = readout_history[-1]
         combos.append({
             "item": item,
-            "readout": readout,
+            "readout": judged_readout,
+            "judged_readout": judged_readout,
+            "readout_history": readout_history,
             "ft_temp": ft_temp,
-            "post_files": sorted(files, key=stage_sort_key),
+            "post_files": sorted(readout_files[judged_readout], key=stage_sort_key),
         })
-    combos.sort(key=lambda row: (reliability_sort_key(row["item"]), temp_sort_key(row["ft_temp"]), readout_sort_key(row["readout"])))
-    return base_path, combos
+    combos.sort(key=lambda row: (reliability_sort_key(row["item"]), temp_sort_key(row["ft_temp"])))
+    return base_path, combos, filename_warnings
 
 
 def pre_file_for_total_combo(base_path, ft_temp, include_pre):
@@ -5721,7 +5765,8 @@ def total_item_key(reliability_item, ft_temp, readout, item):
     return f"{item}__{suffix}"
 
 
-def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
+def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_history=None):
+    history = readout_history or [readout]
     key_by_item = {}
     for row in payload.get("results", []):
         original_item = row.get("item", "")
@@ -5731,6 +5776,8 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
     for row in payload.get("selected_summary", []):
         original_item = row.get("item", "")
         key = key_by_item.get(original_item) or total_item_key(reliability_item, ft_temp, readout, original_item)
@@ -5739,6 +5786,8 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
     decorated_items = {}
     for original_item, item_payload in (payload.get("items") or {}).items():
         key = key_by_item.get(original_item) or total_item_key(reliability_item, ft_temp, readout, original_item)
@@ -5748,12 +5797,16 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         enriched["reliability_item"] = reliability_item
         enriched["ft_temp"] = ft_temp
         enriched["readout"] = readout
+        enriched["judged_readout"] = readout
+        enriched["readout_history"] = history
         decorated_items[key] = enriched
     payload["items"] = decorated_items
     for row in payload.get("over_sigma", []):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
         row["items"] = [key_by_item.get(item, item) for item in row.get("items", [])]
     return payload
 
@@ -7033,16 +7086,39 @@ def data_files(path):
     )
 
 
+def _token_looks_like_readout(token):
+    # 리드아웃 토큰(1000hrs, 168h, 500)은 항상 숫자를 포함한다. 반대로
+    # RELIABILITY_ITEMS(HTOL, HAST, uHAST, TC, PTC, HTSL, HBM, CDM, LU)에는
+    # 숫자를 포함하는 이름이 하나도 없어 이 기준과 절대 충돌하지 않는다.
+    return bool(re.search(r"\d", token))
+
+
 def parse_post_file_name(path):
     stem = os.path.splitext(os.path.basename(path))[0]
-    parts = stem.split("_")
-    if len(parts) < 2:
+    parts = [part.strip() for part in stem.split("_") if part.strip()]
+    if not parts:
         return None
-    item = parts[-2].strip()
-    readout = parts[-1].strip()
-    if not item or not readout:
+    temp_code = parts[1] if len(parts) > 1 else ""
+    last = parts[-1]
+    if len(parts) >= 2 and _token_looks_like_readout(last):
+        item = parts[-2]
+        readout = last
+        readout_missing = False
+    else:
+        # 리드아웃 토큰이 없다 (예: "..._HTOL.CSV"). 파일을 버리지 않고
+        # 기본 리드아웃 "Post" 하나로 취급한다 - 판정은 이 파일 하나로 한다.
+        item = last
+        readout = "Post"
+        readout_missing = True
+    if not item:
         return None
-    return {"stem": stem, "temp_code": parts[1].strip(), "item": item, "readout": readout}
+    return {
+        "stem": stem,
+        "temp_code": temp_code,
+        "item": item,
+        "readout": readout,
+        "readout_missing": readout_missing,
+    }
 
 
 def post_file_contains_item(path, item):
@@ -7131,6 +7207,19 @@ def post_file_ft_temps(path, item, readout):
     return sorted(available_temps, key=lambda temp: order.get(temp, 99))
 
 
+AUTO_LATEST_READOUT = "__latest__"
+
+
+def resolve_auto_readout(post_dir, item, readout):
+    # "최신 자동" 선택(sentinel) 이면 그 시점에 존재하는 회차 중 readout_sort_key
+    # 기준 마지막 것으로 해석한다. 특정 회차를 고른 경우는 그대로 통과시켜
+    # "500hrs 시점으로 다시 판정" 같은 기존 동작을 유지한다.
+    if readout != AUTO_LATEST_READOUT:
+        return readout
+    options = post_file_readouts(post_dir, item)
+    return options[-1] if options else ""
+
+
 def resolve_selection_files(selection):
     pre_path, post_files, base = resolve_selection_file_set(selection)
     return pre_path, post_files[-1], base
@@ -7139,11 +7228,14 @@ def resolve_selection_files(selection):
 def resolve_selection_file_set(selection):
     base = selected_data_path(selection)
     item = selection.get("item", "").strip()
-    readout = selection.get("readout", "").strip()
     ft_temp = selection.get("ft_temp", "").strip()
-    if not item or not readout or not ft_temp:
+    if not item or not ft_temp:
         raise ValueError("Reliability Items, Read-out, and FT Temp. are required.")
     post_dir = child_dir_containing(base, "post")
+    readout = resolve_auto_readout(post_dir, item, selection.get("readout", "").strip())
+    selection["readout"] = readout
+    if not readout:
+        raise ValueError("Reliability Items, Read-out, and FT Temp. are required.")
     include_pre = selection_includes_pre(selection)
     pre_files = []
     if include_pre:
@@ -7200,6 +7292,7 @@ def lookup_options(query):
             post_path = child_dir_containing(data_path, "post")
         except ValueError:
             return {"path": data_path, "options": []}
+        readout = resolve_auto_readout(post_path, item, readout)
         return {"path": data_path, "options": post_file_ft_temps(post_path, item, readout)}
     return {"path": data_path, "options": []}
 
@@ -7308,7 +7401,7 @@ def analyze_total_combo(base_path, combo, mode="pass", cache_key=None, include_p
     if include_pre:
         add_pre_only_items_to_payload(payload, app.pre_records, target_items or [])
     apply_post_readout_history_to_payload(payload, post_history)
-    decorate_combo_payload(payload, combo["item"], combo["ft_temp"], combo["readout"])
+    decorate_combo_payload(payload, combo["item"], combo["ft_temp"], combo["readout"], combo.get("readout_history"))
     return payload
 
 
@@ -7318,7 +7411,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
 
     try:
         progress(18, "Scanning Total Analysis data")
-        base_path, combos = total_analysis_combinations(selection)
+        base_path, combos, filename_warnings = total_analysis_combinations(selection)
         if not combos:
             raise ValueError("Total Analysis data was not found.")
         target_items_by_reliability = total_target_items_by_reliability(combos) if include_pre else {}
@@ -7351,6 +7444,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
         payload["reliability_item"] = "Total"
         payload["analysis_run_id"] = run_id
         payload["cache_status"] = "saved" if cache_key else "none"
+        payload["filename_warnings"] = filename_warnings
         if cache_key:
             save_cached_analysis(None, cache_key, payload)
         global CURRENT_APP, CURRENT_ITEMS, CURRENT_PAYLOADS, CURRENT_CACHE_KEYS
