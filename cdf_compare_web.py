@@ -3684,11 +3684,6 @@ function diffFromPre(preValue, postValue) {
   if (pre === null || post === null || pre === 0) return null;
   return (post - pre) / Math.abs(pre);
 }
-function sigmaValue(value, center, spread) {
-  const number = finiteNumber(value);
-  if (number === null) return null;
-  return spread === 0 ? 0 : (number - center) / spread;
-}
 function graphValuesForReadoutSeries(data, series, fallbackValues = []) {
   const mode = analysis?.analysis_mode || analysisMode;
   const values = numericValues(series?.values || []);
@@ -3706,30 +3701,6 @@ function graphDiffValuesForReadoutSeries(data, series, fallbackValues = []) {
     if (passDiffValues.length) return passDiffValues;
   }
   return numericValues(fallbackValues);
-}
-function readoutDetailSeriesFallback(data, series) {
-  console.warn(`readoutDetailSeries: series "${series.key}" has no backend points (stale cache) - recomputing on the client.`);
-  const points = (data?.details || [])
-    .map(row => {
-      const postValue = finiteNumber(row[series.key]);
-      if (postValue === null) return null;
-      const diff = diffFromPre(row.pre_value, postValue);
-      return { sample: row.sample, pre_value: finiteNumber(row.pre_value), post_value: postValue, diff, row };
-    })
-    .filter(Boolean);
-  const pointPostValues = points.map(point => point.post_value);
-  const pointDiffValues = points.map(point => point.diff).filter(value => value !== null);
-  const postValues = graphValuesForReadoutSeries(data, series, pointPostValues);
-  const diffValues = graphDiffValuesForReadoutSeries(data, series, pointDiffValues);
-  const postMean = meanValue(postValues);
-  const postSigma = populationStd(postValues);
-  const diffMean = meanValue(diffValues);
-  const diffSigma = populationStd(diffValues);
-  points.forEach(point => {
-    point.mea_s = sigmaValue(point.post_value, postMean, postSigma);
-    point.diff_s = point.diff === null ? null : sigmaValue(point.diff, diffMean, diffSigma);
-  });
-  return { postValues, diffValues, points };
 }
 function readoutDetailSeries(data) {
   return postReadoutSeries(data).map((series, index) => {
@@ -3766,7 +3737,16 @@ function readoutDetailSeries(data) {
         ? numericValues(data?.pass_diff_values || [])
         : points.map(point => point.diff).filter(value => value !== null && value !== undefined);
     } else {
-      ({ postValues, diffValues, points } = readoutDetailSeriesFallback(data, series));
+      // §S7: 예전엔 여기서 mea_s/diff_s 를 ddof=0 로 클라이언트 재계산했다(§V5 백엔드 sigma
+      // 권위, §S3 NOT EVALUATED, §S4 EPS_REL 게이트를 전부 무시). 백엔드는 post_readout_values
+      // 항목마다 항상 stats 를 채워 보내므로(post_readout_series_entry), 이 분기는 오직 이
+      // 세션 이전 코드가 만든 캐시 버전(stats 필드 없음)이 아직 살아있을 때만 탄다 - 그런
+      // 데이터는 재계산하지 않고 버리고, 사용자에게 다시 분석하라고 안내한다.
+      console.warn(`readoutDetailSeries: series "${series.key}" has no backend stats (stale cache) - re-analyze required.`);
+      setStatus("캐시 형식이 오래되었습니다. 다시 분석하세요.");
+      postValues = [];
+      diffValues = [];
+      points = [];
     }
     return { ...series, values: postValues, color: readoutColor(series.key, index), points, post_values: postValues, diff_values: diffValues };
   }).filter(series => series.points.length || series.values.length);
