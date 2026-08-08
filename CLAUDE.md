@@ -209,6 +209,12 @@ history 에서 pass 를 찾는데 history 가 비어 있어 **원리적으로 �
 
 ### 5-1. 판정 숫자를 바꾸지 말 것
 
+**현재 판정 기준(§S7, 2026-08-08 확정): Grubbs 검정, alpha=0.01, ddof=1(표본표준편차).**
+근거와 상세 정의는 §11 "통계 판정 규칙" 참조. **이 기준은 명시적 지시 없이 다시
+바꾸지 않는다** — alpha/ddof/검정 방식을 바꾸는 순간 `tests/golden/`,
+`docs/verdict_reports/`, 이 문서 §11 이 전부 stale 해지므로, 바꿔야 한다면 이 세
+가지를 함께 갱신하는 별도 작업으로 다룬다.
+
 **성능 리팩터링과 동작 변경을 절대 같은 커밋에 섞지 않는다.**
 
 통계 정의(ddof, 임계값, 페어링 방식, 플로팅 포지션)를 바꾸는 작업은 반드시 별도
@@ -293,13 +299,14 @@ numpy 와 파이썬 표준 라이브러리만 사용한다. §2 첫 문단 참�
 
 전부 판정 결과를 바꾸므로 성능 작업 중에는 손대면 안 된다. 상세는 `NOTES.md`.
 
+**§S2~S7 로 해결됨(제거된 항목)**: 재시험 이력 소실(Intermittent 판정 불가) → §S6/S6b,
+`sample_std` ddof=0 오표기 → §S2, `FLAG_LIMIT=3` 고정 임계 → §S3(Grubbs 전환),
+`diff_ratio` pre≈0 폭발 방어 없음 → §S4(EPS_REL), `safe_ratio`/`sigma`/`mean` 의
+"정의 불가"가 `0.0`으로 둔갑 → §S3/§S5(NOT EVALUATED/None). 상세는 §11과
+`docs/verdict_reports/FINAL.md`, `NOTES.md` "완료/결정됨" 참조.
+
 | 위치 | 문제 |
 |---|---|
-| **재시험 이력 소실** (§3-4) | `Intermittent` 판정이 원리적으로 불가능. **가장 중요한 정확성 결함** |
-| `cdf_compare_tool.sample_std` (tool:43) | 이름은 sample std 인데 실제로는 **모표준편차**(`np.std()` ddof=0 / `pstdev`) |
-| `FLAG_LIMIT = 3` (tool:17) | 모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% flag (실측) |
-| `diff_ratio` (tool:75) | 분모가 **부호 있는** `pre_value` → pre 가 음수면 열화/개선 부호 반전. `pre ≈ 0` 폭발 방어 없음 |
-| `safe_ratio`/`sigma`/`mean` | 분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑 |
 | `empirical_cdf` (tool:452) | 플로팅 포지션 `i/n` → 최상위 점이 항상 100% 라 확률지에 못 올림 |
 | `item_analysis` (web:5029) | `enumerate(post_records)` 인덱스로 `post_values[index]` 참조 → 길이 어긋날 수 있음. **현재는 `to_float` 덕에 미발현(잠재)**. 컬럼형 전환 시 자동 해소 |
 | `merged_fail_rows` (web:5610) | 재시험 파일을 `zip(...)` 로 위치 매칭. 실제 데이터에선 `len(files)==1` 이라 **실행조차 안 됨**. 우선순위 낮음 |
@@ -338,6 +345,30 @@ numpy 와 파이썬 표준 라이브러리만 사용한다. §2 첫 문단 참�
 **참고 구현**: `fast_datalog.py` 에 컬럼형 파서 + DEVICE_ID 조인 + 디스크 캐시 +
 벡터화 분석이 구현되어 있다. 다만 **기존 코드와 다른 부분이 있으면 기존 코드가 정답**
 이다. 반드시 기존 로직에 맞춰라.
+
+### 7-1. §S7 완료 후 재측정 (Perf Data, `tools/bench.py --repeat 3`, 2026-08-08)
+
+작업 시작 시점(§S1 이전) TOTAL 921.9s → **§S7 완료 시점 193.950s (-728s, -79%)**.
+파스 캐시가 웜(warm)한 상태에서 측정했다 — `read_table`/`extract_item_records` 가
+0.000s 로 나오는 것은 그 구간이 빨라졌다는 뜻이 아니라 캐시 히트로 스킵됐다는
+뜻이다. 즉 위 §7 표(콜드 파스, `extract_item_records` 69%)와 이 표는 서로 다른
+조건을 측정한 것이므로 직접 비교하지 않는다.
+
+| 구간 | 초 | 비중 |
+|---|---:|---:|
+| `filter_records_to_last_sample` | 0.450s | 0.2% |
+| `calculate_results_vectorized` | 29.095s | 15.0% |
+| `payload_with_items` | 9.570s | 4.9% |
+| `json.dumps` | 14.772s | 7.6% |
+| **`cache write`** | **96.265s (49.6%)** | — |
+| **TOTAL (wall, median)** | **193.950s** | — |
+
+(508 items, payload 428,900,562 bytes, detail rows 1,478,280 — pass 모드, PERF01
+콤보.) `cache write` 가 현재 최대 병목(49.6%)이며 §S7 범위 밖의 별도 과제다.
+`calculate_results_vectorized`(29.095s)는 §S7 이전 grubbs-전용 재작성 직후 측정치
+(`bench_after_grubbs_rewrite.txt`, 30.070s)와 거의 동일 — alpha 0.05→0.01 전환과
+grubbs 정확 계산 자체는 이 구간 비용을 늘리지 않았다(`grubbs_critical` 메모이제이션,
+§S4, 덕분).
 
 ---
 
@@ -398,11 +429,107 @@ perf(payload): SELECT 항목만 details 생성, /progress 슬림화
 | Bin | 테스터 판정 코드. Bin 1 = 양품 |
 | **DEVICE_ID** | **유닛의 진짜 식별자. Pre↔Post 조인 키** (§3-3) |
 | Serial # | 파일 내 순번. Pre 와 Post 에서 체계가 다름 — **조인에 쓰면 안 됨**. 화면 표시용 |
-| Mea_S | 측정값의 표본 내 z-score |
-| Diff_S | Pre 대비 변화율의 z-score |
-| SELECT | 이상 shift 로 판정된 항목/샘플 |
-| Intermittent | 1차 fail 이었으나 재시험에서 pass → 진성 불량 아닐 가능성 |
+| Mea_S | 측정값의 표본 내 z-score (§11) |
+| Diff_S | Pre 대비 변화율의 z-score (§11) |
+| SELECT | \|Mea_S\| 또는 \|Diff_S\| 가 Grubbs 임계(alpha=0.01) 초과로 판정된 항목/샘플 (§11) |
+| NOT EVALUATED | σ가 사실상 0(표본이 전부 같은 값)이라 z-score 자체가 정의상 무의미 — 판정 불가 (§11) |
+| Intermittent | **유닛 전체**가 1차 fail, 마지막 회차 Bin 은 pass 로 회복 → 벤치(FA) 대상에서 제외 (§11) |
+| Unstable | 유닛은 최종 fail 이지만 **개별 항목**이 회차 사이에 spec pass 를 찍은 적 있음 → 벤치 대상, 오히려 주목 (§11) |
 | Excessive | 스펙에서 1% 이상 벗어난 명백한 하드 불량 |
-| Slight | Mea_S·Diff_S **둘 다** 3 초과 → 통계로 뒷받침되는 진성 열화 |
+| Slight | Mea_S·Diff_S **둘 다** Grubbs 임계 초과 → 통계로 뒷받침되는 진성 열화 |
 | Tail | 그 외, 분포 꼬리 |
 | Need Bench | FA(고장분석) 의뢰 대상 표시 |
+
+---
+
+## 11. 통계 판정 규칙
+
+**현재 기준(§S7, 2026-08-08 확정)**: Grubbs 단일-이상치 검정, **alpha=0.01**,
+표준편차는 **ddof=1(표본표준편차)**. §5-1 규칙에 따라 명시적 지시 없이 바꾸지 않는다.
+근거 데이터는 `docs/verdict_reports/FINAL.md`(S0→S7 누적 비교)와
+`docs/verdict_reports/S2.md`~`S6b.md`(단계별 상세)에 있다.
+
+### 11-1. Mea_S / Diff_S 정의
+
+- **Mea_S** — 한 항목의 Post 표본(크기 n) 안에서, 그 샘플 측정값의 z-score:
+  `(value - mean) / std(ddof=1)`. "이 유닛의 측정값이 같은 항목의 다른 유닛들과
+  비교해 몇 시그마 떨어져 있는가."
+- **Diff_S** — Pre→Post 변화율(`diff_ratio = (post - pre) / abs(pre)`, `abs(pre) <
+  EPS_REL * robust_pre_scale(item)`이면 정의 불가로 `None`, §11-6)의, 같은 항목
+  표본 내 z-score. "이 유닛의 변화량이 같은 항목의 다른 유닛들 변화량과 비교해 몇
+  시그마 떨어져 있는가." Mea_S 와 표본이 다를 수 있어(유효 diff 쌍 개수 ≠ n) 독립
+  평가 후 결합한다(`stats_core.flag_result`).
+- 최종 판정은 **두 축 중 더 심한 쪽**: `SELECT > NOT EVALUATED > INSUFFICIENT N > OK`
+  우선순위로, 둘 중 하나라도 SELECT 면 그 항목/샘플은 SELECT.
+
+### 11-2. Grubbs 임계값 메커니즘
+
+고정 3σ 대신 표본 크기 n 에 따라 달라지는 Grubbs 임계값을 쓴다
+(`grubbs_table.grubbs_critical(n, alpha)`, incomplete-beta 함수 기반 정확 계산,
+§S7 에서 이전 scipy 보간-테이블 폴백의 alpha-에일리어싱 버그를 제거). 이유:
+모표준편차 기준 `max|z| ≤ √(n-1)` 라서 **n 이 작으면 고정 3σ 는 flag 가 수학적으로
+불가능**하고, n 이 크면(수천 단위) 순수 노이즈만으로도 대부분이 flag 된다(NOTES.md
+"P0 — 통계 정의" 참조) — n 에 무관하게 같은 **유의수준(alpha)** 을 보장하는 것이
+Grubbs 임계값의 목적이다.
+
+### 11-3. alpha = 0.01 근거
+
+`alpha_sweep.py` 로 Test Data(n=57)/Perf Data(clean 유닛 499·outlier 유닛 500) 양쪽에서
+0.05/0.025/0.01 을 실측 비교했다(2026-08-08 최종 코드 상태 재확인,
+`docs/verdict_reports/FINAL.md` §3):
+
+| alpha | Perf Data clean 위양성 | Perf Data outlier 검출력 | Test Data SELECT(466항목) |
+|---|---:|---:|---:|
+| 0.05 | 8.4% (42/499) | 100% (500/500) | 218 |
+| 0.025 | 4.0% (20/499) | 100% (500/500) | 181 |
+| **0.01** | **1.6% (8/499)** | **100% (500/500)** | **138** |
+
+alpha 를 0.05→0.01 로 낮추면 위양성이 8.4%→1.6%(약 1/5)로 줄어드는데도 **진성
+이상치 검출력은 100%로 그대로**다 — 검출력을 희생하지 않고 위양성만 줄일 수 있는
+구간이라 0.01 을 기본값으로 채택했다. `CDFTOOL_FLAG_ALPHA` 환경변수로 덮어쓸 수
+있다.
+
+### 11-4. ddof = 1 근거 (§S2)
+
+이전 코드는 `np.std()`/`statistics.pstdev` 기본값인 ddof=0(모표준편차)을 썼면서
+함수명은 `sample_std`(표본표준편차)였다 — 이름과 구현이 불일치했다. 표본표준편차
+(ddof=1, `n-1` 로 나눔)는 Excel `STDEV`/JMP 의 정의와 일치하고, 현장 엔지니어가
+그 도구들로 검산할 때 같은 숫자가 나온다. `stats_core.flag_result` 는 `mode="grubbs"`
+일 때 `ddof=1` 을 전제로 하며(그 외 값이면 예외), `grubbs_table.py` 의 임계값도
+이 기준으로 계산되어 있다 — 둘을 분리해서 바꾸면 안 된다.
+
+### 11-5. Diff 부호 컨벤션 (§S4, 2026-08-05 결정)
+
+`diff_ratio = (post - pre) / abs(pre)` — 분모는 **절댓값**을 쓴다(부호 있는 `pre`를
+분모로 쓰면 pre 가 음수인 항목에서 열화/개선 부호가 반전되는 버그가 있었다, §S4
+이전). 부호 자체는 **값이 이동한 방향**(내려가면 `-`, 올라가면 `+`)이며, 이것이
+"열화"인지 "개선"인지는 툴이 판단하지 않는다 — LL/UL 스펙 방향을 보는 것은
+엔지니어의 몫이다.
+
+### 11-6. EPS_REL 게이트 (§S4)
+
+`abs(pre) < EPS_REL * robust_pre_scale(item)` (기본 `EPS_REL = 1e-3`, 항목 스케일의
+0.1%, `CDFTOOL_DIFF_EPS_REL` 로 조정 가능)이면 `diff_ratio` 는 **정의 불가(`None`)**
+를 반환한다. pre 값이 0 은 아니지만 그 항목의 정상 스케일에 비해 사실상 0에
+가까울 때, 분모가 아주 작은 수라 diff_ratio 가 비정상적으로 폭발(수백~수천 배)해
+가짜 이상치를 만드는 것을 막는다. 정상적인 재측정 잡음(항목 스케일의 ~5%)보다
+50배 작은 임계라 정상 표본이 우연히 걸릴 일은 없다.
+
+### 11-7. Intermittent / Unstable 구분 (§S6, §S6b)
+
+같은 파일 안에서 반복되는 재시험(retest) 이력을 물리적 행 단위로 복원한 뒤
+(`stage_history_from_records`), 두 가지 서로 다른 질문에 서로 다른 이름을 준다:
+
+- **Intermittent** (유닛 레벨, `state["is_intermittent"]`) — 그 **유닛 전체**가 1차
+  회차(FT)에 fail, **마지막** 회차 Bin 은 pass 로 회복했는가
+  (`(not bin_is_pass(first)) and bin_is_pass(last)`). 참이면 최종 상태가 정상이므로
+  벤치(FA) 대상에서 제외한다.
+- **Unstable** (항목 레벨) — 유닛은 **최종적으로 fail** 인데, **개별 항목** 하나가
+  회차 사이 어느 시점에 spec pass 를 찍은 적 있는가(스펙 경계에서 흔들림). 벤치
+  대상이며, 오히려 주목할 신호다.
+- 우선순위: 유닛이 Intermittent 면(더 상위 사실이므로) 그 유닛의 모든 항목은
+  Intermittent 로만 표시하고, 항목 레벨 flip-flop 은 따지지 않는다. Intermittent 가
+  아닐 때만 Unstable 판정으로 내려간다.
+- 실데이터(Test Data) 실측: 22개 fail 유닛 중 Intermittent(유닛 회복) **0건**,
+  Unstable(항목 flip-flop, VSTART Serial 25·62) **2건**. `fail_type` 분포:
+  `{'Excessive': 3, 'Slight': 2, 'Tail': 17, 'Unstable': 2}`.
