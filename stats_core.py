@@ -31,9 +31,13 @@ if FLAG_MODE not in _VALID_FLAG_MODES:
     FLAG_MODE = "grubbs"
 
 try:
-    FLAG_ALPHA = float(os.environ.get("CDFTOOL_FLAG_ALPHA", "0.05"))
+    # §S7 결정(2026-08-08): 기본 alpha=0.05 → 0.01. Test Data 실측 위양성 SELECT
+    # 138/466(0.05: 218/466), Perf Data clean 위양성 8.4%→1.6%, 검출력은 100%로 불변
+    # (docs/verdict_reports/FINAL.md 참조). CDFTOOL_FLAG_ALPHA 환경변수로 덮어쓸 수 있는
+    # 것은 그대로 유지.
+    FLAG_ALPHA = float(os.environ.get("CDFTOOL_FLAG_ALPHA", "0.01"))
 except (TypeError, ValueError):
-    FLAG_ALPHA = 0.05
+    FLAG_ALPHA = 0.01
 
 # diff_ratio 의 "pre 가 0 은 아니지만 항목 스케일 대비 0 에 가까움" 방어 상대 임계.
 # §S4(범위 축소판: pre≈0 폭발 방어만, 2026-08-07). abs(pre) < EPS_REL * robust_pre_scale(item)

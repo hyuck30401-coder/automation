@@ -1148,6 +1148,7 @@ HTML = r"""<!doctype html>
       font-weight: 800;
     }
     .panel-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+    .flag-alpha-label { font-weight: 400; font-size: 12px; color: var(--muted); }
     #cdfPanelTitle,
     #diffCdfPanelTitle,
     #scatterPanelTitle {
@@ -1865,7 +1866,7 @@ HTML = r"""<!doctype html>
       <div class="result-table-column">
       <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
       <section class="panel summary-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; 3)</span><span class="panel-actions">□ ⋮</span></h2>
+        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span><span class="panel-actions">□ ⋮</span></h2>
         <div class="table-wrap"><table id="resultTable"></table></div>
       </section>
       <section class="panel detail-panel">
@@ -1881,6 +1882,7 @@ HTML = r"""<!doctype html>
       <div class="chart-tools graph-item-toolbar">
         <label>Test Item</label>
         <select id="itemSelect"></select>
+        <span class="status" id="itemThresholdLabel"></span>
       </div>
       <section class="panel chart-panel">
         <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="cdfPanelTitle">CDF Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="cdfCanvas">Copy</button></h2>
@@ -3217,6 +3219,34 @@ function renderSummary() {
   renderItemSelect();
   renderResultTable();
   renderOverTable();
+  renderFlagAlphaLabel();
+}
+function renderFlagAlphaLabel() {
+  // §S7: 판정 임계가 항목별 Grubbs(alpha 기반)로 바뀐 뒤, 패널 제목에 박혀 있던
+  // 고정 "> 3" 문구가 실제 판정과 어긋나 보이는 걸 막기 위해 현재 alpha 를 표시한다.
+  // 값 자체는 payload 의 flag_mode/flag_alpha 를 그대로 읽기만 한다(재계산 없음).
+  const el = document.getElementById("flagAlphaLabel");
+  if (!el) return;
+  if (!analysis) { el.textContent = ""; return; }
+  if (analysis.flag_mode === "fixed") {
+    el.textContent = `(fixed limit=${analysis.flag_limit ?? 3})`;
+  } else {
+    const alpha = Number(analysis.flag_alpha);
+    el.textContent = Number.isFinite(alpha) ? `(alpha=${alpha}, 항목별 n 기준 Grubbs 임계)` : "";
+  }
+}
+function renderItemThresholdLabel() {
+  // 선택된 항목의 실제 판정 임계값(n_post/n_diff 에 따라 항목마다 다름). payload 에
+  // 이미 있는 mea_threshold/diff_threshold(§S3) 를 표시만 한다 — 재계산하지 않는다.
+  const el = document.getElementById("itemThresholdLabel");
+  if (!el) return;
+  const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
+  const mea = Number(data.mea_threshold);
+  const diff = Number(data.diff_threshold);
+  const parts = [];
+  if (Number.isFinite(mea)) parts.push(`Mea threshold=${mea.toFixed(4)}`);
+  if (Number.isFinite(diff)) parts.push(`Diff threshold=${diff.toFixed(4)}`);
+  el.textContent = parts.join("  /  ");
 }
 function analysisResultsWindowUrl(mode = analysisMode, waitForResults = false, runId = "") {
   const params = new URLSearchParams({ mode: mode === "fail" ? "fail" : "pass" });
@@ -3283,6 +3313,7 @@ async function refreshSelectedItem() {
     await loadItem(selectedItem);
     await loadRelatedGraphItems();
     renderDetailTable();
+    renderItemThresholdLabel();
     drawCharts();
     if (analysis) setStatus("Done");
   } catch (err) {
