@@ -3,65 +3,9 @@
 성능 리팩터링 중 발견한 것들을 여기에 적는다. **성능 작업 브랜치에서 고치지 않는다.**
 전부 판정 결과를 바꾸므로, 회귀 테스트가 깨지면서 성능 변경의 검증이 불가능해진다.
 
----
-
-## 🔴 P0 — 재시험(Retest) 이력 소실로 `Intermittent` 판정 불가
-
-**상태**: 실측 확인 완료. 사용자 요구사항 확정됨.
-**상세**: `CLAUDE.md` §4-b 참조.
-
-### 요약
-
-실제 데이터는 **같은 파일 안에서 동일 Serial # 행이 반복**되는 형태다
-(fail 유닛 22개가 각각 4행 = 초기 + 재시험 3회). 그런데 코드는 "재시험 = 별도 파일"
-모델이라 `merged_fail_rows` 가 `len(files)==1` 에서 즉시 리턴하고, 파일 내 재시험을
-인식하지 못한다.
-
-결과적으로 Bin 은 첫 회차, 측정값은 마지막 회차가 채택되어 **출처가 어긋나고**,
-회복 유닛(1회차 fail → 마지막 Bin1)이 `Intermittent` 가 아니라
-`Excessive`/`Slight`/`Tail` 로 **오분류되어 벤치(FA) 대상에 잘못 들어간다.**
-
-### 확정된 요구사항
-
-1. 대표 측정값 = **마지막 회차** (현재 동작 유지, 변경 없음)
-2. 회복 유닛 = **`Intermittent`** 으로 분류하고 벤치 대상에서 제외
-
-### 고칠 방향
-
-```python
-# 같은 파일 내에서 Serial # 기준으로 등장 순서를 보존한 회차 이력을 만든다
-history[sample] = [{"bin": ..., "items": {...}, "spec_fail": ...}, ...]
-
-대표값        = history[sample][-1]
-bin_sequence  = [h["bin"] for h in history[sample]]
-is_intermittent = (not bin_is_pass(bin_sequence[0])) and bin_is_pass(bin_sequence[-1])
-```
-
-파일 기반 stage 병합(`merged_fail_rows`)은 다른 사업장 데이터 대비 그대로 두고,
-그 위에 "파일 내 재시험" 단계를 하나 더 얹는 방식이 안전하다.
-
-### 검증 방법
-
-- 회복 케이스가 있는 Post 파일을 확보한 뒤(현재 샘플에는 0건), 해당 유닛이
-  `Intermittent` 로 나오고 `Need Bench` 대상에서 빠지는지 확인
-- 회귀 스냅샷은 이 작업 후 **새로 만든다** (기존 스냅샷과 달라지는 것이 정상)
-
----
-
-## 🔴 P0 — 통계 정의
-
-| 항목 | 문제 | 조치 방향 |
-|---|---|---|
-| ~~`sample_std` (tool:43)~~ | ~~이름은 sample std 인데 실제로는 **모표준편차** (`np.std()` ddof=0 / `statistics.pstdev`)~~ | **완료 (§S2, 2026-08-06)**. `stats_core.std_of(ddof=1)` 로 전환, 판정용 호출부는 모두 명시적으로 `ddof=1` 전달. Excel STDEV/JMP 와 값 일치 확인 |
-| ~~`FLAG_LIMIT = 3` (tool:17)~~ | ~~모표준편차 기준 max\|z\| ≤ √(n−1) 이라 **n ≤ 10 이면 3σ flag 가 수학적으로 불가능**. 반대로 n=3,000 이면 순수 노이즈로도 99.7% 가 flag (실측)~~ | **완료 (§S3, 2026-08-06)**. `stats_core.grubbs_critical(n, alpha)` 기반 `flag_result`/`threshold_for` 로 전환, `CDFTOOL_FLAG_MODE=fixed` 로 구모드 재현 가능(byte-identical 검증). 항목별 threshold 를 payload/UI 에 노출 |
-| ~~Pass/Fail σ 정의 불일치~~ | ~~Pass 는 `vector_stats`, Fail 은 `sample_std` — 구현이 별개라 경계 동작이 이미 갈라짐~~ | **완료 (§S1)**. `stats_core.py` 로 단일화, 기존 이름은 얇은 위임 함수로 유지 |
-| `diff_ratio` (tool:76) | ~~분모가 부호 있는 `pre_value` → pre 가 음수면 열화/개선 부호 반전~~ **해결됨 (2026-08-05, 분모 `abs(pre)`로 변경)**. `pre ≈ 0` 폭발 방어는 아직 없음 | 상대 임계 도입 + 절대 shift 병기 (§S4 EPS 임계, 남은 과제) |
-| ~~`safe_ratio`/`sigma`/`mean`~~ | ~~분모 0·빈 데이터·n<2 에서 `0.0` 반환 → "정의 불가"가 "정상"으로 둔갑. **σ=0 항목은 어떤 이상치도 절대 flag 안 됨**~~ | **완료 (§S3)**. `sigma_is_negligible`(상대 임계 `sigma <= abs(mean)*1e-12`) 도입, 해당 시 `flag_result` 가 `"NOT EVALUATED"` 반환. n<3 은 `"INSUFFICIENT N"`. Test Data 실측: `BUCK_NOCP_LX_V`/`ICL1_V` 2건이 진짜 all-identical-value NOT EVALUATED 로 정상 포착됨 |
-
-**§1(payload details 축소)과의 연결**: §1(payload details 축소) 효과는 (전체 항목 수 ÷ SELECT
-항목 수)가 상한이다. Test Data 실측: 466 ÷ 295 = 1.58배 (측정 1.5배). SELECT 비율 63%는 3σ 고정
-임계의 위양성 때문이며(n=145), 임계를 표본 크기에 맞게 고치면 SELECT 비율이 떨어져 §1 효과도
-함께 커진다. → 통계 임계 수정은 정확성 과제이자 성능 과제다.
+**P0 없음 (2026-08-08, §S7 완료 시점)** — 기존 P0 두 건(재시험 이력 소실, 통계 정의)
+모두 §S2~S7 로 해결되어 "완료/결정됨"으로 이동함. 상세는 `CLAUDE.md` §11 "통계 판정
+규칙"과 `docs/verdict_reports/FINAL.md` 참조.
 
 ---
 
@@ -152,10 +96,31 @@ fixed(3.0) 와 grubbs(4.299) 가 거의 동일한 결과를 냈다.
 
 ## ✅ 완료 / 결정됨
 
+- **[해결] 재시험(Retest) 이력 소실로 `Intermittent` 판정 불가 (§S6/S6b, 2026-08-08)** —
+  실제 데이터는 같은 파일 안에서 동일 Serial # 행이 재시험마다 반복되는데(fail 유닛
+  22개 × 4행), 코드는 "재시험 = 별도 파일" 모델이라 `merged_fail_rows` 가
+  `len(files)==1` 에서 즉시 리턴해 파일 내 재시험을 인식하지 못했다 — Bin/측정값 출처가
+  어긋나고, 회복 유닛이 `Intermittent` 대신 `Excessive`/`Slight`/`Tail` 로 오분류되어
+  벤치(FA) 대상에 잘못 들어갔다. `stage_history_from_records`/`sample_states_from_history`
+  로 물리적 행(`row_index`) 기준 이력을 복원해 해결했다(대표 측정값=마지막 회차는
+  유지). 복원 과정에서 "유닛 전체 회복"(Intermittent)과 "개별 항목 flip-flop"
+  (Unstable, §S6b 신설)이 원래 같은 문자열로 뭉뚱그려져 있던 것도 분리했다. 실데이터
+  검증: 22개 fail 유닛 중 Intermittent 0건(회복 케이스가 실제로 없음), Unstable 2건
+  (VSTART Serial 25·62). 상세: `CLAUDE.md` §11-7, `docs/verdict_reports/S6.md`,
+  `S6b.md`.
+- **[해결] 통계 정의 4건 (§S1~S4, 2026-08-05~08-07)** — `sample_std`(이름은 표본
+  표준편차인데 실제론 모표준편차) → `stats_core.std_of(ddof=1)` 전환(§S2). 고정
+  `FLAG_LIMIT=3`(n 이 작으면 3σ flag 가 수학적으로 불가능, n 이 크면 노이즈로도 대부분
+  flag) → `grubbs_critical(n, alpha)` 기반 임계로 전환(§S3). `diff_ratio` 의 부호 반전
+  버그(2026-08-05)와 `pre≈0` 폭발 방어 없음(§S4, `EPS_REL` 게이트로 해결) → 완료.
+  `safe_ratio`/`sigma`/`mean` 이 "정의 불가"를 `0.0`으로 반환해 진짜 이상치를 가리던
+  문제 → `sigma_is_negligible`/`NOT EVALUATED`(§S3) + 0.0 대신 `None`(§S5)으로 해결.
+  이 네 가지가 §S7(grubbs 정확 계산 교체, alpha=0.01 전환)의 전제 조건이었다. 상세:
+  `CLAUDE.md` §11, `docs/verdict_reports/FINAL.md`.
 - **Reliability Type 제거** — 폴더명 규칙이 `순번_Ver_Lot_Purpose` 4토막으로 확정.
   드롭다운 삭제. `Reliability Items`(고정 9종)는 유지. → 0단계 이전 작업으로 수행.
 - **재시험 대표값** — 마지막 회차 사용 (현재 동작 유지).
-- **회복 유닛** — `Intermittent` 로 분류 (별도 작업 필요, 위 P0 참조).
+- **회복 유닛** — `Intermittent` 로 분류 (§S6/S6b 로 구현 완료, 위 항목 참조).
 - **§U2(e77440c) 이후 fail_type `Tail` → `Slight` 로 바뀐 2건 (2026-08-04, 골든 재생성 시점)**
   — `BUCK_VREF3V_POST` sample=75 (diff_s=-4.99), `VSTART` sample=73 (diff_s=3.58).
   원인: `fail_type_for_detail()`의 `Slight` 분기는 `|mea_s|>3 AND |diff_s|>3`인데, §U2
