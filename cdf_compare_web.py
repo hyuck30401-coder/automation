@@ -4884,6 +4884,20 @@ def filter_records_by_allowed_units(pre_records, post_records):
     )
 
 
+def excluded_items_by_unit(pre_records, post_records):
+    """unit_is_allowed() 에서 걸러진 항목을 item/unit 단위로 모은다 (인라인 배너용)."""
+    all_items = set(pre_records) | set(post_records)
+    excluded = []
+    for item in all_items:
+        if item_has_allowed_unit(pre_records.get(item, [])) or item_has_allowed_unit(post_records.get(item, [])):
+            continue
+        records = post_records.get(item) or pre_records.get(item) or []
+        unit = records[0].get("unit", "") if records else ""
+        excluded.append({"item": item, "unit": unit, "reason": "unit_not_allowed"})
+    excluded.sort(key=lambda row: natural_key(row["item"]))
+    return excluded
+
+
 RECORD_CACHE = {}
 RECORD_CACHE_LOCK = threading.Lock()
 RECORD_PARSE_LOCKS = {}
@@ -4964,10 +4978,12 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     if bin1_only:
         update(70, "Filtering Pass Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
+        app.excluded_items = excluded_items_by_unit(app.pre_records, app.post_records)
         app.pre_records, app.post_records = filter_records_by_allowed_units(app.pre_records, app.post_records)
     else:
         update(70, "Excluding Fail Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
+        app.excluded_items = []
     # pre_cdf_values_for_item() 의 PASS_SAMPLE_IDS_AUTO 센티널을 여기서 한 번만 실제 값으로
     # 치환한다. 그렇지 않으면 item_to_json() 이 항목마다 pass_sample_ids_from_records(전체
     # pre_records)를 다시 순회한다 (항목 수 x pre 레코드 수 규모로 재계산, §2 벤치에서 실측:
@@ -5856,6 +5872,30 @@ def merge_combo_payloads(combo_payloads, mode):
     merged["total_reliability_items"] = sorted(reliability_seen, key=reliability_sort_key)
     merged["total_ft_temps"] = sorted(temp_seen, key=temp_sort_key)
     merged["message"] = f"Total Analysis completed. Conditions {len(combo_payloads)}, Items {len(merged['selected_summary'])}"
+    if mode == "pass":
+        summary_counts = {"total_items": 0, "select": 0, "ok": 0, "not_evaluated": 0, "insufficient_n": 0}
+        excluded_seen = {}
+        item_counts_by_item = {}
+        for payload in combo_payloads:
+            counts = payload.get("summary_counts") or {}
+            for key in ("total_items", "select", "ok", "not_evaluated", "insufficient_n"):
+                summary_counts[key] += counts.get(key, 0) or 0
+            for excl in payload.get("excluded_items", []):
+                excluded_seen[(excl.get("item"), excl.get("unit"))] = excl
+            for entry in payload.get("item_counts", []):
+                item = entry.get("reliability_item", "")
+                agg = item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+                agg["select"] += entry.get("select", 0) or 0
+                agg["total"] += entry.get("total", 0) or 0
+        summary_counts["excluded"] = len(excluded_seen)
+        for item in RELIABILITY_ITEMS:
+            item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+        merged["summary_counts"] = summary_counts
+        merged["excluded_items"] = sorted(excluded_seen.values(), key=lambda row: natural_key(row.get("item", "")))
+        merged["item_counts"] = sorted(
+            item_counts_by_item.values(),
+            key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
+        )
     return merged
 
 
@@ -6049,6 +6089,20 @@ def fail_type_for_detail(
     return "Tail"
 
 
+FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2, "Slight": 3, "Tail": 4}
+
+
+def worst_fail_type(details):
+    """항목의 detail 행들 중 가장 심각한 fail_type 을 고른다.
+
+    우선순위는 fail_type_for_detail() 주석에 명시된 순서를 그대로 쓴다:
+    Intermittent > Unstable > Excessive > Slight > Tail.
+    """
+    if not details:
+        return ""
+    return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
+
+
 def selected_summary_rows(app):
     rows = []
     for row in app.results:
@@ -6131,6 +6185,35 @@ def selected_summary_rows(app):
     return sorted(rows, key=lambda row: (natural_key(row["test_number"]), row["item"]))
 
 
+def compute_summary_counts(results, excluded_items):
+    """results 의 확정된 result 값을 세기만 한다 (판정 로직에는 관여하지 않음).
+
+    SELECT/OK/INSUFFICIENT N 이외의 모든 result(NOT EVALUATED, NO PRE ITEM 등
+    "판정 불가" 계열)는 not_evaluated 로 묶는다 (verdict_diff.classify_result 의
+    판정불가 그룹과 동일한 분류 기준). 이렇게 하면 select+ok+not_evaluated+
+    insufficient_n 합이 total_items 와 항상 일치한다.
+    """
+    select = ok = not_evaluated = insufficient_n = 0
+    for row in results:
+        result = row.get("result")
+        if result == "SELECT":
+            select += 1
+        elif result == "OK":
+            ok += 1
+        elif result == "INSUFFICIENT N":
+            insufficient_n += 1
+        else:
+            not_evaluated += 1
+    return {
+        "total_items": len(results),
+        "select": select,
+        "ok": ok,
+        "not_evaluated": not_evaluated,
+        "insufficient_n": insufficient_n,
+        "excluded": len(excluded_items),
+    }
+
+
 def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     app = make_app(pre_path, post_path, bin1_only, progress, include_pre)
     if progress:
@@ -6143,11 +6226,14 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
     app.results.sort(key=lambda row: (natural_key(row.get("test_number")), row.get("item", "")))
     results = [{k: to_jsonable(v) for k, v in row.items()} for row in app.results]
     selected_summary = [{k: to_jsonable(v) for k, v in row.items()} for row in selected_summary_rows(app)]
+    excluded_items = list(getattr(app, "excluded_items", []))
     payload = {
         "results": results,
         "selected_summary": selected_summary,
         "over_sigma": over_rows,
         "select_count": CdfCompareApp.count_flags(app),
+        "summary_counts": compute_summary_counts(results, excluded_items),
+        "excluded_items": excluded_items,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
@@ -6353,6 +6439,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                 "qty": len(details),
                 "qty_ratio": (len(details) / n_pass) if n_pass else None,
                 "sample_numbers": ", ".join(sample_numbers),
+                "fail_type": worst_fail_type(details),
             }
         )
         results.append({"test_number": test_number, "item": item, "result": "SELECT"})
@@ -7309,7 +7396,23 @@ def get_job(job_id):
         return dict(job) if job else None
 
 
-def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, cache_key=None, mode="pass", include_pre=True, reliability_item="", run_id="", post_history=None):
+def decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout):
+    """단일 조건 분석의 selected_summary 행에 Total 분석과 동일한 식별 필드를 싣는다.
+
+    decorate_combo_payload() 와 달리 item_key 재발급이나 items dict 재구성은 하지
+    않는다 (§U1에서 없앤 화면 열의 값만 복구하면 되고, items 키 구조를 바꾸면
+    프런트엔드 단일 조건 표시 로직에 영향을 줄 수 있어 범위를 넘어선다).
+    """
+    if not reliability_item and not ft_temp and not readout:
+        return payload
+    for row in payload.get("selected_summary", []):
+        row["reliability_item"] = reliability_item
+        row["ft_temp"] = ft_temp
+        row["judged_readout"] = readout
+    return payload
+
+
+def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, cache_key=None, mode="pass", include_pre=True, reliability_item="", run_id="", post_history=None, ft_temp="", readout=""):
     def progress(percent, message):
         update_job(job_id, progress=percent, message=message)
 
@@ -7318,6 +7421,16 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
         app, payload = analyze_to_json(pre_path, post_path, bin1_only, progress, include_pre)
         payload = payload_with_items(app, payload, mode, "saved" if cache_key else "none")
         apply_post_readout_history_to_payload(payload, post_history)
+        decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout)
+        if mode == "pass":
+            summary_counts = payload.get("summary_counts") or {}
+            payload["item_counts"] = [
+                {
+                    "reliability_item": reliability_item,
+                    "select": summary_counts.get("select", 0),
+                    "total": summary_counts.get("total_items", 0),
+                }
+            ]
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
@@ -7346,7 +7459,7 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
                     pass
 
 
-def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_pre=True, reliability_item="", run_id="", post_history=None):
+def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_pre=True, reliability_item="", run_id="", post_history=None, ft_temp="", readout=""):
     def progress(percent, message):
         update_job(job_id, progress=percent, message=message)
 
@@ -7355,6 +7468,7 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
         app, payload = analyze_fail_to_json(pre_path, post_files, progress, include_pre)
         payload = payload_with_items(app, payload, "fail", "saved" if cache_key else "none")
         apply_post_readout_history_to_payload(payload, post_history)
+        decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout)
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
@@ -7398,6 +7512,14 @@ def analyze_total_combo(base_path, combo, mode="pass", cache_key=None, include_p
     else:
         app, payload = analyze_to_json(pre_path, combo["post_files"][-1], True, None, include_pre)
         payload = payload_with_items(app, payload, "pass", "saved" if cache_key else "none")
+        summary_counts = payload.get("summary_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": combo["item"],
+                "select": summary_counts.get("select", 0),
+                "total": summary_counts.get("total_items", 0),
+            }
+        ]
     if include_pre:
         add_pre_only_items_to_payload(payload, app.pre_records, target_items or [])
     apply_post_readout_history_to_payload(payload, post_history)
@@ -7938,7 +8060,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     threading.Thread(
                         target=run_fail_analyze_job,
-                        args=(job_id, pre_path, post_files, cache_key, include_pre, reliability_item, run_id, post_history),
+                        args=(job_id, pre_path, post_files, cache_key, include_pre, reliability_item, run_id, post_history, selection.get("ft_temp", "").strip(), selection.get("readout", "")),
                         daemon=True,
                     ).start()
                     self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": pre_path, "post_path": post_path})
@@ -7954,7 +8076,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 threading.Thread(
                     target=run_analyze_job,
-                    args=(job_id, pre_path, post_path, True, False, cache_key, "pass", include_pre, reliability_item, run_id, post_history),
+                    args=(job_id, pre_path, post_path, True, False, cache_key, "pass", include_pre, reliability_item, run_id, post_history, selection.get("ft_temp", "").strip(), selection.get("readout", "")),
                     daemon=True,
                 ).start()
                 self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": pre_path, "post_path": post_path})
