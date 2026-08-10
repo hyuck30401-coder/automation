@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.027"
+APP_REVISION = "Rev.0.028"
 CURRENT_APP = None
 CURRENT_ITEMS = {}
 CURRENT_PAYLOADS = {}
@@ -251,6 +251,50 @@ HTML = r"""<!doctype html>
     .files { padding: 10px; display: grid; grid-template-columns: 1fr; gap: 8px 10px; align-items: center; }
     input[type=file], input[type=text] { width: 100%; }
     .toolbar { padding: 14px 20px; display: flex; align-items: center; gap: 28px; margin-bottom: 12px; flex: 0 0 auto; }
+    .condition-toggle {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+    .condition-toggle:hover .title-text { color: #0b5ca8; }
+    .condition-summary-line {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      display: none;
+    }
+    .condition-toggle-caret {
+      flex: 0 0 auto;
+      font-size: 14px;
+      color: var(--muted);
+      transition: transform .15s ease;
+    }
+    .rda-card.condition-card { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .toolbar.condition-attached { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: none; margin-bottom: 12px; }
+    #rdaView.condition-collapsed .condition-toggle-caret { transform: rotate(-90deg); }
+    #rdaView.condition-collapsed .condition-card .condition-body,
+    #rdaView.condition-collapsed > .toolbar.condition-attached {
+      display: none;
+    }
+    #rdaView.condition-collapsed .condition-card .condition-title {
+      border-bottom: 0;
+      margin-bottom: 0;
+    }
+    #rdaView.condition-collapsed .condition-card {
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }
+    #rdaView.condition-collapsed .condition-summary-line {
+      display: block;
+    }
     .analysis-results-section {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -262,7 +306,7 @@ HTML = r"""<!doctype html>
       display: flex;
       flex-direction: column;
     }
-    body:not(.results-window) .analysis-results-section {
+    body:not(.results-window).parent-results-hidden .analysis-results-section {
       display: none !important;
     }
     body:not(.results-window).parent-results-visible .analysis-results-section {
@@ -289,6 +333,75 @@ HTML = r"""<!doctype html>
       overflow: auto;
       padding-right: 4px;
     }
+    .summary-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      margin: 0 0 10px;
+    }
+    .summary-strip:empty {
+      display: none;
+      margin: 0;
+    }
+    .summary-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      min-width: 92px;
+      padding: 8px 14px;
+      border: 1px solid #d8e4f1;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .summary-card-value {
+      font-size: 20px;
+      font-weight: 800;
+      color: #1a3b63;
+    }
+    .summary-card-flag .summary-card-value { color: #c0392b; }
+    .summary-card-ok .summary-card-value { color: #1a7f4a; }
+    .summary-card-warn { border-color: #f0c36d; background: #fff9ec; }
+    .summary-card-warn .summary-card-value { color: #a86a00; }
+    .summary-card-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .judgment-footnote {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .footnote-info {
+      cursor: help;
+      color: #7c93b3;
+      font-size: 13px;
+    }
+    .fail-count-badge {
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #c0392b;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .tab-count-badge {
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #0a7890;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    #overSampleTableWrap { display: none; }
     .analysis-filter-bar {
       display: none;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -447,22 +560,32 @@ HTML = r"""<!doctype html>
     .grid {
       padding: 0;
       display: grid;
-      grid-template-columns: repeat(9, minmax(0, 1fr));
-      grid-template-rows: 275px 380px;
-      grid-template-areas:
-        "summary summary summary detail detail detail over over over"
-        "scatter scatter scatter chart chart chart diffcdf diffcdf diffcdf";
-      gap: 10px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
+      grid-template-rows: minmax(420px, 1fr);
+      grid-template-areas: "resulttab graphtab";
+      gap: 14px;
       align-items: stretch;
       border: 0;
       background: transparent;
     }
-    .result-table-column,
+    .result-table-column {
+      display: flex;
+      flex-direction: column;
+      grid-area: resulttab;
+      min-width: 0;
+      min-height: 0;
+      gap: 12px;
+    }
     .result-graph-column {
-      display: contents;
+      display: flex;
+      flex-direction: column;
+      grid-area: graphtab;
+      min-width: 0;
+      min-height: 0;
+      gap: 12px;
     }
     .results-window-title {
-      display: none;
+      display: none !important;
     }
     .results-hidden { display: none; }
     .panel {
@@ -470,18 +593,36 @@ HTML = r"""<!doctype html>
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      min-height: 0;
+      min-height: 260px;
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(7,31,73,.05);
     }
-    .summary-panel { grid-area: summary; }
-    .detail-panel { grid-area: detail; }
-    .over-panel { grid-area: over; }
-    .chart-panel { grid-area: chart; }
-    .ppf-panel { grid-area: chart; display: none; }
-    .scatter-panel { grid-area: scatter; }
-    .diff-cdf-panel { grid-area: diffcdf; }
-    .wafer-panel { display: none; }
+    /* 좌측은 탭 패널(요약/Fail/이상 샘플) : 상세 를 1:2 비율로 나눈다. over-panel 은
+       메인 화면에서는 항상 숨김(§updatePanelMode, popup 전용으로 남겨둠)이라
+       flex 계산에서 제외된다. */
+    .summary-panel { flex: 1 1 0; }
+    .over-panel { flex: 1 1 0; }
+    .detail-panel { flex: 2 1 0; }
+    .chart-tools.graph-item-toolbar { flex: 0 0 auto; }
+    .chart-panel,
+    .diff-cdf-panel,
+    .ppf-panel,
+    .scatter-panel {
+      display: none;
+      flex: 1 1 0;
+      min-height: 260px;
+    }
+    .chart-panel.active-graph,
+    .diff-cdf-panel.active-graph,
+    .ppf-panel.active-graph,
+    .scatter-panel.active-graph {
+      display: flex;
+    }
+    .wafer-panel {
+      display: flex;
+      flex: 1 1 0;
+      min-height: 220px;
+    }
     .panel h2 {
       margin: 0;
       padding: 14px 18px;
@@ -513,7 +654,8 @@ HTML = r"""<!doctype html>
     }
     td.item, td.over-item { text-align: left; }
     tr.select-row { background: var(--select); }
-    tr.active { outline: 2px solid #333; outline-offset: -2px; }
+    tr.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; }
+    td.over-item.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; font-weight: 700; }
     td.sigma-fail {
       background: #ffd9d9;
       color: #9b1c1c;
@@ -553,29 +695,45 @@ HTML = r"""<!doctype html>
     select { min-width: 240px; padding: 5px; }
     canvas { width: 100%; height: 100%; display: block; background: #fff; }
     .chart-box, .scatter-box, .wafer-box { flex: 1; min-height: 315px; }
-    .reliability-tabs {
-      display: none;
-      background: #050505;
-      border-bottom: 4px solid #e20000;
-      gap: 22px;
-      padding: 13px 14px;
-      overflow-x: auto;
+    .item-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
     }
-    .reliability-tab {
-      min-width: 100px;
-      min-height: 46px;
-      border: 3px solid #06334b;
-      border-radius: 0;
-      background: #1e6f8c;
-      color: #fff;
-      font-size: 20px;
+    .item-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 6px 14px;
+      border: 1px solid #c9d9eb;
+      border-radius: 999px 999px 0 0;
+      border-bottom: 3px solid transparent;
+      background: #f2f6fb;
+      color: #33445c;
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: 0;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
     }
-    .reliability-tab.active {
-      background: #0ba7aa;
-      border-color: #09666f;
+    .item-tab.active {
+      background: #fff;
+      color: #0b5ca8;
+      border-bottom-color: #1266c8;
+      box-shadow: 0 -2px 8px rgba(18,102,200,.10);
+    }
+    .item-tab-empty {
+      opacity: .45;
+      cursor: default;
+    }
+    .item-tab-badge {
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(18,102,200,.12);
+      color: #0b5ca8;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .item-tab.active .item-tab-badge {
+      background: rgba(18,102,200,.18);
     }
     .brand-mark {
       width: 42px;
@@ -662,30 +820,28 @@ HTML = r"""<!doctype html>
       border-radius: 3px 3px 0 0;
       background: var(--nav);
     }
-    .edit-label {
-      width: 24px;
-      height: 24px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      border: 0;
-      border-radius: 4px;
-      background: transparent;
-      color: rgba(255,255,255,.7);
-      font-size: 13px;
+    .tree-link[disabled],
+    .side-link[disabled] {
+      opacity: .5;
+      cursor: default;
+      pointer-events: none;
+    }
+    .badge-wip {
       flex: 0 0 auto;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.16);
+      color: rgba(255,255,255,.85);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
     }
-    .edit-label:hover { background: rgba(255,255,255,.12); color: #fff; }
-    .edit-label::before {
-      content: "";
-      width: 12px;
-      height: 3px;
-      background: currentColor;
-      border-radius: 2px;
-      transform: rotate(45deg);
-      box-shadow: 6px 0 0 -1px currentColor;
+    .side-exit-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
+    .side-exit-row .side-link { width: auto; flex: 1; }
     .nav-symbol {
       width: 22px;
       height: 22px;
@@ -866,16 +1022,11 @@ HTML = r"""<!doctype html>
       height: var(--results-section-height, 100%);
       min-height: 0;
     }
-    body.results-window .analysis-results-section > .condition-title {
+    body.results-window #summaryStrip {
       display: none !important;
     }
-    body.results-window .reliability-tabs {
+    body.results-window .analysis-results-section > .condition-title {
       display: none !important;
-      padding: 10px 22px;
-      gap: 14px;
-      border-bottom: 2px solid #022b44;
-      background: linear-gradient(90deg, #011526, #062b43);
-      flex: 0 0 auto;
     }
     body.results-window .analysis-results-scroll {
       display: block;
@@ -943,6 +1094,7 @@ HTML = r"""<!doctype html>
     body.results-window .result-table-column,
     body.results-window .result-graph-column {
       display: grid;
+      grid-area: auto;
       min-width: 0;
       min-height: 0;
       height: 100%;
@@ -1498,13 +1650,6 @@ HTML = r"""<!doctype html>
     .grid {
       gap: 16px;
     }
-    .grid.fail-grid {
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
-      grid-template-rows: 250px 330px;
-      grid-template-areas:
-        "summary detail"
-        "chart diffcdf";
-    }
     .panel {
       border: 1px solid #d7e3f1;
       border-radius: 9px;
@@ -1673,6 +1818,15 @@ HTML = r"""<!doctype html>
       line-height: 1.12;
       white-space: normal;
     }
+    #resultTabBar {
+      flex-wrap: nowrap;
+    }
+    #resultTabBar button {
+      width: auto;
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 0 8px;
+    }
     button {
       min-height: 34px;
       padding: 6px 12px;
@@ -1756,42 +1910,43 @@ HTML = r"""<!doctype html>
         <h1 class="side-title">
           <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
           <span class="brand-text"><strong data-label-key="brand">Work Manager</strong><small>Automation Suite</small></span>
-          <button class="edit-label" type="button" data-edit-target="brand" title="Edit folder name"></button>
         </h1>
         <div class="tree">
           <div class="tree-group">
             <div class="tree-parent">
               <button class="side-link" data-view="managerView"><span class="nav-symbol home-symbol"></span><span data-label-key="dashboard">Dashboard</span></button>
-              <button class="edit-label" type="button" data-edit-target="dashboard" title="Edit folder name"></button>
             </div>
           </div>
           <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="reliability">Reliability</span><button class="edit-label" type="button" data-edit-target="reliability" title="Edit folder name"></button></div>
+            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="reliability">Reliability</span></div>
             <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link active" data-view="rdaView"><span data-label-key="rda">Reliability Data Analysis</span></button><button class="edit-label" type="button" data-edit-target="rda" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="schedule">Schedule Management</span></button><button class="edit-label" type="button" data-edit-target="schedule" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="final">Final Result</span></button><button class="edit-label" type="button" data-edit-target="final" title="Edit folder name"></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link active" data-view="rdaView"><span data-label-key="rda">Reliability Data Analysis</span></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="schedule">Schedule Management</span></button><span class="badge-wip">준비 중</span></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="final">Final Result</span></button><span class="badge-wip">준비 중</span></div>
             </div>
           </div>
           <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="iso">ISO 26262</span><button class="edit-label" type="button" data-edit-target="iso" title="Edit folder name"></button></div>
+            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="iso">ISO 26262</span></div>
             <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="fsView"><span data-label-key="fs">FS Deliverables Management</span></button><button class="edit-label" type="button" data-edit-target="fs" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="deliverables">Deliverables Status</span></button><button class="edit-label" type="button" data-edit-target="deliverables" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="matrix">Traceability Matrix</span></button><button class="edit-label" type="button" data-edit-target="matrix" title="Edit folder name"></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="fsView"><span data-label-key="fs">FS Deliverables Management</span></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="deliverables">Deliverables Status</span></button><span class="badge-wip">준비 중</span></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="matrix">Traceability Matrix</span></button><span class="badge-wip">준비 중</span></div>
             </div>
           </div>
           <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="rma">RMA</span><button class="edit-label" type="button" data-edit-target="rma" title="Edit folder name"></button></div>
+            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="rma">RMA</span></div>
             <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="reportView"><span data-label-key="report">8D Report</span></button><button class="edit-label" type="button" data-edit-target="report" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="action">Action Tracking</span></button><button class="edit-label" type="button" data-edit-target="action" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="effect">Effectiveness Check</span></button><button class="edit-label" type="button" data-edit-target="effect" title="Edit folder name"></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="reportView"><span data-label-key="report">8D Report</span></button></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="action">Action Tracking</span></button><span class="badge-wip">준비 중</span></div>
+              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="effect">Effectiveness Check</span></button><span class="badge-wip">준비 중</span></div>
             </div>
           </div>
         </div>
         <div class="side-exit">
-          <button class="side-link" type="button"><span class="nav-symbol gear-symbol"></span><span data-label-key="settings">Settings</span></button>
+          <div class="side-exit-row">
+            <button class="side-link" type="button" disabled><span class="nav-symbol gear-symbol"></span><span data-label-key="settings">Settings</span></button>
+            <span class="badge-wip">준비 중</span>
+          </div>
           <button id="exitBtn" class="side-link exit-button" type="button"><span class="nav-symbol power-symbol"></span><span>Exit Tool</span></button>
         </div>
       </nav>
@@ -1828,29 +1983,30 @@ HTML = r"""<!doctype html>
         </section>
         <section id="rdaView" class="view active">
           <div class="view-header">
-            <div><h2 class="view-title">Reliability Data Analysis</h2><div class="view-subtitle">Reliability Data Analyzer_Ver.0.027</div></div>
-            <div class="path-tools"><strong>Data Path:</strong><span class="status" id="dataPath">-</span><button id="browseDataPathBtn" class="secondary" type="button">Browse...</button><span class="top-icons"><span class="top-icon">?</span><span class="top-icon">!</span><span class="top-icon">U</span></span></div>
+            <div><h2 class="view-title">Reliability Data Analysis</h2><div class="view-subtitle">Reliability Data Analyzer___APP_REVISION__</div></div>
+            <div class="path-tools"><strong>Data Path:</strong><span class="status" id="dataPath">-</span><button id="browseDataPathBtn" class="secondary" type="button">Browse...</button></div>
           </div>
-          <section class="rda-card">
-            <div class="condition-title"><span class="filter-icon"></span><span>1. Analysis Condition</span></div>
-            <div class="rda-form">
-              <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
-              <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
-              <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
-              <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
-              <div class="field"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
-              <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
-              <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
+          <section class="rda-card condition-card" id="conditionCard">
+            <button type="button" class="condition-title condition-toggle" id="conditionToggle" aria-expanded="true" aria-controls="conditionBody">
+              <span class="filter-icon"></span><span class="title-text">1. Analysis Condition &amp; Execution</span>
+              <span class="condition-summary-line" id="conditionSummaryLine"></span>
+              <span class="condition-toggle-caret" id="conditionToggleCaret" aria-hidden="true">▾</span>
+            </button>
+            <div class="condition-body" id="conditionBody">
+              <div class="rda-form">
+                <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
+                <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
+                <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
+                <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
+                <div class="field"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
+                <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
+                <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
+              </div>
             </div>
           </section>
-        <section class="reliability-tabs" id="reliabilityTabs" aria-label="Reliability Items"></section>
-        <section class="toolbar">
+        <section class="toolbar condition-attached" id="executionToolbar">
           <button id="analyzeBtn" class="primary">▶ &nbsp;Analyze</button>
           <button id="stopAnalyzeBtn" class="secondary" type="button" disabled>Stop</button>
-          <div class="toolbar-mode">
-            <button id="failModeBtn" type="button" data-mode="fail">Fail Data Analysis Results</button>
-            <button id="passModeBtn" class="active" type="button" data-mode="pass">Pass Data Analysis Results</button>
-          </div>
           <label><input id="includePreCheck" type="checkbox" checked> Including Pre</label>
           <button id="initializeBtn" class="secondary" type="button">Analysis Initialization</button>
           <strong>Status:</strong><span class="status-pill" id="status">Ready</span>
@@ -1861,21 +2017,28 @@ HTML = r"""<!doctype html>
         <section class="analysis-results-section">
           <div class="condition-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span><button id="openResultsWindowBtn" class="icon-window-btn" type="button" title="Open Analysis Results in a new window" disabled></button></div>
           <div class="analysis-results-scroll">
+        <section id="summaryStrip" class="summary-strip"></section>
         <section id="analysisFilterBar" class="analysis-filter-bar"></section>
         <section id="passResultsGrid" class="grid results-hidden">
       <div class="result-table-column">
       <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
       <section class="panel summary-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span><span class="panel-actions">□ ⋮</span></h2>
-        <div class="table-wrap"><table id="resultTable"></table></div>
-      </section>
-      <section class="panel detail-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-detail"></span>Abnormal Shift Details</span><span class="panel-actions">□ ⋮</span></h2>
-        <div class="table-wrap"><table id="detailTable"></table></div>
+        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span></h2>
+        <div class="toolbar-mode result-tab-bar" id="resultTabBar">
+          <button id="passModeBtn" class="active" type="button" data-mode="pass">Abnormal Pass Data</button>
+          <button id="failModeBtn" type="button" data-mode="fail">Fail 항목 List</button>
+          <button id="overModeBtn" type="button" data-mode="over">Abnormal Shift Sample</button>
+        </div>
+        <div class="table-wrap" id="resultTableWrap"><table id="resultTable"></table></div>
+        <div class="table-wrap" id="overSampleTableWrap"><table id="overSampleTable"></table></div>
       </section>
       <section class="panel over-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-sample"></span>Abnormal Shift Sample</span><span class="panel-actions">□ ⋮</span></h2>
+        <h2><span class="panel-label"><span class="panel-icon icon-sample"></span>Abnormal Shift Sample</span></h2>
         <div class="table-wrap"><table id="overTable"></table></div>
+      </section>
+      <section class="panel detail-panel">
+        <h2><span class="panel-label"><span class="panel-icon icon-detail"></span>Abnormal Shift Details</span></h2>
+        <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
       <div class="result-graph-column">
@@ -1929,6 +2092,7 @@ let highlightMode = null;
 let sortState = { column: "severity", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
+let resultTabMode = "pass";
 let modePayloads = {};
 let stopAnalysisRequested = false;
 let activeAnalysisRunId = "";
@@ -2018,46 +2182,11 @@ function setStatus(text) {
   const target = document.getElementById("status") || document.getElementById("dataPath");
   if (target) target.textContent = text;
 }
-function activeReliabilityItem() {
-  const item = (isResultsWindow ? analysisFilters.reliability_item : "") || analysis?.reliability_item || lookupState.item || "";
-  const upper = item.toUpperCase();
-  return reliabilityItems.find(candidate => candidate.toUpperCase() === upper) || "";
-}
 function updateReliabilityTabs() {
-  const active = activeReliabilityItem();
-  document.querySelectorAll(".reliability-tab").forEach(button => {
-    button.classList.toggle("active", button.dataset.item === active);
+  const active = analysisFilters.reliability_item || "";
+  document.querySelectorAll("#analysisFilterBar .item-tab").forEach(button => {
+    button.classList.toggle("active", (button.dataset.item || "") === active);
   });
-}
-function renderReliabilityTabs() {
-  const bar = document.getElementById("reliabilityTabs");
-  if (!bar) return;
-  bar.innerHTML = "";
-  reliabilityItems.forEach(item => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "reliability-tab";
-    button.dataset.item = item;
-    button.textContent = item;
-    button.addEventListener("click", async () => {
-      if (isResultsWindow) {
-        analysisFilters.reliability_item = analysisFilters.reliability_item === item ? "" : item;
-        updateReliabilityTabs();
-        ensureSelectedItemVisible();
-        renderSummary();
-        await refreshSelectedItem();
-        return;
-      }
-      const select = document.getElementById("reliabilityItemSelect");
-      if (!select) return;
-      select.value = item;
-      lookupState.item = item;
-      updateReliabilityTabs();
-      await refreshLookup("readout");
-    });
-    bar.appendChild(button);
-  });
-  updateReliabilityTabs();
 }
 function bindNavigation() {
   const navButtons = document.querySelectorAll(".side-link[data-view], .tree-link[data-view]");
@@ -2085,30 +2214,6 @@ function bindNavigation() {
       }
     });
   }
-}
-function bindEditableTreeLabels() {
-  const storageKey = "qmsTreeLabels";
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(storageKey) || "{}"); }
-  catch (_err) { saved = {}; }
-  Object.entries(saved).forEach(([key, value]) => {
-    document.querySelectorAll(`[data-label-key="${key}"]`).forEach(label => { label.textContent = value; });
-  });
-  document.querySelectorAll(".edit-label[data-edit-target]").forEach(button => {
-    button.addEventListener("click", event => {
-      event.stopPropagation();
-      const key = button.dataset.editTarget;
-      const label = document.querySelector(`[data-label-key="${key}"]`);
-      if (!label) return;
-      const next = prompt("폴더명", label.textContent.trim());
-      if (next === null) return;
-      const name = next.trim();
-      if (!name) return;
-      document.querySelectorAll(`[data-label-key="${key}"]`).forEach(target => { target.textContent = name; });
-      saved[key] = name;
-      localStorage.setItem(storageKey, JSON.stringify(saved));
-    });
-  });
 }
 function setSelectOptions(selectId, options, placeholder = "", disabled = false) {
   const sel = document.getElementById(selectId);
@@ -2239,7 +2344,7 @@ async function refreshLookup(field) {
       purposeSelect.value = data.options[0];
       lookupState.purpose = data.options[0];
       const itemData = await loadLookup("item");
-      setSelectOptions("reliabilityItemSelect", itemData.options || [], "Select");
+      setSelectOptions("reliabilityItemSelect", itemData.options || [], "전체 (미선택)");
     }
     if (field === "device") setDataRootPath(data.path);
     setStatus("Ready");
@@ -2382,9 +2487,9 @@ function setParallelAnalysisProgress(mode, percent, message = "Analyzing") {
 }
 function setAnalysisMode(mode, renderExisting = true) {
   analysisMode = mode === "fail" ? "fail" : "pass";
-  document.querySelectorAll(".toolbar-mode button").forEach(button => {
-    button.classList.toggle("active", button.dataset.mode === analysisMode);
-  });
+  resultTabMode = analysisMode;
+  updateResultTabButtons();
+  updateResultTabVisibility();
   if (isResultsWindow && renderExisting && !modePayloads[analysisMode]) {
     loadLatestAnalysis(analysisMode, { retry: true });
     return;
@@ -2430,15 +2535,20 @@ function detailColumns() {
     const summaryTitle = document.querySelector(".summary-panel .panel-label");
     const detailTitle = document.querySelector(".detail-panel .panel-label");
     const overPanel = document.querySelector(".over-panel");
+    const overModeBtn = document.getElementById("overModeBtn");
     if (grid) grid.classList.toggle("fail-grid", mode === "fail");
     if (section) section.classList.toggle("fail-layout", mode === "fail");
     if (summaryTitle) summaryTitle.lastChild.textContent = isResultsWindow ? "1. Fail Data List" : "Fail & Abnormal Data Lists - All";
     if (detailTitle) detailTitle.lastChild.textContent = isResultsWindow ? "3. Data Analysis Result" : "Fail & Abnormal Data Analysis Result";
     if (overPanel) {
-      overPanel.style.display = isResultsWindow ? "" : mode === "fail" ? "none" : "";
+      overPanel.style.display = isResultsWindow ? "" : "none";
       const overTitle = overPanel.querySelector(".panel-label");
       if (overTitle) overTitle.lastChild.textContent = isResultsWindow ? "2. Abnormal Pass List" : "Abnormal Shift Sample";
     }
+    if (overModeBtn) overModeBtn.style.display = !isResultsWindow && mode !== "fail" ? "" : "none";
+    if (!isResultsWindow && mode === "fail" && resultTabMode === "over") resultTabMode = "pass";
+    updateResultTabButtons();
+    updateResultTabVisibility();
     updateGraphPanels();
   }
 function emptyAnalysisPayload(mode = analysisMode, message = "") {
@@ -2584,6 +2694,44 @@ function ensureSelectedItemVisible() {
     selectedItem = itemKey(rows[0]);
   }
 }
+function overSigmaRows() {
+  return (analysis?.over_sigma || []).filter(rowMatchesAnalysisFilters);
+}
+function ensureSelectedOverItemVisible() {
+  const keys = [];
+  overSigmaRows().forEach(row => (row.items || []).forEach(item => { if (item) keys.push(item); }));
+  if (!keys.length) {
+    selectedItem = "";
+    return;
+  }
+  if (!keys.includes(selectedItem)) {
+    selectedItem = keys[0];
+  }
+}
+function ensureSelectedItemVisibleForActiveTab() {
+  if (!isResultsWindow && resultTabMode === "over") ensureSelectedOverItemVisible();
+  else ensureSelectedItemVisible();
+}
+function updateResultTabButtons() {
+  document.querySelectorAll(".toolbar-mode button").forEach(button => {
+    button.classList.toggle("active", button.dataset.mode === resultTabMode);
+  });
+}
+function updateResultTabVisibility() {
+  const resultWrap = document.getElementById("resultTableWrap");
+  const overWrap = document.getElementById("overSampleTableWrap");
+  const showOver = !isResultsWindow && resultTabMode === "over";
+  if (resultWrap) resultWrap.style.display = showOver ? "none" : "";
+  if (overWrap) overWrap.style.display = showOver ? "block" : "none";
+}
+function setResultTabToOver() {
+  if (isResultsWindow || analysisMode === "fail") return;
+  resultTabMode = "over";
+  updateResultTabButtons();
+  updateResultTabVisibility();
+  ensureSelectedItemVisibleForActiveTab();
+  refreshSelectedItem();
+}
 function renderAnalysisFilterBar() {
   const bar = document.getElementById("analysisFilterBar");
   if (!bar) return;
@@ -2600,21 +2748,6 @@ function renderAnalysisFilterBar() {
   reliabilityRow.className = "filter-row reliability-filter-row";
   const secondaryRow = document.createElement("div");
   secondaryRow.className = "filter-row secondary-filter-row";
-  const makeButton = (group, value, label) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "filter-chip";
-    button.textContent = label;
-    button.classList.toggle("active", analysisFilters[group] === value);
-    button.addEventListener("click", async () => {
-      analysisFilters[group] = value;
-      if (group === "reliability_item") updateReliabilityTabs();
-      ensureSelectedItemVisible();
-      renderSummary();
-      await refreshSelectedItem();
-    });
-    return button;
-  };
   const makeTempButton = temp => {
     const button = document.createElement("button");
     button.type = "button";
@@ -2630,17 +2763,49 @@ function renderAnalysisFilterBar() {
       }
       renderAnalysisFilterBar();
       renderGraphFilterBar();
-      ensureSelectedItemVisible();
+      ensureSelectedItemVisibleForActiveTab();
       renderSummary();
       await refreshSelectedItem();
     });
     return button;
   };
   const reliabilityGroup = document.createElement("div");
-  reliabilityGroup.className = "filter-group reliability-filter-group";
-  reliabilityGroup.innerHTML = "<strong>Reliability</strong>";
+  reliabilityGroup.className = "item-tabs";
+  reliabilityGroup.setAttribute("role", "tablist");
+  reliabilityGroup.setAttribute("aria-label", "시험 항목");
+  const itemCounts = {};
+  (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
+  const makeItemTab = (value, label, count) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "item-tab";
+    button.dataset.item = value;
+    const isEmpty = count && count.total === 0;
+    button.classList.toggle("item-tab-empty", !!isEmpty);
+    if (isEmpty) button.disabled = true;
+    button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "item-tab-label";
+    labelSpan.textContent = label;
+    button.appendChild(labelSpan);
+    if (count) {
+      const badge = document.createElement("span");
+      badge.className = "item-tab-badge";
+      badge.textContent = `${count.select}/${count.total}`;
+      button.appendChild(badge);
+    }
+    button.addEventListener("click", async () => {
+      analysisFilters.reliability_item = value;
+      updateReliabilityTabs();
+      ensureSelectedItemVisibleForActiveTab();
+      renderSummary();
+      await refreshSelectedItem();
+    });
+    return button;
+  };
+  reliabilityGroup.appendChild(makeItemTab("", "전체", null));
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
-  reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeButton("reliability_item", item, item)));
+  reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeItemTab(item, item, itemCounts[item] || null)));
   reliabilityRow.appendChild(reliabilityGroup);
   tableFilterArea.appendChild(reliabilityRow);
 
@@ -2864,6 +3029,7 @@ async function runAnalysis() {
     const loaded = [passData, failData].every(data => data.cache_status === "loaded");
     setStatus(loaded ? "Loaded" : "Done");
     document.getElementById("summary").textContent = displayData.message || `Pass/Fail analysis completed. Showing ${displayMode === "fail" ? "Fail" : "Pass"} results.`;
+    if (!isResultsWindow) setConditionCollapsed(true);
   } catch (err) {
     if (stopAnalysisRequested || err.message === "Analysis stopped.") {
       setStatus("Stopped");
@@ -3078,6 +3244,7 @@ function applyParentResultsTuning(params) {
   const visibility = parseToggleValue(firstQueryValue(params, ["showParentResults", "parentResults"]));
   if (visibility === false) {
     document.body.classList.remove("parent-results-visible", "parent-results-fixed-height");
+    document.body.classList.add("parent-results-hidden");
     return;
   }
 
@@ -3114,6 +3281,7 @@ function applyParentResultsTuning(params) {
     gridHeight || gridMinHeight || sectionOverflow || scrollOverflow || gridOverflow;
   if (!hasTuning) return;
 
+  document.body.classList.remove("parent-results-hidden");
   document.body.classList.add("parent-results-visible");
   if (adjustedHeight) {
     setParentResultsCssVar("--parent-results-section-height", adjustedHeight, applied, "parentResultsHeight");
@@ -3202,7 +3370,11 @@ function exportRawData() {
 function bindResultControls() {
   document.querySelectorAll(".toolbar-mode button").forEach(button => {
     button.addEventListener("click", () => {
-      setAnalysisMode(button.dataset.mode);
+      if (button.dataset.mode === "over") {
+        setResultTabToOver();
+      } else {
+        setAnalysisMode(button.dataset.mode);
+      }
     });
   });
   document.querySelectorAll(".copy-chart-btn").forEach(button => {
@@ -3220,7 +3392,6 @@ function bindResultControls() {
 
 function bindParentControls() {
   bindNavigation();
-  bindEditableTreeLabels();
   document.getElementById("analyzeBtn").addEventListener("click", runAnalysis);
   document.getElementById("stopAnalyzeBtn").addEventListener("click", () => {
     stopAnalysisRequested = true;
@@ -3229,9 +3400,42 @@ function bindParentControls() {
   document.getElementById("initializeBtn").addEventListener("click", initializeAnalysis);
   document.getElementById("openResultsWindowBtn").addEventListener("click", () => openAnalysisResultsWindow());
   bindLookupControls();
+  bindConditionToggle();
 }
 
-renderReliabilityTabs();
+function setConditionCollapsed(collapsed) {
+  const rdaView = document.getElementById("rdaView");
+  const toggle = document.getElementById("conditionToggle");
+  if (!rdaView || !toggle) return;
+  rdaView.classList.toggle("condition-collapsed", collapsed);
+  toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  if (collapsed) renderConditionSummaryLine();
+}
+
+function renderConditionSummaryLine() {
+  const line = document.getElementById("conditionSummaryLine");
+  if (!line) return;
+  const parts = [];
+  if (lookupState.device) parts.push(lookupState.device);
+  if (lookupState.ver) parts.push(lookupState.ver);
+  if (lookupState.lot) parts.push(`Lot ${lookupState.lot}`);
+  if (lookupState.purpose) parts.push(lookupState.purpose);
+  parts.push(lookupState.item ? lookupState.item : "전체 시험 항목");
+  if (lookupState.readout && lookupState.readout !== AUTO_LATEST_READOUT) parts.push(lookupState.readout);
+  if (lookupState.ft_temp) parts.push(lookupState.ft_temp);
+  const includePre = document.getElementById("includePreCheck")?.checked;
+  line.textContent = `✓ ${parts.join(" · ")}${includePre ? " · Pre 포함" : " · Pre 제외"}`;
+}
+
+function bindConditionToggle() {
+  const toggle = document.getElementById("conditionToggle");
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    const rdaView = document.getElementById("rdaView");
+    setConditionCollapsed(!rdaView.classList.contains("condition-collapsed"));
+  });
+}
+
 bindResultControls();
 if (isResultsWindow) {
   initializeResultsWindow();
@@ -3244,11 +3448,138 @@ function renderSummary() {
   renderAnalysisFilterBar();
   renderGraphFilterBar();
   updateGraphPanels();
-  ensureSelectedItemVisible();
+  ensureSelectedItemVisibleForActiveTab();
   renderItemSelect();
   renderResultTable();
   renderOverTable();
   renderFlagAlphaLabel();
+  renderSummaryStrip();
+}
+function failSelectCount() {
+  // "항목 List" 탭이므로 배지는 항목 수 기준으로 맞춘다(Pass 쪽 요약 스트립의
+  // "이상 데이터 식별" 카드와 동일 단위). 상세(샘플) 건수는 참고용으로 병기한다.
+  const payload = modePayloads.fail;
+  if (!payload) return null;
+  const itemCount = Array.isArray(payload.selected_summary) ? payload.selected_summary.length : null;
+  const detailCount = payload.select_count;
+  return {
+    items: Number.isFinite(itemCount) ? itemCount : null,
+    details: Number.isFinite(detailCount) ? detailCount : null,
+  };
+}
+function passSelectCount() {
+  const payload = modePayloads.pass;
+  const value = payload?.summary_counts?.select;
+  return Number.isFinite(value) ? value : null;
+}
+function overSampleItemCount(payload = modePayloads.pass) {
+  if (!payload) return null;
+  const keys = new Set();
+  (payload.over_sigma || []).forEach(row => (row.items || []).forEach(item => { if (item) keys.add(item); }));
+  return keys.size;
+}
+function setTabBadge(btn, value, title) {
+  if (!btn) return;
+  let badge = btn.querySelector(".tab-count-badge");
+  if (value != null) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "tab-count-badge";
+      btn.appendChild(badge);
+    }
+    badge.textContent = value;
+    if (title) badge.title = title;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+function renderSummaryStrip() {
+  const strip = document.getElementById("summaryStrip");
+  const failBtn = isResultsWindow ? null : document.getElementById("failModeBtn");
+  if (failBtn) {
+    let badge = failBtn.querySelector(".fail-count-badge");
+    const failCount = failSelectCount();
+    if (failCount && failCount.items) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "fail-count-badge";
+        failBtn.appendChild(badge);
+      }
+      // 탭 버튼이 고정폭(166px)이라 배지는 항목 수만 짧게 표시하고, 상세 건수는
+      // 필요할 때 마우스오버로 확인하도록 title 에 병기한다.
+      badge.textContent = failCount.items;
+      badge.title = (failCount.details != null && failCount.details !== failCount.items)
+        ? `이상 항목 ${failCount.items}개 / 상세 ${failCount.details}건`
+        : `이상 항목 ${failCount.items}개`;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+  if (!isResultsWindow) {
+    const passCount = passSelectCount();
+    setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
+    const overCount = overSampleItemCount();
+    setTabBadge(document.getElementById("overModeBtn"), overCount, overCount != null ? `이상 Shift 항목 ${overCount}개` : "");
+  }
+  if (!strip) return;
+  strip.innerHTML = "";
+  const counts = analysisMode === "pass" ? analysis?.summary_counts : null;
+  if (!counts) return;
+  const cards = [
+    { key: "total_items", label: "분석 항목" },
+    { key: "select", label: "이상 데이터 식별", cls: "flag" },
+    { key: "ok", label: "정상", cls: "ok" },
+    { key: "not_evaluated", label: "판정 불가", cls: "warn", icon: "⚠", hideIfZero: true }
+  ];
+  cards.forEach(card => {
+    const value = counts[card.key] ?? 0;
+    if (card.hideIfZero && !value) return;
+    const div = document.createElement("div");
+    div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
+    const valueEl = document.createElement("div");
+    valueEl.className = "summary-card-value";
+    valueEl.textContent = card.icon ? `${value} ${card.icon}` : `${value}`;
+    const labelEl = document.createElement("div");
+    labelEl.className = "summary-card-label";
+    labelEl.textContent = card.label;
+    div.appendChild(valueEl);
+    div.appendChild(labelEl);
+    strip.appendChild(div);
+  });
+  const footnote = document.createElement("div");
+  footnote.id = "judgmentFootnote";
+  footnote.className = "judgment-footnote";
+  strip.appendChild(footnote);
+  renderJudgmentFootnote();
+}
+function renderJudgmentFootnote() {
+  const el = document.getElementById("judgmentFootnote");
+  if (!el) return;
+  if (!analysis) { el.innerHTML = ""; return; }
+  const parts = ["판정 기준 Grubbs"];
+  if (analysis.flag_mode === "fixed") {
+    parts.push(`고정 임계=${analysis.flag_limit ?? 3}`);
+  } else {
+    const alpha = Number(analysis.flag_alpha);
+    if (Number.isFinite(alpha)) parts.push(`α ${alpha}`);
+  }
+  const row = selectedResultRow() || {};
+  const n = Number(row.n_post);
+  const mea = Number(row.mea_threshold ?? itemCache[selectedItem]?.mea_threshold);
+  if (Number.isFinite(n)) parts.push(`유닛 ${n}개`);
+  if (Number.isFinite(mea)) parts.push(`임계 ${mea.toFixed(3)}`);
+  let text = parts.join(" · ");
+  const readout = row.judged_readout;
+  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
+  const textSpan = document.createElement("span");
+  textSpan.textContent = text;
+  const infoSpan = document.createElement("span");
+  infoSpan.className = "footnote-info";
+  infoSpan.title = "임계는 유닛 수에 따라 달라집니다 (N=57→3.539, N=145→3.879, N=3000→4.673)";
+  infoSpan.textContent = "ⓘ";
+  el.innerHTML = "";
+  el.appendChild(textSpan);
+  el.appendChild(infoSpan);
 }
 function renderFlagAlphaLabel() {
   // §S7: 판정 임계가 항목별 Grubbs(alpha 기반)로 바뀐 뒤, 패널 제목에 박혀 있던
@@ -3343,6 +3674,7 @@ async function refreshSelectedItem() {
     await loadRelatedGraphItems();
     renderDetailTable();
     renderItemThresholdLabel();
+    renderJudgmentFootnote();
     drawCharts();
     if (analysis) setStatus("Done");
   } catch (err) {
@@ -3532,8 +3864,12 @@ function renderOverTable() {
     renderAbnormalPassListTable(table);
     return;
   }
+  renderOverSampleTable(document.getElementById("overSampleTable"));
+}
+function renderOverSampleTable(table) {
+  if (!table) return;
   table.innerHTML = "";
-  const overRows = (analysis.over_sigma || []).filter(rowMatchesAnalysisFilters);
+  const overRows = overSigmaRows();
   const maxItems = Math.max(1, ...overRows.map(r => r.items.length));
   const head = table.createTHead().insertRow();
   ["Sample #", ...Array.from({ length: maxItems }, (_, i) => i === 0 ? "Abnormal Shift Items" : "")].forEach(label => {
@@ -3551,6 +3887,7 @@ function renderOverTable() {
       td.textContent = itemDisplayName(item);
       if (item) {
         td.className = "over-item";
+        td.classList.toggle("active", item === selectedItem);
         td.onclick = async () => {
           selectedItem = item;
           highlightSample = row.sample;
@@ -4765,6 +5102,7 @@ window.addEventListener("resize", () => analysis && drawCharts());
 </script>
 </body>
 </html>"""
+HTML = HTML.replace("__APP_REVISION__", APP_REVISION)
 
 
 class MultipartPart:
@@ -7035,6 +7373,10 @@ def payload_with_items(app, payload, mode, cache_status):
             item = row.get("item")
             if item and item not in items:
                 items[item] = item_to_json(app, item)
+        for over_row in payload.get("over_sigma", []):
+            for item in over_row.get("items", []):
+                if item and item not in items:
+                    items[item] = item_to_json(app, item)
     enriched = dict(payload)
     enriched["items"] = items
     enriched["analysis_mode"] = mode
