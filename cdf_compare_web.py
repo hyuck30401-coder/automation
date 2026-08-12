@@ -332,13 +332,17 @@ HTML = r"""<!doctype html>
       min-height: 0;
       overflow: auto;
       padding-right: 4px;
+      display: flex;
+      flex-direction: column;
     }
     .summary-strip {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
+      flex-wrap: nowrap;
+      align-items: stretch;
       gap: 10px 16px;
       margin: 0 0 10px;
+      height: 62px;
+      box-sizing: border-box;
     }
     .summary-strip:empty {
       display: none;
@@ -348,12 +352,16 @@ HTML = r"""<!doctype html>
       display: flex;
       flex-direction: column;
       align-items: flex-start;
+      justify-content: center;
       gap: 2px;
       min-width: 92px;
       padding: 8px 14px;
       border: 1px solid #d8e4f1;
       border-radius: 8px;
       background: #fff;
+      height: 100%;
+      flex: 0 0 auto;
+      box-sizing: border-box;
     }
     .summary-card-value {
       font-size: 20px;
@@ -377,6 +385,9 @@ HTML = r"""<!doctype html>
       font-size: 12px;
       color: var(--muted);
       white-space: nowrap;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .footnote-info {
       cursor: help;
@@ -561,12 +572,14 @@ HTML = r"""<!doctype html>
       padding: 0;
       display: grid;
       grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
-      grid-template-rows: minmax(420px, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       grid-template-areas: "resulttab graphtab";
       gap: 14px;
       align-items: stretch;
       border: 0;
       background: transparent;
+      flex: 1 1 auto;
+      min-height: 560px;
     }
     .result-table-column {
       display: flex;
@@ -593,7 +606,7 @@ HTML = r"""<!doctype html>
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      min-height: 260px;
+      min-height: 150px;
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(7,31,73,.05);
     }
@@ -610,7 +623,7 @@ HTML = r"""<!doctype html>
     .scatter-panel {
       display: none;
       flex: 1 1 0;
-      min-height: 260px;
+      min-height: 180px;
     }
     .chart-panel.active-graph,
     .diff-cdf-panel.active-graph,
@@ -621,7 +634,7 @@ HTML = r"""<!doctype html>
     .wafer-panel {
       display: flex;
       flex: 1 1 0;
-      min-height: 220px;
+      min-height: 160px;
     }
     .panel h2 {
       margin: 0;
@@ -694,17 +707,19 @@ HTML = r"""<!doctype html>
     }
     select { min-width: 240px; padding: 5px; }
     canvas { width: 100%; height: 100%; display: block; background: #fff; }
-    .chart-box, .scatter-box, .wafer-box { flex: 1; min-height: 315px; }
+    .chart-box, .scatter-box, .wafer-box { flex: 1 1 0; min-height: 0; }
     .item-tabs {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      align-items: flex-end;
+      min-height: 40px;
     }
     .item-tab {
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      min-height: 34px;
+      min-height: 38px;
       padding: 6px 14px;
       border: 1px solid #c9d9eb;
       border-radius: 999px 999px 0 0;
@@ -713,6 +728,7 @@ HTML = r"""<!doctype html>
       color: #33445c;
       font-size: 13px;
       font-weight: 700;
+      box-sizing: border-box;
     }
     .item-tab.active {
       background: #fff;
@@ -731,6 +747,10 @@ HTML = r"""<!doctype html>
       color: #0b5ca8;
       font-size: 11px;
       font-weight: 800;
+      min-width: 56px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      box-sizing: border-box;
     }
     .item-tab.active .item-tab-badge {
       background: rgba(18,102,200,.18);
@@ -1290,6 +1310,11 @@ HTML = r"""<!doctype html>
       background: linear-gradient(180deg, #078c99, #05717f);
       color: #fff;
     }
+    .result-tab-groups {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
     .status-pill {
       display: inline-flex;
       align-items: center;
@@ -1301,6 +1326,46 @@ HTML = r"""<!doctype html>
     }
     .panel-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
     .flag-alpha-label { font-weight: 400; font-size: 12px; color: var(--muted); }
+    .column-toggle-wrap { position: relative; flex: 0 0 auto; }
+    .column-toggle-btn {
+      background: #eef6fa;
+      color: #0b6070;
+      border: 1px solid #bdd3df;
+      border-radius: 13px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .column-toggle-btn:hover { background: #e0eef4; }
+    .column-toggle-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 20;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(20, 40, 70, 0.15);
+      padding: 8px;
+      min-width: 160px;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .column-toggle-menu.open { display: block; }
+    .column-toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 6px;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .column-toggle-item:hover { background: #f4f8fb; border-radius: 4px; }
     #cdfPanelTitle,
     #diffCdfPanelTitle,
     #scatterPanelTitle {
@@ -1818,10 +1883,10 @@ HTML = r"""<!doctype html>
       line-height: 1.12;
       white-space: normal;
     }
-    #resultTabBar {
+    #resultTabBar, #resultViewBar {
       flex-wrap: nowrap;
     }
-    #resultTabBar button {
+    #resultTabBar button, #resultViewBar button {
       width: auto;
       flex: 1 1 0;
       min-width: 0;
@@ -2023,11 +2088,16 @@ HTML = r"""<!doctype html>
       <div class="result-table-column">
       <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
       <section class="panel summary-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span></h2>
-        <div class="toolbar-mode result-tab-bar" id="resultTabBar">
-          <button id="passModeBtn" class="active" type="button" data-mode="pass">Abnormal Pass Data</button>
-          <button id="failModeBtn" type="button" data-mode="fail">Fail 항목 List</button>
-          <button id="overModeBtn" type="button" data-mode="over">Abnormal Shift Sample</button>
+        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></h2>
+        <div class="result-tab-groups">
+          <div class="toolbar-mode result-tab-bar" id="resultTabBar">
+            <button id="failModeBtn" type="button" data-mode="fail">Fail 항목 List</button>
+            <button id="passModeBtn" class="active" type="button" data-mode="pass">Abnormal Pass Data</button>
+          </div>
+          <div class="toolbar-mode result-view-bar" id="resultViewBar">
+            <button id="itemViewBtn" class="active" type="button" data-view="item">항목 기준</button>
+            <button id="sampleViewBtn" type="button" data-view="sample">샘플 기준</button>
+          </div>
         </div>
         <div class="table-wrap" id="resultTableWrap"><table id="resultTable"></table></div>
         <div class="table-wrap" id="overSampleTableWrap"><table id="overSampleTable"></table></div>
@@ -2092,7 +2162,7 @@ let highlightMode = null;
 let sortState = { column: "severity", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
-let resultTabMode = "pass";
+let resultViewMode = "item";
 let modePayloads = {};
 let stopAnalysisRequested = false;
 let activeAnalysisRunId = "";
@@ -2114,10 +2184,13 @@ function chartPixelRatio() {
 
 function setupHiResCanvas(canvas, minWidth, minHeight) {
   const box = canvas.parentElement.getBoundingClientRect();
-  const width = Math.max(minWidth, Math.floor(box.width));
-  const height = Math.max(minHeight, Math.floor(box.height));
+  // 박스가 0(숨김 상태)일 때만 minWidth/minHeight 로 폴백한다.
+  // 기존처럼 Math.max(min, box) 를 쓰면 박스가 min 보다 작을 때
+  // canvas{width:100%;height:100%} 에 의해 그림이 눌리거나 잘린다.
+  const width  = Math.max(80, Math.floor(box.width)  || minWidth);
+  const height = Math.max(80, Math.floor(box.height) || minHeight);
   const ratio = chartPixelRatio();
-  canvas.width = Math.floor(width * ratio);
+  canvas.width  = Math.floor(width  * ratio);
   canvas.height = Math.floor(height * ratio);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -2153,7 +2226,19 @@ const passColumns = [
   ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["severity", "Max |σ|"], ["qty", "Q'ty"], ["qty_ratio", "%"],
   ["sample_numbers", "Sample No."]
 ];
-const failColumns = passColumns;
+// Fail 목록은 규격 이탈로 이미 선별된 항목이라 Reason/Max |σ| (Pass 전용 판정 근거) 가
+// 없다 -- 값 없는 열을 N/A 로 채우는 대신 아예 목록에서 뺀다. 대신 이탈 유형(fail_type)과
+// 시험(reliability_item) 을 추가한다.
+const failColumns = [
+  ["test_number", "Test No."], ["reliability_item", "시험"], ["item", "Item"], ["fail_type", "이탈 유형"],
+  ["n", "N (σ n-1)"], ["qty", "Q'ty"], ["sample_numbers", "Sample No."]
+];
+const DEFAULT_VISIBLE_COLUMNS_PASS = ["test_number", "item", "reason", "n", "severity", "qty"];
+const DEFAULT_VISIBLE_COLUMNS_FAIL = failColumns.map(([key]) => key);
+const columnVisibility = {
+  pass: new Set(DEFAULT_VISIBLE_COLUMNS_PASS),
+  fail: new Set(DEFAULT_VISIBLE_COLUMNS_FAIL)
+};
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
 const AUTO_LATEST_READOUT = "__latest__";
 const lookupOrder = [
@@ -2487,7 +2572,6 @@ function setParallelAnalysisProgress(mode, percent, message = "Analyzing") {
 }
 function setAnalysisMode(mode, renderExisting = true) {
   analysisMode = mode === "fail" ? "fail" : "pass";
-  resultTabMode = analysisMode;
   updateResultTabButtons();
   updateResultTabVisibility();
   if (isResultsWindow && renderExisting && !modePayloads[analysisMode]) {
@@ -2535,7 +2619,6 @@ function detailColumns() {
     const summaryTitle = document.querySelector(".summary-panel .panel-label");
     const detailTitle = document.querySelector(".detail-panel .panel-label");
     const overPanel = document.querySelector(".over-panel");
-    const overModeBtn = document.getElementById("overModeBtn");
     if (grid) grid.classList.toggle("fail-grid", mode === "fail");
     if (section) section.classList.toggle("fail-layout", mode === "fail");
     if (summaryTitle) summaryTitle.lastChild.textContent = isResultsWindow ? "1. Fail Data List" : "Fail & Abnormal Data Lists - All";
@@ -2545,8 +2628,6 @@ function detailColumns() {
       const overTitle = overPanel.querySelector(".panel-label");
       if (overTitle) overTitle.lastChild.textContent = isResultsWindow ? "2. Abnormal Pass List" : "Abnormal Shift Sample";
     }
-    if (overModeBtn) overModeBtn.style.display = !isResultsWindow && mode !== "fail" ? "" : "none";
-    if (!isResultsWindow && mode === "fail" && resultTabMode === "over") resultTabMode = "pass";
     updateResultTabButtons();
     updateResultTabVisibility();
     updateGraphPanels();
@@ -2709,24 +2790,29 @@ function ensureSelectedOverItemVisible() {
   }
 }
 function ensureSelectedItemVisibleForActiveTab() {
-  if (!isResultsWindow && resultTabMode === "over") ensureSelectedOverItemVisible();
+  if (!isResultsWindow && resultViewMode === "sample") ensureSelectedOverItemVisible();
   else ensureSelectedItemVisible();
 }
 function updateResultTabButtons() {
-  document.querySelectorAll(".toolbar-mode button").forEach(button => {
-    button.classList.toggle("active", button.dataset.mode === resultTabMode);
+  document.querySelectorAll("#resultTabBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.mode === analysisMode);
+  });
+  document.querySelectorAll("#resultViewBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.view === resultViewMode);
   });
 }
 function updateResultTabVisibility() {
   const resultWrap = document.getElementById("resultTableWrap");
   const overWrap = document.getElementById("overSampleTableWrap");
-  const showOver = !isResultsWindow && resultTabMode === "over";
+  const toggleWrap = document.getElementById("columnToggleWrap");
+  const showOver = !isResultsWindow && resultViewMode === "sample";
   if (resultWrap) resultWrap.style.display = showOver ? "none" : "";
   if (overWrap) overWrap.style.display = showOver ? "block" : "none";
+  if (toggleWrap) toggleWrap.style.display = showOver ? "none" : "";
 }
-function setResultTabToOver() {
-  if (isResultsWindow || analysisMode === "fail") return;
-  resultTabMode = "over";
+function setResultViewMode(view) {
+  if (isResultsWindow) return;
+  resultViewMode = view === "sample" ? "sample" : "item";
   updateResultTabButtons();
   updateResultTabVisibility();
   ensureSelectedItemVisibleForActiveTab();
@@ -2775,12 +2861,21 @@ function renderAnalysisFilterBar() {
   reliabilityGroup.setAttribute("aria-label", "시험 항목");
   const itemCounts = {};
   (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
+  const totalItemCount = () => {
+    const entries = analysis?.item_counts || [];
+    if (!entries.length) return null;
+    return entries.reduce((acc, entry) => ({
+      select: acc.select + (entry.select || 0),
+      total: acc.total + (entry.total || 0),
+    }), { select: 0, total: 0 });
+  };
   const makeItemTab = (value, label, count) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "item-tab";
     button.dataset.item = value;
-    const isEmpty = count && count.total === 0;
+    // value === "" 는 「전체」 탭. 합계가 0 이어도 비활성화하지 않는다.
+    const isEmpty = value !== "" && count && count.total === 0;
     button.classList.toggle("item-tab-empty", !!isEmpty);
     if (isEmpty) button.disabled = true;
     button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
@@ -2792,6 +2887,9 @@ function renderAnalysisFilterBar() {
       const badge = document.createElement("span");
       badge.className = "item-tab-badge";
       badge.textContent = `${count.select}/${count.total}`;
+      badge.title = analysisMode === "fail"
+        ? `Fail ${count.select}대 / 전체 Sample ${count.total}대`
+        : `이상 데이터 식별 ${count.select}건 / 분석 항목 ${count.total}건`;
       button.appendChild(badge);
     }
     button.addEventListener("click", async () => {
@@ -2803,7 +2901,7 @@ function renderAnalysisFilterBar() {
     });
     return button;
   };
-  reliabilityGroup.appendChild(makeItemTab("", "전체", null));
+  reliabilityGroup.appendChild(makeItemTab("", "전체", totalItemCount()));
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
   reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeItemTab(item, item, itemCounts[item] || null)));
   reliabilityRow.appendChild(reliabilityGroup);
@@ -3368,14 +3466,11 @@ function exportRawData() {
 }
 
 function bindResultControls() {
-  document.querySelectorAll(".toolbar-mode button").forEach(button => {
-    button.addEventListener("click", () => {
-      if (button.dataset.mode === "over") {
-        setResultTabToOver();
-      } else {
-        setAnalysisMode(button.dataset.mode);
-      }
-    });
+  document.querySelectorAll("#resultTabBar button").forEach(button => {
+    button.addEventListener("click", () => setAnalysisMode(button.dataset.mode));
+  });
+  document.querySelectorAll("#resultViewBar button").forEach(button => {
+    button.addEventListener("click", () => setResultViewMode(button.dataset.view));
   });
   document.querySelectorAll(".copy-chart-btn").forEach(button => {
     button.addEventListener("click", () => copyCanvasToClipboard(button.dataset.canvas, button));
@@ -3388,6 +3483,19 @@ function bindResultControls() {
     highlightMode = null;
     await refreshSelectedItem();
   });
+  const columnToggleBtn = document.getElementById("columnToggleBtn");
+  const columnToggleMenu = document.getElementById("columnToggleMenu");
+  if (columnToggleBtn && columnToggleMenu) {
+    columnToggleBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      columnToggleMenu.classList.toggle("open");
+    });
+    document.addEventListener("click", event => {
+      if (!columnToggleMenu.classList.contains("open")) return;
+      if (columnToggleMenu.contains(event.target) || event.target === columnToggleBtn) return;
+      columnToggleMenu.classList.remove("open");
+    });
+  }
 }
 
 function bindParentControls() {
@@ -3518,18 +3626,22 @@ function renderSummaryStrip() {
   if (!isResultsWindow) {
     const passCount = passSelectCount();
     setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
-    const overCount = overSampleItemCount();
-    setTabBadge(document.getElementById("overModeBtn"), overCount, overCount != null ? `이상 Shift 항목 ${overCount}개` : "");
   }
   if (!strip) return;
   strip.innerHTML = "";
-  const counts = analysisMode === "pass" ? analysis?.summary_counts : null;
+  // Pass 는 항목 기준(분석 항목 수 중 몇 개가 이상인지), Fail 은 유닛 기준(전체 Sample 중
+  // 몇 대가 Fail/Pass 인지) -- 서로 다른 질문이라 카드 구성 자체를 모드별로 나눈다.
+  const counts = analysisMode === "pass" ? analysis?.summary_counts : analysis?.sample_counts;
   if (!counts) return;
-  const cards = [
+  const cards = analysisMode === "pass" ? [
     { key: "total_items", label: "분석 항목" },
     { key: "select", label: "이상 데이터 식별", cls: "flag" },
     { key: "ok", label: "정상", cls: "ok" },
     { key: "not_evaluated", label: "판정 불가", cls: "warn", icon: "⚠", hideIfZero: true }
+  ] : [
+    { key: "total", label: "전체 Sample" },
+    { key: "fail", label: "Fail", cls: "flag" },
+    { key: "pass", label: "Pass", cls: "ok" }
   ];
   cards.forEach(card => {
     const value = counts[card.key] ?? 0;
@@ -3556,6 +3668,7 @@ function renderJudgmentFootnote() {
   const el = document.getElementById("judgmentFootnote");
   if (!el) return;
   if (!analysis) { el.innerHTML = ""; return; }
+  if (analysisMode === "fail") { renderFailJudgmentFootnote(el); return; }
   const parts = ["판정 기준 Grubbs"];
   if (analysis.flag_mode === "fixed") {
     parts.push(`고정 임계=${analysis.flag_limit ?? 3}`);
@@ -3576,6 +3689,26 @@ function renderJudgmentFootnote() {
   const infoSpan = document.createElement("span");
   infoSpan.className = "footnote-info";
   infoSpan.title = "임계는 유닛 수에 따라 달라집니다 (N=57→3.539, N=145→3.879, N=3000→4.673)";
+  infoSpan.textContent = "ⓘ";
+  el.innerHTML = "";
+  el.appendChild(textSpan);
+  el.appendChild(infoSpan);
+}
+function renderFailJudgmentFootnote(el) {
+  // Fail 목록은 규격(LSL/USL) 이탈이 1차 선별 기준이라 Pass 탭의 "판정 기준 Grubbs·임계"
+  // 문구를 그대로 쓰면 오해를 준다. Grubbs 통계(mea/diff threshold)는 이탈 유형
+  // (Intermittent/Unstable/Excessive/Slight/Tail) 을 보조 분류하는 데만 쓰인다.
+  const parts = ["판정 기준 규격 이탈(Spec Out)"];
+  const failItemCount = (analysis.selected_summary || []).length;
+  if (failItemCount) parts.push(`Fail 항목 ${failItemCount}건`);
+  let text = parts.join(" · ");
+  const readout = (selectedResultRow() || {}).judged_readout;
+  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
+  const textSpan = document.createElement("span");
+  textSpan.textContent = text;
+  const infoSpan = document.createElement("span");
+  infoSpan.className = "footnote-info";
+  infoSpan.title = "Fail 목록은 규격(LSL/USL) 이탈 여부를 1차 기준으로 선별합니다. 이탈 유형(Intermittent/Unstable/Excessive/Slight/Tail)은 정상 표본 분포 기준 Grubbs 통계로 보조 분류한 결과입니다.";
   infoSpan.textContent = "ⓘ";
   el.innerHTML = "";
   el.appendChild(textSpan);
@@ -3813,11 +3946,36 @@ function renderFailDataListTable(table) {
 function renderAbnormalPassListTable(table) {
   renderSummaryListTable(table, payloadForMode("pass"), "pass");
 }
+function renderColumnToggleMenu(resultMode, allCols) {
+  const menu = document.getElementById("columnToggleMenu");
+  if (!menu) return;
+  const visible = columnVisibility[resultMode] || new Set(resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS);
+  menu.innerHTML = "";
+  allCols.forEach(([key, label]) => {
+    const item = document.createElement("label");
+    item.className = "column-toggle-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = visible.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) visible.add(key); else visible.delete(key);
+      renderResultTable();
+      renderOverTable();
+    });
+    item.appendChild(checkbox);
+    item.appendChild(document.createTextNode(label));
+    menu.appendChild(item);
+  });
+}
 function renderSummaryListTable(table, payload, mode) {
   table.innerHTML = "";
   const thead = table.createTHead();
   const hr = thead.insertRow();
-  const cols = resultColumnsForPayload(payload, mode);
+  const resultMode = mode === "fail" ? "fail" : (payload?.analysis_mode || "pass");
+  const allCols = resultColumnsForPayload(payload, mode);
+  const visible = columnVisibility[resultMode] || new Set(resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS);
+  const cols = allCols.filter(([key]) => visible.has(key));
+  renderColumnToggleMenu(resultMode, allCols);
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
     th.textContent = label + (sortState.column === key ? (sortState.reverse ? " v" : " ^") : "");
@@ -4576,11 +4734,14 @@ function drawWaferMap() {
   const selectedDetail = data?.details?.find(row => String(row.sample) === String(highlightSample)) || data?.details?.[0] || {};
   ctx.fillText(selectedDetail.wafer || selectedDetail.wafer_no || data?.wafer_no || "W--", 106, 30);
   const rows = 10, cols = 12;
-  const cell = Math.min((w - 250) / cols, (h - 70) / rows);
-  const gridW = cols * cell;
-  const gridH = rows * cell;
   const left = 115;
   const top = 50;
+  const legendReserve = Math.min(190, Math.max(110, w * 0.24));
+  const cellW = (w - left - legendReserve - 16) / cols;
+  const cellH = (h - top - 14) / (rows + 0.9);  // 0.9 = 반지름 여유(0.45셀) + 하단 여백
+  const cell = Math.max(6, Math.min(cellW, cellH));
+  const gridW = cols * cell;
+  const gridH = rows * cell;
   const cx = left + gridW / 2;
   const cy = top + gridH / 2;
   const radius = Math.min(gridW, gridH) / 2 + cell * 0.45;
@@ -4619,7 +4780,7 @@ function drawWaferMap() {
   for (let col = 0; col < cols; col++) ctx.fillText(String(col + 1), left + col * cell + cell / 2, top - 12);
   ctx.textAlign = "right";
   "ABCDEFGHIJ".split("").forEach((label, row) => ctx.fillText(label, left - 10, top + row * cell + cell / 2 + 4));
-  const legendX = left + gridW + 64;
+  const legendX = Math.min(left + gridW + 40, w - 150);
   const legendY = top + 70;
   const legend = [["#ff6b6b", `Fail${highlightSample ? ` (Sample #${highlightSample})` : ""}`], ["#b8dafc", "Good"], ["#cfcfcf", "Edge / No Die"]];
   ctx.textAlign = "left";
@@ -5098,7 +5259,29 @@ function markerLabel(ctx, x, y, label, color, align = "left") {
   ctx.fillText(label, startX + markerWidth + gap, y + 4);
   ctx.restore();
 }
-window.addEventListener("resize", () => analysis && drawCharts());
+let chartRedrawRaf = 0;
+let lastGraphBoxKey = "";
+function scheduleChartRedraw() {
+  if (chartRedrawRaf) return;
+  chartRedrawRaf = requestAnimationFrame(() => {
+    chartRedrawRaf = 0;
+    if (analysis) drawCharts();
+  });
+}
+window.addEventListener("resize", scheduleChartRedraw);
+if (typeof ResizeObserver !== "undefined") {
+  const graphColumn = document.querySelector(".result-graph-column");
+  if (graphColumn) {
+    new ResizeObserver(entries => {
+      const box = entries[0] && entries[0].contentRect;
+      if (!box) return;
+      const key = `${Math.round(box.width)}x${Math.round(box.height)}`;
+      if (key === lastGraphBoxKey) return;
+      lastGraphBoxKey = key;
+      scheduleChartRedraw();
+    }).observe(graphColumn);
+  }
+}
 </script>
 </body>
 </html>"""
@@ -6234,6 +6417,25 @@ def merge_combo_payloads(combo_payloads, mode):
             item_counts_by_item.values(),
             key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
         )
+    elif mode == "fail":
+        sample_counts = {"total": 0, "fail": 0, "pass": 0}
+        item_counts_by_item = {}
+        for payload in combo_payloads:
+            counts = payload.get("sample_counts") or {}
+            for key in ("total", "fail", "pass"):
+                sample_counts[key] += counts.get(key, 0) or 0
+            for entry in payload.get("item_counts", []):
+                item = entry.get("reliability_item", "")
+                agg = item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+                agg["select"] += entry.get("select", 0) or 0
+                agg["total"] += entry.get("total", 0) or 0
+        for item in RELIABILITY_ITEMS:
+            item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+        merged["sample_counts"] = sample_counts
+        merged["item_counts"] = sorted(
+            item_counts_by_item.values(),
+            key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
+        )
     return merged
 
 
@@ -6796,6 +6998,17 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         }
     summary_rows.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
     results.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
+    over = {}
+    for item, item_payload in item_payloads.items():
+        for detail in item_payload["details"]:
+            if not detail.get("fail_type"):
+                continue
+            over.setdefault(detail["sample"], []).append(item)
+    over_rows = [
+        {"sample": sample, "items": sorted(items, key=lambda item: item_sort_key_for_records(sample_states, item))}
+        for sample, items in over.items()
+    ]
+    over_rows.sort(key=lambda row: (-len(row["items"]), natural_key(row["sample"])))
     message = f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}"
     match_summary = (
         match_summary_for_files(pre_records, cached_item_records(merged_files[0])) if include_pre else None
@@ -6803,13 +7016,20 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     payload = {
         "results": results,
         "selected_summary": [{key: to_jsonable(value) for key, value in row.items()} for row in summary_rows],
-        "over_sigma": [],
+        "over_sigma": over_rows,
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
+        # 유닛(Sample) 기준 요약 스트립용. fail_samples/pass_samples 는 이미 위에서
+        # 판정 완료된 목록이라 새로 계산하지 않고 개수만 센다.
+        "sample_counts": {
+            "total": len(sample_states),
+            "fail": len(fail_samples),
+            "pass": len(pass_samples),
+        },
     }
     if match_summary:
         payload["match_summary"] = match_summary
@@ -7811,6 +8031,15 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
         payload = payload_with_items(app, payload, "fail", "saved" if cache_key else "none")
         apply_post_readout_history_to_payload(payload, post_history)
         decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout)
+        # Fail 모드 시험항목 탭 배지: 유닛(Sample) 기준 Fail 수 / 전체 수
+        fail_sample_counts = payload.get("sample_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": reliability_item,
+                "select": fail_sample_counts.get("fail", 0),
+                "total": fail_sample_counts.get("total", 0),
+            }
+        ]
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
@@ -7851,6 +8080,14 @@ def analyze_total_combo(base_path, combo, mode="pass", cache_key=None, include_p
     if mode == "fail":
         app, payload = analyze_fail_to_json(pre_path, combo["post_files"], None, include_pre)
         payload = payload_with_items(app, payload, "fail", "saved" if cache_key else "none")
+        fail_sample_counts = payload.get("sample_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": combo["item"],
+                "select": fail_sample_counts.get("fail", 0),
+                "total": fail_sample_counts.get("total", 0),
+            }
+        ]
     else:
         app, payload = analyze_to_json(pre_path, combo["post_files"][-1], True, None, include_pre)
         payload = payload_with_items(app, payload, "pass", "saved" if cache_key else "none")

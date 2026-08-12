@@ -1,14 +1,14 @@
 # tests/golden/MANIFEST.txt - 골든 스냅샷 출처 기록
 # regression_snapshot.py 가 재생성 시마다 자동 갱신한다 (변경 사유 칸은 사람이 직접 채운다)
 
-생성 시각: 2026-08-09 00:42:11
-git commit: 95c49c7dea2c15753682bae9417fd6aa641eca15
+생성 시각: 2026-08-10 23:55:56
+git commit: f72582612c1b46ff79aa9a93f7d445579f2c273e
 데이터 루트: C:\파이썬코딩\신뢰성데이터분석툴\Test Data
 
 ## 골든 파일
 파일명                                                          sha256                                                                  바이트
 SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json  ff40223050caf6931caf41512a98c16aa764b179f1aa808f700623f1e3f9e6c9    3486351
-SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json  35a4d138eb14012f2c36573b7176f93a49c6ff7dce7a0b2eb21a66c6dfb749fd      13086
+SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json  bc2d4c2f27c22a897a30bc78a70f0a73f2e7c0b68d36c9f66a3a4cdd2653846f      14978
 index.json                                                   f53285a63d243be03a95c7c2bec3f5fd75bc2bc4aa767ddaf909fb73e1a6a457        884
 
 ## 조합별 요약
@@ -17,11 +17,6 @@ SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[pass]              138      138    
 SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[fail]                5        5         24  {'Excessive': 3, 'Slight': 2, 'Tail': 17, 'Unstable': 2}
 
 ## 직전 재생성 대비 변경 사유 (사람이 적는 칸)
-- 요약/집계 payload 필드 추가 작업(§UI개선_프롬프트.md 항목 1~5). 판정 로직은 미변경.
-- summary_counts/excluded_items/item_counts 는 새 top-level 키라 snapshot_record()
-  가 잡지 않음(4키만 추출) -> pass.json sha256 불변, 재생성 불필요했으나 절차상 재생성.
-- fail.json 만 변경: analyze_fail_to_json() 의 selected_summary 행에 항목별 대표
-  fail_type(해당 항목 detail 들 중 최악, 우선순위 Intermittent>Unstable>Excessive>
-  Slight>Tail)을 추가. 5 개 SELECT 항목의 값은 Excessive x3, Unstable x1, Slight x1 -
-  기존 mea_s/diff_s/result/n/mean/sigma 등 판정 필드는 전부 동일(verdict_diff 로 교차
-  확인 완료, 차이 없음).
+- W1/W2 payload 변경 반영: selected_summary 에 fail_type 및 조건 필드(reliability_item,
+  ft_temp, readout) 추가로 fail.json 해시 변경 (35a4d138… → bc2d4c2f…).
+- pass.json 해시는 불변 — 판정 수치에는 변화 없음.
