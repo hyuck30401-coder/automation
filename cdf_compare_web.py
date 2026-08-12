@@ -63,14 +63,14 @@ HTML = r"""<!doctype html>
       --bg: #f7f9fc;
       --panel: #ffffff;
       --line: #dce4ee;
-      --head: #0a9da3;
+      --head: #088287; /* WCAG AA 미달(흰 텍스트 대비 3.3:1) 이라 명도만 낮춤, 색상 계열 유지 */
       --head-dark: #05717f;
       --head2: #f8fafc;
       --nav: #06244c;
       --nav2: #041b3b;
       --accent: #02a2b8;
       --text: #071f49;
-      --muted: #687792;
+      --muted: #64728c; /* WCAG AA 미달(밝은 배경 대비 4.29:1) 이라 명도만 낮춤, 색상 계열 유지 */
       --danger: #d93025;
       --select: #fff0f0;
       --blue: #1f77b4;
@@ -142,7 +142,8 @@ HTML = r"""<!doctype html>
       color: rgba(255,255,255,.92);
     }
     .side-link:hover, .side-link.active {
-      background: linear-gradient(90deg, rgba(7,158,181,.85), rgba(7,158,181,.35));
+      /* WCAG AA(4.5:1) 미달(사이드바 배경 대비 실측 3.96~4.06) 이라 명도만 낮췄다. 색상 계열은 유지. */
+      background: linear-gradient(90deg, rgba(6,145,167,.85), rgba(6,145,167,.35));
       color: #fff;
     }
     .side-exit {
@@ -464,7 +465,8 @@ HTML = r"""<!doctype html>
     .filter-chip.active {
       color: #fff;
       border-color: #047c80;
-      background: linear-gradient(180deg, #11b7b5, #008f88);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.48:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c8281, #006661);
     }
     .readout-toggle {
       display: inline-flex;
@@ -610,12 +612,14 @@ HTML = r"""<!doctype html>
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(7,31,73,.05);
     }
-    /* 좌측은 탭 패널(요약/Fail/이상 샘플) : 상세 를 1:2 비율로 나눈다. over-panel 은
+    /* 좌측은 탭 패널(요약/Fail/이상 샘플) : 상세 를 4:1 비율로 나눈다. over-panel 은
        메인 화면에서는 항상 숨김(§updatePanelMode, popup 전용으로 남겨둠)이라
-       flex 계산에서 제외된다. */
-    .summary-panel { flex: 1 1 0; }
-    .over-panel { flex: 1 1 0; }
-    .detail-panel { flex: 2 1 0; }
+       flex 계산에서 제외된다.
+       목록표는 174행, 상세표는 선택 항목 1건(내용 실측 32px)뿐이라 목록 쪽에 크게
+       배분한다. (이전 값 1:2 는 정확히 반대여서 목록 스크롤 창이 41px 까지 눌렸다) */
+    .summary-panel { flex: 4 1 0; min-height: 220px; }
+    .over-panel { flex: 4 1 0; min-height: 220px; }
+    .detail-panel { flex: 1 1 0; min-height: 90px; }
     .chart-tools.graph-item-toolbar { flex: 0 0 auto; }
     .chart-panel,
     .diff-cdf-panel,
@@ -1307,7 +1311,8 @@ HTML = r"""<!doctype html>
       height: 100%;
     }
     .toolbar-mode button.active {
-      background: linear-gradient(180deg, #078c99, #05717f);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 4.02:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #07828e, #056976);
       color: #fff;
     }
     .result-tab-groups {
@@ -1340,20 +1345,45 @@ HTML = r"""<!doctype html>
     .column-toggle-btn:hover { background: #e0eef4; }
     .column-toggle-menu {
       display: none;
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
-      z-index: 20;
+      position: fixed;
+      z-index: 200;
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(20, 40, 70, 0.15);
       padding: 8px;
       min-width: 160px;
-      max-height: 280px;
+      max-height: min(420px, 60vh);
       overflow-y: auto;
     }
     .column-toggle-menu.open { display: block; }
+    .column-menu-head {
+      position: sticky;
+      top: -8px;
+      margin: -8px -8px 4px;
+      padding: 8px 8px 6px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      z-index: 1;
+    }
+    .column-menu-head .column-toggle-item { padding: 0; font-weight: 700; }
+    .column-menu-reset {
+      background: none;
+      border: 1px solid #bdd3df;
+      border-radius: 12px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #0b6070;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .column-menu-reset:hover { background: #eef6fa; }
+    .column-menu-body { display: flex; flex-direction: column; }
     .column-toggle-item {
       display: flex;
       align-items: center;
@@ -1522,7 +1552,8 @@ HTML = r"""<!doctype html>
     .side-link.active,
     .tree-link:hover,
     .tree-link.active {
-      background: linear-gradient(90deg, #14b9e9, #176fe0);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.3:1, 실제 렌더링에서 이 규칙이 우선 적용됨) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(90deg, #0e80a1, #104d9b);
       box-shadow: inset 4px 0 0 rgba(60,235,255,.85), 0 8px 20px rgba(1,87,187,.35);
       color: #fff;
     }
@@ -1692,7 +1723,8 @@ HTML = r"""<!doctype html>
       background: #fff;
     }
     .toolbar-mode button.active {
-      background: linear-gradient(180deg, #11b7b5, #008f88);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.48:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c8281, #006661);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
     }
     .status-pill {
@@ -1722,8 +1754,8 @@ HTML = r"""<!doctype html>
       box-shadow: 0 8px 22px rgba(28,70,136,.07);
     }
     .panel h2 {
-      min-height: 48px;
-      padding: 13px 18px;
+      min-height: 36px;
+      padding: 7px 18px;
       background: linear-gradient(180deg, #ffffff, #f6f9fd);
       color: #0b438c;
       border-bottom: 1px solid #dce8f4;
@@ -1744,7 +1776,8 @@ HTML = r"""<!doctype html>
       min-height: 0;
     }
     th {
-      background: linear-gradient(180deg, #10aaa5, #078a87);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.87:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c837f, #056a68);
       border-color: #49bdb8;
       color: #fff;
       font-weight: 800;
@@ -1915,6 +1948,26 @@ HTML = r"""<!doctype html>
       padding: 7px 14px;
       white-space: nowrap;
     }
+    .status-pill.st-ok   { background: #e6f5ec; color: #14683f; }
+    .status-pill.st-warn { background: #fff4e0; color: #8a5a00; }
+    .status-pill.st-err  { background: #fbecee; color: #8c1020; }
+    .analyze-error {
+      display: none;
+      flex: 0 0 auto;
+      margin: 10px 0 0;
+      padding: 10px 14px;
+      border: 1px solid #f0c8ce;
+      border-left: 4px solid #b00020;
+      border-radius: 6px;
+      background: #fbecee;
+      color: #8c1020;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: pre-wrap;
+    }
+    .analyze-error.open { display: block; }
+    .field.invalid select,
+    .field.invalid input { border-color: #b00020; background: #fff6f7; }
     .latest-date {
       flex: 0 0 auto;
       margin-left: 0;
@@ -2079,6 +2132,7 @@ HTML = r"""<!doctype html>
           <span class="status latest-date" id="latestAnalysisDate">Latest Analysis Date: -</span>
           <button id="rawExportBtn" class="secondary raw-export-btn" type="button" disabled>Raw Data Export</button>
         </section>
+        <div id="analyzeError" class="analyze-error" role="alert"></div>
         <section class="analysis-results-section">
           <div class="condition-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span><button id="openResultsWindowBtn" class="icon-window-btn" type="button" title="Open Analysis Results in a new window" disabled></button></div>
           <div class="analysis-results-scroll">
@@ -2250,6 +2304,7 @@ const lookupOrder = [
   ["ft_temp", "ftTempSelect"]
 ];
 const lookupState = { device: "", ver: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
+let pendingLookup = null;   // 진행 중인 refreshLookup 체인
 function normalizedAnalysisSelection(extra = {}) {
   const payload = { ...lookupState, ...extra };
   const hasBaseSelection = ["device", "ver", "purpose", "lot"].every(key => (payload[key] || "").trim());
@@ -2265,7 +2320,25 @@ let dataRootPath = "";
 
 function setStatus(text) {
   const target = document.getElementById("status") || document.getElementById("dataPath");
-  if (target) target.textContent = text;
+  if (!target) return;
+  target.textContent = text;
+  if (!target.classList.contains("status-pill")) return;
+  target.classList.remove("st-ok", "st-warn", "st-err");
+  target.classList.add(
+    /fail|error|실패/i.test(text) ? "st-err"
+    : /running|searching|initial|stopp|preparing|\d%/i.test(text) ? "st-warn"
+    : "st-ok");
+}
+function showAnalyzeError(message, missingKeys = []) {
+  const el = document.getElementById("analyzeError");
+  if (el) { el.textContent = message; el.classList.add("open"); }
+  document.querySelectorAll(".field.invalid").forEach(f => f.classList.remove("invalid"));
+  const ID = { device: "deviceInput", ver: "verSelect", lot: "lotSelect", purpose: "purposeSelect" };
+  missingKeys.forEach(k => document.getElementById(ID[k])?.closest(".field")?.classList.add("invalid"));
+}
+function clearAnalyzeError() {
+  document.getElementById("analyzeError")?.classList.remove("open");
+  document.querySelectorAll(".field.invalid").forEach(f => f.classList.remove("invalid"));
 }
 function updateReliabilityTabs() {
   const active = analysisFilters.reliability_item || "";
@@ -2405,6 +2478,12 @@ async function loadLookup(field) {
   return data;
 }
 async function refreshLookup(field) {
+  const task = _refreshLookupInner(field);
+  pendingLookup = task;
+  try { return await task; }
+  finally { if (pendingLookup === task) pendingLookup = null; }
+}
+async function _refreshLookupInner(field) {
   if (field !== "device" && !lookupState.device) return;
   try {
     setStatus("Searching data...");
@@ -2499,6 +2578,7 @@ function bindLookupControls() {
       setSelectOptions(selectId, [], "Select");
     }
     sel.addEventListener("change", async () => {
+      clearAnalyzeError();
       lookupState[key] = sel.value;
       modePayloads = {};
       clearAnalysisDisplay("");
@@ -3103,6 +3183,19 @@ async function requestAnalysisMode(mode) {
 
 async function runAnalysis() {
   const btn = document.getElementById("analyzeBtn");
+  clearAnalyzeError();
+  // 텍스트 입력의 change 는 blur 시점에 늦게 발생한다. Analyze 버튼 클릭이 그 blur 를
+  // 유발하면 lookupState 가 비워진 채 payload 가 만들어진다 — 먼저 확정시킨다.
+  document.getElementById("deviceInput")?.blur();
+  await new Promise(r => setTimeout(r, 0));
+  if (pendingLookup) { try { await pendingLookup; } catch (_) {} }
+  // 화면의 select 값을 정본으로 삼아 lookupState 를 재동기화
+  const deviceEl = document.getElementById("deviceInput");
+  if (deviceEl && deviceEl.value.trim()) lookupState.device = deviceEl.value.trim();
+  lookupOrder.forEach(([key, selectId]) => {
+    const el = document.getElementById(selectId);
+    if (el && el.value) lookupState[key] = el.value;
+  });
   const stopBtn = document.getElementById("stopAnalyzeBtn");
   const displayMode = analysisMode;
   activeAnalysisRunId = createAnalysisRunId();
@@ -3136,7 +3229,9 @@ async function runAnalysis() {
     } else {
       setStatus("Failed");
       await reportAnalysisResultsRunStatus("error", err.message || "Analyze failed.");
-      alert(err.message);
+      const sel = normalizedAnalysisSelection();
+      const missing = ["device", "ver", "purpose", "lot"].filter(k => !(sel[k] || "").trim());
+      showAnalyzeError(err.message || "Analyze failed.", missing);
     }
   } finally {
     btn.disabled = false;
@@ -3486,15 +3581,45 @@ function bindResultControls() {
   const columnToggleBtn = document.getElementById("columnToggleBtn");
   const columnToggleMenu = document.getElementById("columnToggleMenu");
   if (columnToggleBtn && columnToggleMenu) {
+    // .panel 은 overflow:hidden 이라 absolute 메뉴가 잘린다. body 로 옮기고
+    // position:fixed 로 버튼 기준 좌표를 계산해 배치한다.
+    document.body.appendChild(columnToggleMenu);
+    const positionColumnMenu = () => {
+      const btnRect = columnToggleBtn.getBoundingClientRect();
+      const menuRect = columnToggleMenu.getBoundingClientRect();
+      let left = btnRect.right - menuRect.width;
+      let top = btnRect.bottom + 6;
+      left = Math.max(8, Math.min(left, window.innerWidth - menuRect.width - 8));
+      if (top + menuRect.height > window.innerHeight - 8) {
+        top = Math.max(8, btnRect.top - menuRect.height - 6);
+      }
+      columnToggleMenu.style.left = `${Math.round(left)}px`;
+      columnToggleMenu.style.top = `${Math.round(top)}px`;
+    };
+    const closeColumnMenu = () => columnToggleMenu.classList.remove("open");
     columnToggleBtn.addEventListener("click", event => {
       event.stopPropagation();
-      columnToggleMenu.classList.toggle("open");
+      if (columnToggleMenu.classList.contains("open")) {
+        closeColumnMenu();
+      } else {
+        columnToggleMenu.classList.add("open");
+        positionColumnMenu();
+      }
     });
     document.addEventListener("click", event => {
       if (!columnToggleMenu.classList.contains("open")) return;
       if (columnToggleMenu.contains(event.target) || event.target === columnToggleBtn) return;
-      columnToggleMenu.classList.remove("open");
+      closeColumnMenu();
     });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && columnToggleMenu.classList.contains("open")) closeColumnMenu();
+    });
+    window.addEventListener("resize", () => {
+      if (columnToggleMenu.classList.contains("open")) positionColumnMenu();
+    });
+    window.addEventListener("scroll", () => {
+      if (columnToggleMenu.classList.contains("open")) positionColumnMenu();
+    }, true);
   }
 }
 
@@ -3949,8 +4074,47 @@ function renderAbnormalPassListTable(table) {
 function renderColumnToggleMenu(resultMode, allCols) {
   const menu = document.getElementById("columnToggleMenu");
   if (!menu) return;
-  const visible = columnVisibility[resultMode] || new Set(resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS);
+  const defaultCols = resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS;
+  const visible = columnVisibility[resultMode] || new Set(defaultCols);
   menu.innerHTML = "";
+
+  const head = document.createElement("div");
+  head.className = "column-menu-head";
+  const selectAllItem = document.createElement("label");
+  selectAllItem.className = "column-toggle-item";
+  const selectAllBox = document.createElement("input");
+  selectAllBox.type = "checkbox";
+  const updateSelectAllState = () => {
+    const total = allCols.length;
+    const checkedCount = allCols.filter(([key]) => visible.has(key)).length;
+    selectAllBox.checked = total > 0 && checkedCount === total;
+    selectAllBox.indeterminate = checkedCount > 0 && checkedCount < total;
+  };
+  selectAllBox.addEventListener("change", () => {
+    if (selectAllBox.checked) allCols.forEach(([key]) => visible.add(key));
+    else allCols.forEach(([key]) => visible.delete(key));
+    renderResultTable();
+    renderOverTable();
+  });
+  selectAllItem.appendChild(selectAllBox);
+  selectAllItem.appendChild(document.createTextNode("전체 선택"));
+  head.appendChild(selectAllItem);
+
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "column-menu-reset";
+  resetBtn.textContent = "기본값으로";
+  resetBtn.addEventListener("click", () => {
+    visible.clear();
+    defaultCols.forEach(key => visible.add(key));
+    renderResultTable();
+    renderOverTable();
+  });
+  head.appendChild(resetBtn);
+  menu.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "column-menu-body";
   allCols.forEach(([key, label]) => {
     const item = document.createElement("label");
     item.className = "column-toggle-item";
@@ -3959,13 +4123,16 @@ function renderColumnToggleMenu(resultMode, allCols) {
     checkbox.checked = visible.has(key);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) visible.add(key); else visible.delete(key);
+      updateSelectAllState();
       renderResultTable();
       renderOverTable();
     });
     item.appendChild(checkbox);
     item.appendChild(document.createTextNode(label));
-    menu.appendChild(item);
+    body.appendChild(item);
   });
+  menu.appendChild(body);
+  updateSelectAllState();
 }
 function renderSummaryListTable(table, payload, mode) {
   table.innerHTML = "";
@@ -3978,7 +4145,7 @@ function renderSummaryListTable(table, payload, mode) {
   renderColumnToggleMenu(resultMode, allCols);
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
-    th.textContent = label + (sortState.column === key ? (sortState.reverse ? " v" : " ^") : "");
+    th.textContent = label + (sortState.column === key ? (sortState.reverse ? " ▼" : " ▲") : "");
     if (key === "n") th.title = "표준편차 계산에 사용된 유닛 수";
     th.onclick = () => {
       if (sortState.column === key) sortState.reverse = !sortState.reverse;
@@ -4095,7 +4262,7 @@ function renderDetailTable() {
   const cols = detailColumns();
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
-    th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " v" : " ^") : "");
+    th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " ▼" : " ▲") : "");
     th.onclick = () => {
       if (detailSortState.column === key) detailSortState.reverse = !detailSortState.reverse;
       else detailSortState = { column: key, reverse: false };
