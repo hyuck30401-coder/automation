@@ -1,0 +1,75 @@
+# 신뢰성 데이터 분석 툴 — CI
+# ---------------------------------------------------------------
+# 설계 원칙
+#  1. 사내 시험 데이터는 절대 올리지 않는다.
+#     Test Data / Perf Data / tests/golden 은 .gitignore 로 이미 제외되어 있다.
+#     따라서 CI 에서는 단위 테스트만 돌린다.
+#     골든 회귀 검증은 데이터가 있는 로컬에서 pre-push 훅으로 지킨다.
+#     (_automation/pre-push.sample 참조)
+#  2. 의존성은 numpy 뿐이다 (CLAUDE.md §5-7). 목록을 늘리지 않는다.
+#  3. Linux 러너에는 tkinter 가 없다. _automation/headless.py 스텁이
+#     그 벽을 넘으므로 기존 소스를 고치지 않고도 돌아간다.
+# ---------------------------------------------------------------
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: numpy 설치 (유일한 의존성)
+        run: python -m pip install --upgrade pip numpy
+
+      - name: 단위 테스트
+        run: python _automation/run_checks.py
+
+  # ─────────────────────────────────────────────────────────────
+  # exe 빌드 — 아직 켜지 마세요.
+  #
+  # CLAUDE.md §8 의 실제 PyInstaller 명령이 확인되지 않았습니다.
+  # 현재 배포본은 CDFCompareToolHTML_Rev0.027.exe 이고 소스는 Rev.0.028 이라
+  # 한 달가량 어긋나 있습니다.
+  #
+  # 실제 명령을 확인한 뒤 아래 주석을 풀고 run 부분을 교체하세요.
+  # Windows 러너는 Linux 의 2배를 소모하므로 태그를 달거나 수동 실행할 때만
+  # 돌도록 되어 있습니다.
+  # ─────────────────────────────────────────────────────────────
+  #
+  # build-exe:
+  #   needs: unit-tests
+  #   if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.12"
+  #     - run: python -m pip install --upgrade pip numpy pyinstaller
+  #
+  #     # TODO: 실제 명령으로 교체. 진입점이 cdf_compare_web.py 인지,
+  #     #       --windowed 를 쓰는지(로컬 HTTP 서버라 콘솔이 필요할 수 있음),
+  #     #       추가 데이터 파일이 있는지 확인 필요.
+  #     - name: exe 빌드
+  #       run: pyinstaller --onefile --name CDFCompareToolHTML cdf_compare_web.py
+  #
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: CDFCompareToolHTML-${{ github.sha }}
+  #         path: dist/CDFCompareToolHTML.exe
+  #         retention-days: 30

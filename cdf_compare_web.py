@@ -63,20 +63,24 @@ HTML = r"""<!doctype html>
       --bg: #f7f9fc;
       --panel: #ffffff;
       --line: #dce4ee;
-      --head: #088287; /* WCAG AA 미달(흰 텍스트 대비 3.3:1) 이라 명도만 낮춤, 색상 계열 유지 */
-      --head-dark: #05717f;
+      --head: #17427f;
+      --head-dark: #0f2f5c;
       --head2: #f8fafc;
       --nav: #06244c;
       --nav2: #041b3b;
       --accent: #02a2b8;
       --text: #071f49;
-      --muted: #64728c; /* WCAG AA 미달(밝은 배경 대비 4.29:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      --muted: #5b6b81;
       --danger: #d93025;
       --select: #fff0f0;
       --blue: #1f77b4;
       --red: #d62728;
       --green: #2ca02c;
       --purple: #9467bd;
+      --acc:#2b5fb8; --acc-d:#17427f; --acc-s:#eaf1fb; --acc-b:#c9dcf4;
+      --ink:#1c2534; --ink2:#5b6b81; --ink3:#93a1b3;
+      --line:#e5ebf2; --line2:#f0f4f8; --bg:#eff3f8;
+      --neg:#c2413a; --pos:#1c7a4b; --warn:#a06a08;
     }
     * { box-sizing: border-box; }
     body {
@@ -100,11 +104,83 @@ HTML = r"""<!doctype html>
       border-radius: 6px;
     }
     .app-shell {
-      display: grid;
-      grid-template-columns: 300px minmax(0, 1fr);
+      display: block;
       min-height: 100vh;
       background: var(--bg);
     }
+    .top {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      height: 58px;
+      padding: 0 20px;
+      gap: 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    .ttl { display: flex; flex-direction: column; gap: 1px; flex: 0 0 auto; }
+    .ttl b { font-size: 15.5px; font-weight: 800; letter-spacing: -.015em; line-height: 1.15; color: var(--text); }
+    .ttl small { font-size: 10.5px; color: var(--muted); letter-spacing: .01em; }
+    .vr { width: 1px; height: 24px; background: var(--line); flex: 0 0 auto; }
+    .cond {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      white-space: nowrap;
+      transition: background .12s;
+    }
+    .cond:hover { background: var(--bg); }
+    .cond .n {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: rgba(2,162,184,.14);
+      color: var(--head-dark);
+      font-size: 10.5px;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .cond .t { font-size: 12.5px; font-weight: 700; color: var(--text); }
+    .cond .m {
+      font-size: 11.5px;
+      color: var(--muted);
+      max-width: 380px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cond .c { display: inline-block; flex: 0 0 auto; font-size: 9px; color: var(--muted); transition: transform .15s ease; }
+    #rdaView.condition-collapsed .cond .c { transform: rotate(-90deg); }
+    .rt { margin-left: auto; display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .pathtxt {
+      font-size: 11.5px;
+      color: var(--muted);
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lnk {
+      height: 30px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .lnk:hover { background: var(--bg); color: var(--text); }
+    .lnk:disabled { opacity: .45; cursor: default; }
+    .lnk:disabled:hover { background: transparent; }
+    body.results-window .top { display: none !important; }
     .side {
       border-right: 0;
       padding: 0 22px;
@@ -158,9 +234,12 @@ HTML = r"""<!doctype html>
       background: rgba(255,109,120,.12);
       color: #ff9aa2;
     }
-    .content { padding: 24px 22px 12px; min-width: 0; overflow: hidden; height: 100vh; }
+    .content {
+      padding: 0; min-width: 0; overflow: hidden; height: 100vh;
+      display: flex; flex-direction: column;
+    }
     .view { display: none; }
-    .view.active { display: block; height: 100%; overflow: auto; }
+    .view.active { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; }
     #rdaView.active {
       display: flex;
       flex-direction: column;
@@ -636,7 +715,6 @@ HTML = r"""<!doctype html>
       display: flex;
     }
     .wafer-panel {
-      display: flex;
       flex: 1 1 0;
       min-height: 160px;
     }
@@ -1505,7 +1583,6 @@ HTML = r"""<!doctype html>
       color: #10305f;
     }
     .app-shell {
-      grid-template-columns: 354px minmax(0, 1fr);
       background: transparent;
     }
     .side {
@@ -1562,7 +1639,7 @@ HTML = r"""<!doctype html>
       padding-bottom: 28px;
     }
     .content {
-      padding: 36px 34px 28px;
+      padding: 0;
       background:
         radial-gradient(circle at 96% 0%, rgba(25,124,212,.10), transparent 28%),
         #f8fbff;
@@ -1826,12 +1903,9 @@ HTML = r"""<!doctype html>
       max-width: 100%;
       overflow-x: hidden;
     }
-    .app-shell {
-      grid-template-columns: 280px minmax(0, 1fr);
-    }
     .content {
       height: 100vh;
-      padding: 28px 30px 22px;
+      padding: 0;
     }
     .view-title {
       font-size: 28px;
@@ -2019,56 +2093,162 @@ HTML = r"""<!doctype html>
           "scatter";
       }
     }
+
+    /* ── W4-2~4 : 표/그래프 컨트롤 카드 통합 레이아웃 (source-order로 위 정의를 override) ── */
+    :root{
+      --acc:#2b5fb8; --acc-d:#17427f; --acc-s:#eaf1fb; --acc-b:#c9dcf4;
+      --ink:#1c2534; --ink2:#5b6b81; --ink3:#93a1b3;
+      --line:#e5ebf2; --line2:#f0f4f8; --bg:#eff3f8;
+      --neg:#c2413a; --pos:#1c7a4b; --warn:#a06a08;
+    }
+
+    /* ── 2열 : 표 5 : 그래프 3 ── */
+    .grid{
+      display:grid;
+      grid-template-columns:minmax(0,4fr) minmax(0,3fr);
+      grid-template-rows:minmax(0,1fr);
+      grid-template-areas:"resulttab graphtab";
+      gap:14px; flex:1 1 auto; min-height:560px;
+      padding:0; border:0; background:transparent; align-items:stretch;
+    }
+    .result-table-column,.result-graph-column{
+      display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0;
+    }
+    .summary-panel{ flex:1 1 0; min-height:0; }
+    .over-panel   { flex:1 1 0; min-height:0; }
+    .detail-panel { flex:1 1 0; min-height:0; }
+
+    #analysisFilterBar, #graphFilterBar{ display:contents; }
+
+    .ctl{ flex:0 0 auto; height:134px; display:flex; flex-direction:column;
+      background:#fff; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
+    .crow{ display:flex; align-items:center; gap:14px; padding:0 14px; min-width:0; }
+    .crow+.crow{ border-top:1px solid var(--line2); }
+    .crow.tabs{ border-top:1px solid var(--line2); }
+    .crow.foot{ border-top:1px solid var(--line2); }
+    .crow.kpi{ height:52px } .crow.tabs{ height:40px; padding:0 0 0 8px } .crow.foot{ height:40px }
+    .tail2{ margin-left:auto; display:flex; align-items:center; gap:12px; flex:0 0 auto; padding-left:12px }
+    .lbl{ font-size:11px; font-weight:700; color:var(--ink3); letter-spacing:.03em; flex:0 0 auto }
+    .gsum{ gap:0 }
+    .gname{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+    .gname b{ font-size:14px; font-weight:800; letter-spacing:-.01em; line-height:1.2 }
+    .gname span{ font-size:11px; color:var(--ink3) }
+
+    .summary-strip{ display:flex; align-items:center; gap:0; height:100%; margin:0; flex:1 1 auto; min-width:0 }
+    .summary-card{ display:flex; align-items:baseline; gap:6px; padding:0 16px 0 0; margin:0 16px 0 0;
+      border:0; border-right:1px solid var(--line2); border-radius:0; background:none; min-width:0; }
+    .summary-card:last-of-type{ border-right:0 }
+    .summary-card-value{ font-size:20px; font-weight:800; letter-spacing:-.02em;
+      font-variant-numeric:tabular-nums; line-height:1 }
+    .summary-card-label{ font-size:11px; font-weight:600; color:var(--ink2) }
+    .summary-card-flag .summary-card-value{ color:var(--neg) }
+    .summary-card-ok   .summary-card-value{ color:var(--pos) }
+    .summary-card-warn{ background:none; border-color:var(--line2) }
+    .summary-card-warn .summary-card-value{ color:var(--warn) }
+    .judgment-footnote{ margin-left:auto; text-align:right; font-size:10.5px; color:var(--ink3);
+      line-height:1.55; flex:0 0 auto; white-space:normal }
+
+    .tabwrap{ position:relative; flex:1 1 auto; min-width:0; display:flex; height:100% }
+    .tabwrap::after{ content:""; position:absolute; right:0; top:0; bottom:0; width:24px;
+      pointer-events:none; background:linear-gradient(to right,rgba(255,255,255,0),#fff) }
+    .item-tabs,.graph-tabs{ display:flex; align-items:stretch; gap:0; height:100%;
+      flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none; min-width:0; flex:1 1 auto; border:0; margin:0 }
+    .item-tabs::-webkit-scrollbar,.graph-tabs::-webkit-scrollbar{ display:none }
+    .item-tab,.graph-tabs button{ display:inline-flex; align-items:center; gap:6px; padding:0 12px;
+      flex:0 0 auto; position:relative; height:100%; min-height:0; min-width:0;
+      border:0; border-radius:0; background:none; box-shadow:none;
+      font-size:12.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .item-tab.active,.graph-tabs button.active{ color:var(--acc-d); background:none }
+    .item-tab.active::after,.graph-tabs button.active::after{ content:""; position:absolute;
+      left:10px; right:10px; bottom:0; height:2.5px; background:var(--acc); border-radius:2px 2px 0 0 }
+    .item-tab-badge{ font-size:10.5px; font-weight:700; color:var(--ink3);
+      font-variant-numeric:tabular-nums; min-width:46px; text-align:right;
+      padding:0; border-radius:0; background:none }
+    .item-tab.active .item-tab-badge{ color:var(--acc); background:none }
+    .item-tab-empty{ color:var(--ink3); opacity:.55 }
+
+    .pill{ display:inline-flex; align-items:center; height:26px; padding:2px;
+      border-radius:8px; background:var(--bg); flex:0 0 auto }
+    .pill button{ height:22px; padding:0 12px; border:0; border-radius:6px; background:none;
+      font-size:11.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .pill button.active{ background:#fff; color:var(--acc-d); box-shadow:0 1px 2px rgba(20,40,70,.10) }
+    .filter-chip{ height:22px; min-height:0; padding:0 12px; border:0; border-radius:6px;
+      background:none; font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .filter-chip.active{ background:#fff; color:var(--acc-d);
+      box-shadow:0 1px 2px rgba(20,40,70,.10); border:0 }
+    .readout-toggle,.filter-check{ height:26px; min-height:0; padding:0 4px; border:0; background:none;
+      font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .readout-toggle input,.filter-check input{ accent-color:var(--acc) }
+
+    .panel{ background:#fff; border:1px solid var(--line); border-radius:11px; box-shadow:none;
+      display:flex; flex-direction:column; min-height:0; overflow:hidden }
+    .ptabs{ flex:0 0 auto; display:flex; height:40px; background:#fafcfe;
+      border-bottom:1px solid var(--line) }
+    .pt{ display:inline-flex; align-items:center; gap:7px; padding:0 18px; border:0; background:none;
+      font-size:12.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .pt+.pt{ border-left:1px solid var(--line2) }
+    .pt.active{ background:#fff; color:var(--acc-d); box-shadow:inset 0 2.5px 0 var(--acc) }
+    .pt .c{ font-size:10.5px; font-weight:800; color:var(--ink3); font-variant-numeric:tabular-nums }
+    .pt.active .c{ color:var(--acc) }
+    .pt .tab-count-badge,.pt .fail-count-badge{ font-size:10.5px; font-weight:800; color:var(--ink3);
+      font-variant-numeric:tabular-nums; margin-left:4px; padding:0; background:none; border-radius:0 }
+    .pt.active .tab-count-badge,.pt.active .fail-count-badge{ color:var(--acc) }
+    .ptool{ flex:0 0 auto; display:flex; align-items:center; gap:10px; height:38px; padding:0 12px;
+      border-bottom:1px solid var(--line2) }
+    .ptool .r{ margin-left:auto; display:flex; align-items:center; gap:8px }
+    .chead{ flex:0 0 auto; display:flex; align-items:center; gap:10px; height:40px; padding:0 14px;
+      border-bottom:1px solid var(--line2); background:none }
+    .chead h2,.chead h3{ margin:0; font-size:12.5px; font-weight:800; color:var(--ink); white-space:nowrap }
+    .chead .s{ font-size:11px; color:var(--ink3) }
+    .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
+      background:#fff; font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .gbtn:hover{ border-color:var(--acc-b); color:var(--acc-d); background:var(--acc-s) }
+
+    .table-wrap{ flex:1 1 auto; min-height:0; overflow:auto;
+      background:linear-gradient(to left,rgba(28,37,52,.05),rgba(28,37,52,0) 20px) right center/20px 100% no-repeat;
+      background-attachment:local,scroll }
+    table{ border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:11.5px }
+    th{ position:sticky; top:0; z-index:2; background:#fafcfe; color:var(--ink2);
+      font-weight:700; font-size:10.5px; letter-spacing:.02em; padding:8px 10px;
+      text-align:center; white-space:nowrap; border:0; border-bottom:1px solid var(--line);
+      box-shadow:0 1px 0 var(--line); cursor:pointer; user-select:none }
+    td{ padding:6.5px 10px; text-align:center; white-space:nowrap; border:0;
+      border-bottom:1px solid var(--line2); font-variant-numeric:tabular-nums; color:var(--ink) }
+    td.item,td.over-item{ text-align:left; font-weight:600 }
+    tbody tr:nth-child(even) td{ background:none }
+    tbody tr:hover td{ background:#fafcfe }
+    tr.active td,td.over-item.active{ background:var(--acc-s); box-shadow:none }
+    tr.active td:first-child{ box-shadow:inset 2.5px 0 0 var(--acc) }
+    td.sigma-fail{ background:none; color:var(--neg); font-weight:800 }
+
+    /* 그래프 4종은 탭으로 하나만 표시 */
+    .chart-panel,.diff-cdf-panel,.ppf-panel,.scatter-panel{
+      display:none; flex:1 1 0; min-height:0 }
+    .chart-panel.active-graph,.diff-cdf-panel.active-graph,
+    .ppf-panel.active-graph,.scatter-panel.active-graph{ display:flex }
+    /* Wafer Map 은 상시 표시. 활성 그래프와 세로 1 : 1 (flex-basis 0 이어야 정확히 1:1) */
+    .wafer-panel{ display:flex; flex:1 1 0; min-height:0 }
   </style>
 </head>
 <body>
   <main>
     <section class="app-shell">
-      <nav class="side">
-        <h1 class="side-title">
-          <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
-          <span class="brand-text"><strong data-label-key="brand">Work Manager</strong><small>Automation Suite</small></span>
-        </h1>
-        <div class="tree">
-          <div class="tree-group">
-            <div class="tree-parent">
-              <button class="side-link" data-view="managerView"><span class="nav-symbol home-symbol"></span><span data-label-key="dashboard">Dashboard</span></button>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="reliability">Reliability</span></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link active" data-view="rdaView"><span data-label-key="rda">Reliability Data Analysis</span></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="schedule">Schedule Management</span></button><span class="badge-wip">준비 중</span></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="final">Final Result</span></button><span class="badge-wip">준비 중</span></div>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="iso">ISO 26262</span></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="fsView"><span data-label-key="fs">FS Deliverables Management</span></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="deliverables">Deliverables Status</span></button><span class="badge-wip">준비 중</span></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="matrix">Traceability Matrix</span></button><span class="badge-wip">준비 중</span></div>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="rma">RMA</span></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="reportView"><span data-label-key="report">8D Report</span></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="action">Action Tracking</span></button><span class="badge-wip">준비 중</span></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button" disabled><span data-label-key="effect">Effectiveness Check</span></button><span class="badge-wip">준비 중</span></div>
-            </div>
-          </div>
-        </div>
-        <div class="side-exit">
-          <div class="side-exit-row">
-            <button class="side-link" type="button" disabled><span class="nav-symbol gear-symbol"></span><span data-label-key="settings">Settings</span></button>
-            <span class="badge-wip">준비 중</span>
-          </div>
-          <button id="exitBtn" class="side-link exit-button" type="button"><span class="nav-symbol power-symbol"></span><span>Exit Tool</span></button>
-        </div>
-      </nav>
       <div class="content">
+        <header class="top">
+          <div class="ttl"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></div>
+          <div class="vr"></div>
+          <button type="button" class="cond" id="conditionSecBtn" aria-expanded="true">
+            <span class="n">1</span><span class="t">분석 조건</span>
+            <span class="m" id="conditionSummaryLine"></span><span class="c">▾</span>
+          </button>
+          <div class="rt">
+            <button type="button" class="lnk" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled>결과 새 창</button>
+            <div class="vr"></div>
+            <span class="pathtxt" id="dataPath">-</span>
+            <button type="button" class="lnk" id="browseDataPathBtn">경로 변경</button>
+          </div>
+        </header>
         <section id="managerView" class="view">
           <div class="manager-section">
             <h2>On-Going RMA Status</h2>
@@ -2100,16 +2280,7 @@ HTML = r"""<!doctype html>
           </div>
         </section>
         <section id="rdaView" class="view active">
-          <div class="view-header">
-            <div><h2 class="view-title">Reliability Data Analysis</h2><div class="view-subtitle">Reliability Data Analyzer___APP_REVISION__</div></div>
-            <div class="path-tools"><strong>Data Path:</strong><span class="status" id="dataPath">-</span><button id="browseDataPathBtn" class="secondary" type="button">Browse...</button></div>
-          </div>
           <section class="rda-card condition-card" id="conditionCard">
-            <button type="button" class="condition-title condition-toggle" id="conditionToggle" aria-expanded="true" aria-controls="conditionBody">
-              <span class="filter-icon"></span><span class="title-text">1. Analysis Condition &amp; Execution</span>
-              <span class="condition-summary-line" id="conditionSummaryLine"></span>
-              <span class="condition-toggle-caret" id="conditionToggleCaret" aria-hidden="true">▾</span>
-            </button>
             <div class="condition-body" id="conditionBody">
               <div class="rda-form">
                 <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
@@ -2134,24 +2305,26 @@ HTML = r"""<!doctype html>
         </section>
         <div id="analyzeError" class="analyze-error" role="alert"></div>
         <section class="analysis-results-section">
-          <div class="condition-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span><button id="openResultsWindowBtn" class="icon-window-btn" type="button" title="Open Analysis Results in a new window" disabled></button></div>
           <div class="analysis-results-scroll">
-        <section id="summaryStrip" class="summary-strip"></section>
-        <section id="analysisFilterBar" class="analysis-filter-bar"></section>
         <section id="passResultsGrid" class="grid results-hidden">
       <div class="result-table-column">
       <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
+      <section class="ctl">
+        <div class="crow kpi"><section id="summaryStrip" class="summary-strip"></section></div>
+        <section id="analysisFilterBar" class="analysis-filter-bar"></section>
+      </section>
       <section class="panel summary-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></h2>
-        <div class="result-tab-groups">
-          <div class="toolbar-mode result-tab-bar" id="resultTabBar">
-            <button id="failModeBtn" type="button" data-mode="fail">Fail 항목 List</button>
-            <button id="passModeBtn" class="active" type="button" data-mode="pass">Abnormal Pass Data</button>
-          </div>
-          <div class="toolbar-mode result-view-bar" id="resultViewBar">
+        <div class="ptabs" id="resultModeBar" title="Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)">
+          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 항목</button>
+          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Abnormal Pass</button>
+        </div>
+        <div class="ptool">
+          <div class="pill" id="resultViewBar">
             <button id="itemViewBtn" class="active" type="button" data-view="item">항목 기준</button>
             <button id="sampleViewBtn" type="button" data-view="sample">샘플 기준</button>
           </div>
+          <span id="flagAlphaLabel" class="flag-alpha-label"></span>
+          <div class="r"><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></div>
         </div>
         <div class="table-wrap" id="resultTableWrap"><table id="resultTable"></table></div>
         <div class="table-wrap" id="overSampleTableWrap"><table id="overSampleTable"></table></div>
@@ -2161,34 +2334,32 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-detail"></span>Abnormal Shift Details</span></h2>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
       <div class="result-graph-column">
-      <div class="chart-tools graph-item-toolbar">
-        <label>Test Item</label>
-        <select id="itemSelect"></select>
-        <span class="status" id="itemThresholdLabel"></span>
-      </div>
+      <section class="ctl">
+        <div class="crow kpi gsum">
+          <div class="gname"><b id="graphItemName">—</b><span id="graphItemMeta"></span></div>
+          <div class="tail2"><select id="itemSelect"></select><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
+        </div>
+        <section id="graphFilterBar" class="graph-filter-bar"></section>
+      </section>
       <section class="panel chart-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="cdfPanelTitle">CDF Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="cdfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="cdfCanvas"></canvas></div>
       </section>
       <section class="panel diff-cdf-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="diffCdfPanelTitle">Diff. CDF Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="diffCdfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="diffCdfCanvas"></canvas></div>
       </section>
       <section class="panel ppf-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="ppfPanelTitle">Standard Normal Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="ppfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="ppfCanvas"></canvas></div>
       </section>
       <section class="panel scatter-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-scatter"></span><span id="scatterPanelTitle">Scattered Plot</span></span><button class="copy-chart-btn" type="button" data-canvas="scatterCanvas">Copy</button></h2>
         <div class="scatter-box"><canvas id="scatterCanvas"></canvas></div>
       </section>
       <section class="panel wafer-panel">
-        <h2><span class="panel-label">Wafer No. &amp; Wafer Map</span></h2>
+        <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span></div>
         <div class="wafer-box"><canvas id="waferCanvas"></canvas></div>
       </section>
       </div>
@@ -2287,7 +2458,7 @@ const failColumns = [
   ["test_number", "Test No."], ["reliability_item", "시험"], ["item", "Item"], ["fail_type", "이탈 유형"],
   ["n", "N (σ n-1)"], ["qty", "Q'ty"], ["sample_numbers", "Sample No."]
 ];
-const DEFAULT_VISIBLE_COLUMNS_PASS = ["test_number", "item", "reason", "n", "severity", "qty"];
+const DEFAULT_VISIBLE_COLUMNS_PASS = passColumns.map(([key]) => key);
 const DEFAULT_VISIBLE_COLUMNS_FAIL = failColumns.map(([key]) => key);
 const columnVisibility = {
   pass: new Set(DEFAULT_VISIBLE_COLUMNS_PASS),
@@ -2740,17 +2911,9 @@ function selectedItemTitleName() {
 }
 function updateChartTitles() {
   const itemName = selectedItemTitleName();
-  const suffix = itemName ? ` - ${itemName}` : "";
-  const titles = [
-    ["cdfPanelTitle", "CDF Distribution"],
-    ["diffCdfPanelTitle", "Diff. CDF Distribution"],
-    ["ppfPanelTitle", "Standard Normal Distribution"],
-    ["scatterPanelTitle", "Scattered Plot"]
-  ];
-  titles.forEach(([id, base]) => {
-    const node = document.getElementById(id);
-    if (node) node.textContent = `${base}${suffix}`;
-  });
+  const nameNode = document.getElementById("graphItemName");
+  if (nameNode) nameNode.textContent = itemName || "—";
+  renderItemThresholdLabel();
 }
 function updateGraphPanels() {
   const panelMap = {
@@ -2758,6 +2921,13 @@ function updateGraphPanels() {
     diff: "diff-cdf-panel",
     ppf: "ppf-panel",
     scatter: "scatter-panel"
+  };
+  const canvasMap = {
+    cdf: "cdfCanvas",
+    diff: "diffCdfCanvas",
+    ppf: "ppfCanvas",
+    scatter: "scatterCanvas",
+    wafer: "waferCanvas"
   };
   document.querySelectorAll(".graph-tabs button").forEach(button => {
     button.classList.toggle("active", button.dataset.graph === activeGraphTab);
@@ -2767,6 +2937,8 @@ function updateGraphPanels() {
       panel.classList.toggle("active-graph", key === activeGraphTab);
     });
   });
+  const copyBtn = document.querySelector(".crow.gsum .copy-chart-btn");
+  if (copyBtn) copyBtn.dataset.canvas = canvasMap[activeGraphTab] || "cdfCanvas";
 }
 function itemOptionText(row) {
   return row.test_number ? `${row.test_number} - ${row.item}` : (row.item || "");
@@ -2874,7 +3046,7 @@ function ensureSelectedItemVisibleForActiveTab() {
   else ensureSelectedItemVisible();
 }
 function updateResultTabButtons() {
-  document.querySelectorAll("#resultTabBar button").forEach(button => {
+  document.querySelectorAll("#resultModeBar button").forEach(button => {
     button.classList.toggle("active", button.dataset.mode === analysisMode);
   });
   document.querySelectorAll("#resultViewBar button").forEach(button => {
@@ -2908,12 +3080,10 @@ function renderAnalysisFilterBar() {
   }
   bar.classList.add("active");
   bar.innerHTML = "";
-  const tableFilterArea = document.createElement("div");
-  tableFilterArea.className = "table-filter-area";
   const reliabilityRow = document.createElement("div");
-  reliabilityRow.className = "filter-row reliability-filter-row";
+  reliabilityRow.className = "crow tabs";
   const secondaryRow = document.createElement("div");
-  secondaryRow.className = "filter-row secondary-filter-row";
+  secondaryRow.className = "crow foot";
   const makeTempButton = temp => {
     const button = document.createElement("button");
     button.type = "button";
@@ -2941,21 +3111,12 @@ function renderAnalysisFilterBar() {
   reliabilityGroup.setAttribute("aria-label", "시험 항목");
   const itemCounts = {};
   (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
-  const totalItemCount = () => {
-    const entries = analysis?.item_counts || [];
-    if (!entries.length) return null;
-    return entries.reduce((acc, entry) => ({
-      select: acc.select + (entry.select || 0),
-      total: acc.total + (entry.total || 0),
-    }), { select: 0, total: 0 });
-  };
   const makeItemTab = (value, label, count) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "item-tab";
     button.dataset.item = value;
-    // value === "" 는 「전체」 탭. 합계가 0 이어도 비활성화하지 않는다.
-    const isEmpty = value !== "" && count && count.total === 0;
+    const isEmpty = count && count.total === 0;
     button.classList.toggle("item-tab-empty", !!isEmpty);
     if (isEmpty) button.disabled = true;
     button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
@@ -2981,15 +3142,23 @@ function renderAnalysisFilterBar() {
     });
     return button;
   };
-  reliabilityGroup.appendChild(makeItemTab("", "전체", totalItemCount()));
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
+  // 「전체」 탭을 없앴으므로, 선택이 비었거나 0건 항목이면 건수가 있는 첫 항목으로 이동
+  const firstWithData = reliabilityOptions.find(it => (itemCounts[it]?.total || 0) > 0);
+  const cur = analysisFilters.reliability_item || "";
+  if (!cur || (itemCounts[cur]?.total || 0) === 0) {
+    analysisFilters.reliability_item = firstWithData || reliabilityOptions[0] || "";
+  }
   reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeItemTab(item, item, itemCounts[item] || null)));
-  reliabilityRow.appendChild(reliabilityGroup);
-  tableFilterArea.appendChild(reliabilityRow);
+  const reliabilityTabwrap = document.createElement("div");
+  reliabilityTabwrap.className = "tabwrap";
+  reliabilityTabwrap.appendChild(reliabilityGroup);
+  reliabilityRow.appendChild(reliabilityTabwrap);
+  bar.appendChild(reliabilityRow);
 
   const tempGroup = document.createElement("div");
   tempGroup.className = "filter-group temp-filter-group";
-  tempGroup.innerHTML = "<strong>FT Temp.</strong>";
+  tempGroup.innerHTML = "<span class=\"lbl\">FT TEMP.</span>";
   availableFilterTemps().forEach(temp => tempGroup.appendChild(makeTempButton(temp)));
   tempGroup.appendChild(makeGraphCheckbox("Multi", analysisFilters.ft_temp_multi, async checked => {
     analysisFilters.ft_temp_multi = checked;
@@ -3001,13 +3170,7 @@ function renderAnalysisFilterBar() {
     await refreshSelectedItem();
   }));
   secondaryRow.appendChild(tempGroup);
-  tableFilterArea.appendChild(secondaryRow);
-  bar.appendChild(tableFilterArea);
-
-  const graphBar = document.createElement("div");
-  graphBar.id = "graphFilterBar";
-  graphBar.className = "graph-filter-bar";
-  bar.appendChild(graphBar);
+  bar.appendChild(secondaryRow);
 }
 function makeGraphCheckbox(labelText, checked, onChange) {
   const label = document.createElement("label");
@@ -3021,6 +3184,7 @@ function makeGraphCheckbox(labelText, checked, onChange) {
   return label;
 }
 function graphTabOptions() {
+  // Wafer Map 은 탭이 아니라 그래프 아래에 상시 표시한다
   return [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"], ["scatter", "Scattered Plot"]];
 }
 function makeGraphTabButton(key, label) {
@@ -3046,8 +3210,21 @@ function renderGraphFilterBar() {
   }
   bar.classList.add("active");
   bar.innerHTML = "";
-  const readoutStack = document.createElement("div");
-  readoutStack.className = "graph-readout-stack";
+  const tabsRow = document.createElement("div");
+  tabsRow.className = "crow tabs";
+  const graphTabs = document.createElement("div");
+  graphTabs.className = "graph-tabs";
+  graphTabs.setAttribute("role", "tablist");
+  graphTabs.setAttribute("aria-label", "Graph Type");
+  graphTabOptions().forEach(([key, label]) => graphTabs.appendChild(makeGraphTabButton(key, label)));
+  const graphTabwrap = document.createElement("div");
+  graphTabwrap.className = "tabwrap";
+  graphTabwrap.appendChild(graphTabs);
+  tabsRow.appendChild(graphTabwrap);
+  bar.appendChild(tabsRow);
+
+  const footRow = document.createElement("div");
+  footRow.className = "crow foot";
   const readoutGroup = document.createElement("div");
   readoutGroup.className = "graph-filter-group";
   readoutGroup.innerHTML = "<strong>Read-out</strong>";
@@ -3057,23 +3234,16 @@ function renderGraphFilterBar() {
       drawCharts();
     }));
   });
-  readoutStack.appendChild(readoutGroup);
-  const graphTabs = document.createElement("div");
-  graphTabs.className = "graph-tabs";
-  graphTabs.setAttribute("role", "tablist");
-  graphTabs.setAttribute("aria-label", "Graph Type");
-  graphTabOptions().forEach(([key, label]) => graphTabs.appendChild(makeGraphTabButton(key, label)));
-  readoutStack.appendChild(graphTabs);
-  bar.appendChild(readoutStack);
-
+  footRow.appendChild(readoutGroup);
   const graphGroup = document.createElement("div");
   graphGroup.className = "graph-filter-group graph-option-group";
   graphGroup.innerHTML = "<strong>Graph</strong>";
-  graphGroup.appendChild(makeGraphCheckbox("Fail Exception", analysisFilters.fail_exception, async checked => {
+  graphGroup.appendChild(makeGraphCheckbox("Fail 항목 제외", analysisFilters.fail_exception, async checked => {
     analysisFilters.fail_exception = checked;
     drawCharts();
   }));
-  bar.appendChild(graphGroup);
+  footRow.appendChild(graphGroup);
+  bar.appendChild(footRow);
 }
 function setResultPanelsVisible(visible) {
   const grid = document.getElementById("passResultsGrid");
@@ -3561,7 +3731,7 @@ function exportRawData() {
 }
 
 function bindResultControls() {
-  document.querySelectorAll("#resultTabBar button").forEach(button => {
+  document.querySelectorAll("#resultModeBar button").forEach(button => {
     button.addEventListener("click", () => setAnalysisMode(button.dataset.mode));
   });
   document.querySelectorAll("#resultViewBar button").forEach(button => {
@@ -3624,7 +3794,6 @@ function bindResultControls() {
 }
 
 function bindParentControls() {
-  bindNavigation();
   document.getElementById("analyzeBtn").addEventListener("click", runAnalysis);
   document.getElementById("stopAnalyzeBtn").addEventListener("click", () => {
     stopAnalysisRequested = true;
@@ -3638,10 +3807,10 @@ function bindParentControls() {
 
 function setConditionCollapsed(collapsed) {
   const rdaView = document.getElementById("rdaView");
-  const toggle = document.getElementById("conditionToggle");
-  if (!rdaView || !toggle) return;
+  if (!rdaView) return;
   rdaView.classList.toggle("condition-collapsed", collapsed);
-  toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  const toggle = document.getElementById("conditionSecBtn");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
   if (collapsed) renderConditionSummaryLine();
 }
 
@@ -3661,11 +3830,10 @@ function renderConditionSummaryLine() {
 }
 
 function bindConditionToggle() {
-  const toggle = document.getElementById("conditionToggle");
-  if (!toggle) return;
-  toggle.addEventListener("click", () => {
-    const rdaView = document.getElementById("rdaView");
-    setConditionCollapsed(!rdaView.classList.contains("condition-collapsed"));
+  document.getElementById("conditionSecBtn")?.addEventListener("click", () => {
+    const view = document.getElementById("rdaView");
+    const next = !view.classList.contains("condition-collapsed");
+    setConditionCollapsed(next);
   });
 }
 
@@ -3856,7 +4024,7 @@ function renderFlagAlphaLabel() {
 function renderItemThresholdLabel() {
   // 선택된 항목의 실제 판정 임계값(n_post/n_diff 에 따라 항목마다 다름). payload 에
   // 이미 있는 mea_threshold/diff_threshold(§S3) 를 표시만 한다 — 재계산하지 않는다.
-  const el = document.getElementById("itemThresholdLabel");
+  const el = document.getElementById("graphItemMeta");
   if (!el) return;
   const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
   const mea = Number(data.mea_threshold);
@@ -4256,6 +4424,12 @@ function detailCellValue(row, key) {
   return row[key];
 }
 function renderDetailTable() {
+  const metaNode = document.getElementById("detailPanelMeta");
+  if (metaNode) {
+    const item = itemCache[selectedItem];
+    const count = item?.details?.length || 0;
+    metaNode.textContent = selectedItem ? `${selectedItemTitleName()} · ${count}건` : "";
+  }
   const table = document.getElementById("detailTable");
   table.innerHTML = "";
   const head = table.createTHead().insertRow();
@@ -4889,6 +5063,14 @@ function waferPositionForSample(sample) {
   return { row: Math.floor(index / 12), col: index % 12 };
 }
 function drawWaferMap() {
+  const metaEl = document.getElementById("waferPanelMeta");
+  if (metaEl) {
+    const data0 = itemCache[selectedItem];
+    const row0 = data0?.details?.find(r => String(r.sample) === String(highlightSample)) || data0?.details?.[0] || {};
+    const wafer = row0.wafer || row0.wafer_no || data0?.wafer_no || "W--";
+    const sample = highlightSample || row0.sample;
+    metaEl.textContent = `Wafer ${wafer}` + (sample != null && sample !== "" ? ` · Sample ${sample}` : "");
+  }
   const canvas = document.getElementById("waferCanvas");
   if (!canvas) return;
   const { ctx, w, h } = setupHiResCanvas(canvas, 520, 300);
@@ -4897,9 +5079,7 @@ function drawWaferMap() {
   ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = "#0b438c";
   ctx.font = "800 16px Segoe UI";
-  ctx.fillText("Wafer No.:", 18, 30);
   const selectedDetail = data?.details?.find(row => String(row.sample) === String(highlightSample)) || data?.details?.[0] || {};
-  ctx.fillText(selectedDetail.wafer || selectedDetail.wafer_no || data?.wafer_no || "W--", 106, 30);
   const rows = 10, cols = 12;
   const left = 115;
   const top = 50;
