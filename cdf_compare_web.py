@@ -1190,7 +1190,7 @@ HTML = r"""<!doctype html>
     }
     body.results-window #passResultsGrid:not(.results-hidden) {
       display: grid;
-      grid-template-columns: minmax(760px, 1.55fr) minmax(540px, 1fr);
+      grid-template-columns: minmax(0, 4fr) minmax(0, 3fr);  /* 본창과 동일한 4:3 */
       grid-template-rows: minmax(0, 1fr);
       grid-template-areas: none;
       gap: 10px;
@@ -1207,7 +1207,10 @@ HTML = r"""<!doctype html>
     }
     body.results-window .result-table-column,
     body.results-window .result-graph-column {
-      display: grid;
+      /* 본창과 동일하게 세로 flex. grid 로 두면 .ctl(KPI 상자)까지 행을 배정받아
+         늘어나면서 본창(54px)과 달리 334px 로 벌어졌다. */
+      display: flex;
+      flex-direction: column;
       grid-area: auto;
       min-width: 0;
       min-height: 0;
@@ -1219,7 +1222,6 @@ HTML = r"""<!doctype html>
       grid-area: auto;
     }
     body.results-window .result-table-column {
-      grid-template-rows: minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.15fr);
       padding: 0;
       border: 1px solid #d7e3f1;
       border-radius: 9px;
@@ -1261,9 +1263,8 @@ HTML = r"""<!doctype html>
       min-height: 0;
       padding: 8px 12px 12px;
     }
-    body.results-window .over-panel {
-      display: flex !important;
-    }
+    /* 새 창에서 Abnormal Shift Sample 을 강제 표시하던 규칙을 뺐다.
+       본창과 동일한 형식으로 맞추기 위해 updatePanelMode() 의 판단에 맡긴다. */
     body.results-window .chart-panel,
     body.results-window .diff-cdf-panel,
     body.results-window .ppf-panel,
@@ -2888,12 +2889,15 @@ function detailColumns() {
     const overPanel = document.querySelector(".over-panel");
     if (grid) grid.classList.toggle("fail-grid", mode === "fail");
     if (section) section.classList.toggle("fail-layout", mode === "fail");
-    if (summaryTitle) summaryTitle.lastChild.textContent = isResultsWindow ? "1. Fail Data List" : "Fail & Abnormal Data Lists - All";
-    if (detailTitle) detailTitle.lastChild.textContent = isResultsWindow ? "3. Data Analysis Result" : "Fail & Abnormal Data Analysis Result";
+    // 결과 새 창도 본창과 같은 형식으로 통일한다.
+    // (예전에는 새 창만 "1./2./3." 번호가 붙은 보고서 형식이었고 Fail 목록과
+    //  Abnormal Pass 목록을 별도 패널로 분리했다 — 두 화면을 오갈 때 혼란스러웠다.)
+    if (summaryTitle) summaryTitle.lastChild.textContent = "Fail & Abnormal Data Lists - All";
+    if (detailTitle) detailTitle.lastChild.textContent = "Fail & Abnormal Data Analysis Result";
     if (overPanel) {
-      overPanel.style.display = isResultsWindow ? "" : "none";
+      overPanel.style.display = "none";
       const overTitle = overPanel.querySelector(".panel-label");
-      if (overTitle) overTitle.lastChild.textContent = isResultsWindow ? "2. Abnormal Pass List" : "Abnormal Shift Sample";
+      if (overTitle) overTitle.lastChild.textContent = "Abnormal Shift Sample";
     }
     updateResultTabButtons();
     updateResultTabVisibility();
@@ -3073,13 +3077,12 @@ function updateResultTabVisibility() {
   const resultWrap = document.getElementById("resultTableWrap");
   const overWrap = document.getElementById("overSampleTableWrap");
   const toggleWrap = document.getElementById("columnToggleWrap");
-  const showOver = !isResultsWindow && resultViewMode === "sample";
+  const showOver = resultViewMode === "sample";
   if (resultWrap) resultWrap.style.display = showOver ? "none" : "";
   if (overWrap) overWrap.style.display = showOver ? "block" : "none";
   if (toggleWrap) toggleWrap.style.display = showOver ? "none" : "";
 }
 function setResultViewMode(view) {
-  if (isResultsWindow) return;
   resultViewMode = view === "sample" ? "sample" : "item";
   updateResultTabButtons();
   updateResultTabVisibility();
@@ -3089,7 +3092,9 @@ function setResultViewMode(view) {
 function renderAnalysisFilterBar() {
   const bar = document.getElementById("analysisFilterBar");
   if (!bar) return;
-  if (!analysis || (!analysis.total_analysis && !isResultsWindow)) {
+  // 본창과 동일한 조건. 예전에는 새 창이면 무조건 그려서, 단일 항목만 분석해도
+  // HAST·uHAST·TC 처럼 데이터 없는 빈 탭이 줄줄이 뜨고 그만큼 여백도 남았다.
+  if (!analysis || !analysis.total_analysis) {
     bar.classList.remove("active");
     bar.innerHTML = "";
     return;
@@ -3912,7 +3917,7 @@ function setTabBadge(btn, value, title) {
 }
 function renderSummaryStrip() {
   const strip = document.getElementById("summaryStrip");
-  const failBtn = isResultsWindow ? null : document.getElementById("failModeBtn");
+  const failBtn = document.getElementById("failModeBtn");
   if (failBtn) {
     let badge = failBtn.querySelector(".fail-count-badge");
     const failCount = failSelectCount();
@@ -3932,10 +3937,8 @@ function renderSummaryStrip() {
       badge.remove();
     }
   }
-  if (!isResultsWindow) {
-    const passCount = passSelectCount();
-    setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
-  }
+  const passCount = passSelectCount();
+  setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
   if (!strip) return;
   strip.innerHTML = "";
   // Pass 는 항목 기준(분석 항목 수 중 몇 개가 이상인지), Fail 은 유닛 기준(전체 Sample 중
@@ -4242,11 +4245,9 @@ function scheduleModeItemLoad(mode, item) {
   }).catch(() => {});
 }
 function renderResultTable() {
+  // 새 창도 본창과 동일하게 현재 모드(Fail / Abnormal Pass)의 목록을 그린다.
+  // 예전에는 새 창이 항상 Fail 목록만 그려서, 같은 분석인데 표 내용이 달랐다.
   const table = document.getElementById("resultTable");
-  if (isResultsWindow) {
-    renderFailDataListTable(table);
-    return;
-  }
   renderSummaryListTable(table, analysis, analysis?.analysis_mode || analysisMode);
 }
 function renderFailDataListTable(table) {
@@ -4368,11 +4369,6 @@ function renderSummaryListTable(table, payload, mode) {
   });
 }
 function renderOverTable() {
-  const table = document.getElementById("overTable");
-  if (isResultsWindow) {
-    renderAbnormalPassListTable(table);
-    return;
-  }
   renderOverSampleTable(document.getElementById("overSampleTable"));
 }
 function renderOverSampleTable(table) {
