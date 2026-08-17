@@ -306,8 +306,10 @@ HTML = r"""<!doctype html>
     }
     .rda-form {
       display: grid;
-      grid-template-columns: repeat(4, minmax(170px, 1fr));
-      gap: 18px 40px;
+      /* 조건 7개(Device·Ver·Lot·Purpose·Reliability Items·Read-out·FT Temp.)를
+         한 줄에 놓는다. 화면이 좁아지면 아래 미디어쿼리가 2열로 접는다. */
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 18px 20px;
     }
     .field { min-width: 0; }
     .field label {
@@ -387,6 +389,12 @@ HTML = r"""<!doctype html>
       flex-direction: column;
     }
     body:not(.results-window).parent-results-hidden .analysis-results-section {
+      display: none !important;
+    }
+    /* 분석 실행 전에는 결과 영역 '바깥 상자'까지 접는다.
+       안쪽 그리드(#passResultsGrid)만 숨기면, 이 상자가 flex:1 1 auto 로 남은
+       화면 높이를 전부 차지해서 커다란 흰 여백이 생긴다. */
+    body:not(.results-window) .analysis-results-section:has(#passResultsGrid.results-hidden) {
       display: none !important;
     }
     body:not(.results-window).parent-results-visible .analysis-results-section {
@@ -681,7 +689,11 @@ HTML = r"""<!doctype html>
     .results-window-title {
       display: none !important;
     }
-    .results-hidden { display: none; }
+    /* 분석 실행 전에는 결과 영역을 통째로 감춘다.
+       !important 가 필요한 이유: 아래쪽(2106줄 부근)에 `.grid{display:grid}` 가
+       또 선언되어 있는데 특이도가 같아서 나중 규칙이 이긴다. 그 탓에 여기서
+       display:none 을 줘도 무시되어 빈 패널이 그대로 보였다. */
+    .results-hidden { display: none !important; }
     .panel {
       min-width: 0;
       overflow: hidden;
@@ -2122,6 +2134,10 @@ HTML = r"""<!doctype html>
 
     .ctl{ flex:0 0 auto; height:134px; display:flex; flex-direction:column;
       background:#fff; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
+    /* 134px 는 KPI(52) + 시험항목 탭(40) + 하단 필터(40) 가 모두 있을 때의 높이다.
+       단일 시험 항목을 고르면 필터 바가 비는데, 고정 높이 탓에 그만큼 빈 칸이 남았다.
+       비어 있을 때만 내용 높이에 맞춘다. */
+    .ctl:has(> .analysis-filter-bar:empty){ height:auto; }
     .crow{ display:flex; align-items:center; gap:14px; padding:0 14px; min-width:0; }
     .crow+.crow{ border-top:1px solid var(--line2); }
     .crow.tabs{ border-top:1px solid var(--line2); }
