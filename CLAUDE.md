@@ -374,14 +374,20 @@ grubbs 정확 계산 자체는 이 구간 비용을 늘리지 않았다(`grubbs_
 
 ## 8. 빌드 / 실행
 
-> **⚠️ 아래를 실제 명령어로 채워주세요. 비워두면 에이전트가 추측합니다.**
-
 ```bash
 # 개발 실행
 python cdf_compare_web.py
 
-# exe 빌드
-# TODO: 실제 PyInstaller 명령 또는 .spec 파일명
+# exe 빌드 (로컬)
+#   근거: C:\파이썬코딩\CDFCompareToolHTML_Rev0.027.spec
+#   Analysis(['cdf_compare_web.py']) / console=False / datas·hiddenimports 없음
+pyinstaller --onefile --windowed --name CDFCompareToolHTML_Rev0.028 cdf_compare_web.py
+
+# exe 빌드 (자동) — 이쪽을 쓰는 것이 원칙이다
+#   태그를 밀면 GitHub Actions 의 build-exe 잡이 Windows 러너에서 빌드하고
+#   스모크 테스트(실제로 서버가 뜨는지)까지 한 뒤 Releases 에 올린다.
+#   exe 이름의 Rev 는 소스의 APP_REVISION 에서 뽑으며, 태그와 어긋나면 빌드가 멈춘다.
+git tag v0.0.28 && git push origin v0.0.28
 
 # 회귀 검증 / 벤치마크
 python tools/regression_snapshot.py --data-root <경로> --out tests/golden/
