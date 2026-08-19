@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.027"
+APP_REVISION = "Rev.0.028"
 CURRENT_APP = None
 CURRENT_ITEMS = {}
 CURRENT_PAYLOADS = {}
@@ -63,20 +63,24 @@ HTML = r"""<!doctype html>
       --bg: #f7f9fc;
       --panel: #ffffff;
       --line: #dce4ee;
-      --head: #0a9da3;
-      --head-dark: #05717f;
+      --head: #17427f;
+      --head-dark: #0f2f5c;
       --head2: #f8fafc;
       --nav: #06244c;
       --nav2: #041b3b;
       --accent: #02a2b8;
       --text: #071f49;
-      --muted: #687792;
+      --muted: #5b6b81;
       --danger: #d93025;
       --select: #fff0f0;
       --blue: #1f77b4;
       --red: #d62728;
       --green: #2ca02c;
       --purple: #9467bd;
+      --acc:#2b5fb8; --acc-d:#17427f; --acc-s:#eaf1fb; --acc-b:#c9dcf4;
+      --ink:#1c2534; --ink2:#5b6b81; --ink3:#93a1b3;
+      --line:#e5ebf2; --line2:#f0f4f8; --bg:#eff3f8;
+      --neg:#c2413a; --pos:#1c7a4b; --warn:#a06a08;
     }
     * { box-sizing: border-box; }
     body {
@@ -100,11 +104,83 @@ HTML = r"""<!doctype html>
       border-radius: 6px;
     }
     .app-shell {
-      display: grid;
-      grid-template-columns: 300px minmax(0, 1fr);
+      display: block;
       min-height: 100vh;
       background: var(--bg);
     }
+    .top {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      height: 58px;
+      padding: 0 20px;
+      gap: 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    .ttl { display: flex; flex-direction: column; gap: 1px; flex: 0 0 auto; }
+    .ttl b { font-size: 15.5px; font-weight: 800; letter-spacing: -.015em; line-height: 1.15; color: var(--text); }
+    .ttl small { font-size: 10.5px; color: var(--muted); letter-spacing: .01em; }
+    .vr { width: 1px; height: 24px; background: var(--line); flex: 0 0 auto; }
+    .cond {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 36px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      white-space: nowrap;
+      transition: background .12s;
+    }
+    .cond:hover { background: var(--bg); }
+    .cond .n {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      background: rgba(2,162,184,.14);
+      color: var(--head-dark);
+      font-size: 10.5px;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .cond .t { font-size: 12.5px; font-weight: 700; color: var(--text); }
+    .cond .m {
+      font-size: 11.5px;
+      color: var(--muted);
+      max-width: 380px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cond .c { display: inline-block; flex: 0 0 auto; font-size: 9px; color: var(--muted); transition: transform .15s ease; }
+    #rdaView.condition-collapsed .cond .c { transform: rotate(-90deg); }
+    .rt { margin-left: auto; display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .pathtxt {
+      font-size: 11.5px;
+      color: var(--muted);
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lnk {
+      height: 30px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .lnk:hover { background: var(--bg); color: var(--text); }
+    .lnk:disabled { opacity: .45; cursor: default; }
+    .lnk:disabled:hover { background: transparent; }
+    body.results-window .top { display: none !important; }
     .side {
       border-right: 0;
       padding: 0 22px;
@@ -142,7 +218,8 @@ HTML = r"""<!doctype html>
       color: rgba(255,255,255,.92);
     }
     .side-link:hover, .side-link.active {
-      background: linear-gradient(90deg, rgba(7,158,181,.85), rgba(7,158,181,.35));
+      /* WCAG AA(4.5:1) 미달(사이드바 배경 대비 실측 3.96~4.06) 이라 명도만 낮췄다. 색상 계열은 유지. */
+      background: linear-gradient(90deg, rgba(6,145,167,.85), rgba(6,145,167,.35));
       color: #fff;
     }
     .side-exit {
@@ -157,9 +234,12 @@ HTML = r"""<!doctype html>
       background: rgba(255,109,120,.12);
       color: #ff9aa2;
     }
-    .content { padding: 24px 22px 12px; min-width: 0; overflow: hidden; height: 100vh; }
+    .content {
+      padding: 0; min-width: 0; overflow: hidden; height: 100vh;
+      display: flex; flex-direction: column;
+    }
     .view { display: none; }
-    .view.active { display: block; height: 100%; overflow: auto; }
+    .view.active { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; }
     #rdaView.active {
       display: flex;
       flex-direction: column;
@@ -226,8 +306,10 @@ HTML = r"""<!doctype html>
     }
     .rda-form {
       display: grid;
-      grid-template-columns: repeat(4, minmax(170px, 1fr));
-      gap: 18px 40px;
+      /* 조건 7개(Device·Ver·Lot·Purpose·Reliability Items·Read-out·FT Temp.)를
+         한 줄에 놓는다. 화면이 좁아지면 아래 미디어쿼리가 2열로 접는다. */
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 18px 20px;
     }
     .field { min-width: 0; }
     .field label {
@@ -251,6 +333,50 @@ HTML = r"""<!doctype html>
     .files { padding: 10px; display: grid; grid-template-columns: 1fr; gap: 8px 10px; align-items: center; }
     input[type=file], input[type=text] { width: 100%; }
     .toolbar { padding: 14px 20px; display: flex; align-items: center; gap: 28px; margin-bottom: 12px; flex: 0 0 auto; }
+    .condition-toggle {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+    .condition-toggle:hover .title-text { color: #0b5ca8; }
+    .condition-summary-line {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      display: none;
+    }
+    .condition-toggle-caret {
+      flex: 0 0 auto;
+      font-size: 14px;
+      color: var(--muted);
+      transition: transform .15s ease;
+    }
+    .rda-card.condition-card { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .toolbar.condition-attached { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; box-shadow: none; margin-bottom: 12px; }
+    #rdaView.condition-collapsed .condition-toggle-caret { transform: rotate(-90deg); }
+    #rdaView.condition-collapsed .condition-card .condition-body,
+    #rdaView.condition-collapsed > .toolbar.condition-attached {
+      display: none;
+    }
+    #rdaView.condition-collapsed .condition-card .condition-title {
+      border-bottom: 0;
+      margin-bottom: 0;
+    }
+    #rdaView.condition-collapsed .condition-card {
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }
+    #rdaView.condition-collapsed .condition-summary-line {
+      display: block;
+    }
     .analysis-results-section {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -262,7 +388,13 @@ HTML = r"""<!doctype html>
       display: flex;
       flex-direction: column;
     }
-    body:not(.results-window) .analysis-results-section {
+    body:not(.results-window).parent-results-hidden .analysis-results-section {
+      display: none !important;
+    }
+    /* 분석 실행 전에는 결과 영역 '바깥 상자'까지 접는다.
+       안쪽 그리드(#passResultsGrid)만 숨기면, 이 상자가 flex:1 1 auto 로 남은
+       화면 높이를 전부 차지해서 커다란 흰 여백이 생긴다. */
+    body:not(.results-window) .analysis-results-section:has(#passResultsGrid.results-hidden) {
       display: none !important;
     }
     body:not(.results-window).parent-results-visible .analysis-results-section {
@@ -288,7 +420,87 @@ HTML = r"""<!doctype html>
       min-height: 0;
       overflow: auto;
       padding-right: 4px;
+      display: flex;
+      flex-direction: column;
     }
+    .summary-strip {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: stretch;
+      gap: 10px 16px;
+      margin: 0 0 10px;
+      height: 62px;
+      box-sizing: border-box;
+    }
+    .summary-strip:empty {
+      display: none;
+      margin: 0;
+    }
+    .summary-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+      min-width: 92px;
+      padding: 8px 14px;
+      border: 1px solid #d8e4f1;
+      border-radius: 8px;
+      background: #fff;
+      height: 100%;
+      flex: 0 0 auto;
+      box-sizing: border-box;
+    }
+    .summary-card-value {
+      font-size: 20px;
+      font-weight: 800;
+      color: #1a3b63;
+    }
+    .summary-card-flag .summary-card-value { color: #c0392b; }
+    .summary-card-ok .summary-card-value { color: #1a7f4a; }
+    .summary-card-warn { border-color: #f0c36d; background: #fff9ec; }
+    .summary-card-warn .summary-card-value { color: #a86a00; }
+    .summary-card-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .judgment-footnote {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .footnote-info {
+      cursor: help;
+      color: #7c93b3;
+      font-size: 13px;
+    }
+    .fail-count-badge {
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #c0392b;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .tab-count-badge {
+      margin-left: 6px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #0a7890;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    #overSampleTableWrap { display: none; }
     .analysis-filter-bar {
       display: none;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -340,7 +552,8 @@ HTML = r"""<!doctype html>
     .filter-chip.active {
       color: #fff;
       border-color: #047c80;
-      background: linear-gradient(180deg, #11b7b5, #008f88);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.48:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c8281, #006661);
     }
     .readout-toggle {
       display: inline-flex;
@@ -447,41 +660,76 @@ HTML = r"""<!doctype html>
     .grid {
       padding: 0;
       display: grid;
-      grid-template-columns: repeat(9, minmax(0, 1fr));
-      grid-template-rows: 275px 380px;
-      grid-template-areas:
-        "summary summary summary detail detail detail over over over"
-        "scatter scatter scatter chart chart chart diffcdf diffcdf diffcdf";
-      gap: 10px;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-areas: "resulttab graphtab";
+      gap: 14px;
       align-items: stretch;
       border: 0;
       background: transparent;
+      flex: 1 1 auto;
+      min-height: 560px;
     }
-    .result-table-column,
+    .result-table-column {
+      display: flex;
+      flex-direction: column;
+      grid-area: resulttab;
+      min-width: 0;
+      min-height: 0;
+      gap: 12px;
+    }
     .result-graph-column {
-      display: contents;
+      display: flex;
+      flex-direction: column;
+      grid-area: graphtab;
+      min-width: 0;
+      min-height: 0;
+      gap: 12px;
     }
     .results-window-title {
-      display: none;
+      display: none !important;
     }
-    .results-hidden { display: none; }
+    /* 분석 실행 전에는 결과 영역을 통째로 감춘다.
+       !important 가 필요한 이유: 아래쪽(2106줄 부근)에 `.grid{display:grid}` 가
+       또 선언되어 있는데 특이도가 같아서 나중 규칙이 이긴다. 그 탓에 여기서
+       display:none 을 줘도 무시되어 빈 패널이 그대로 보였다. */
+    .results-hidden { display: none !important; }
     .panel {
       min-width: 0;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      min-height: 0;
+      min-height: 150px;
       border-radius: 8px;
       box-shadow: 0 8px 24px rgba(7,31,73,.05);
     }
-    .summary-panel { grid-area: summary; }
-    .detail-panel { grid-area: detail; }
-    .over-panel { grid-area: over; }
-    .chart-panel { grid-area: chart; }
-    .ppf-panel { grid-area: chart; display: none; }
-    .scatter-panel { grid-area: scatter; }
-    .diff-cdf-panel { grid-area: diffcdf; }
-    .wafer-panel { display: none; }
+    /* 좌측은 탭 패널(요약/Fail/이상 샘플) : 상세 를 4:1 비율로 나눈다. over-panel 은
+       메인 화면에서는 항상 숨김(§updatePanelMode, popup 전용으로 남겨둠)이라
+       flex 계산에서 제외된다.
+       목록표는 174행, 상세표는 선택 항목 1건(내용 실측 32px)뿐이라 목록 쪽에 크게
+       배분한다. (이전 값 1:2 는 정확히 반대여서 목록 스크롤 창이 41px 까지 눌렸다) */
+    .summary-panel { flex: 4 1 0; min-height: 220px; }
+    .over-panel { flex: 4 1 0; min-height: 220px; }
+    .detail-panel { flex: 1 1 0; min-height: 90px; }
+    .chart-tools.graph-item-toolbar { flex: 0 0 auto; }
+    .chart-panel,
+    .diff-cdf-panel,
+    .ppf-panel,
+    .scatter-panel {
+      display: none;
+      flex: 1 1 0;
+      min-height: 180px;
+    }
+    .chart-panel.active-graph,
+    .diff-cdf-panel.active-graph,
+    .ppf-panel.active-graph,
+    .scatter-panel.active-graph {
+      display: flex;
+    }
+    .wafer-panel {
+      flex: 1 1 0;
+      min-height: 160px;
+    }
     .panel h2 {
       margin: 0;
       padding: 14px 18px;
@@ -513,7 +761,8 @@ HTML = r"""<!doctype html>
     }
     td.item, td.over-item { text-align: left; }
     tr.select-row { background: var(--select); }
-    tr.active { outline: 2px solid #333; outline-offset: -2px; }
+    tr.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; }
+    td.over-item.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; font-weight: 700; }
     td.sigma-fail {
       background: #ffd9d9;
       color: #9b1c1c;
@@ -552,30 +801,53 @@ HTML = r"""<!doctype html>
     }
     select { min-width: 240px; padding: 5px; }
     canvas { width: 100%; height: 100%; display: block; background: #fff; }
-    .chart-box, .scatter-box, .wafer-box { flex: 1; min-height: 315px; }
-    .reliability-tabs {
-      display: none;
-      background: #050505;
-      border-bottom: 4px solid #e20000;
-      gap: 22px;
-      padding: 13px 14px;
-      overflow-x: auto;
+    .chart-box, .scatter-box, .wafer-box { flex: 1 1 0; min-height: 0; }
+    .item-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-end;
+      min-height: 40px;
     }
-    .reliability-tab {
-      min-width: 100px;
-      min-height: 46px;
-      border: 3px solid #06334b;
-      border-radius: 0;
-      background: #1e6f8c;
-      color: #fff;
-      font-size: 20px;
+    .item-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 6px 14px;
+      border: 1px solid #c9d9eb;
+      border-radius: 999px 999px 0 0;
+      border-bottom: 3px solid transparent;
+      background: #f2f6fb;
+      color: #33445c;
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: 0;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+      box-sizing: border-box;
     }
-    .reliability-tab.active {
-      background: #0ba7aa;
-      border-color: #09666f;
+    .item-tab.active {
+      background: #fff;
+      color: #0b5ca8;
+      border-bottom-color: #1266c8;
+      box-shadow: 0 -2px 8px rgba(18,102,200,.10);
+    }
+    .item-tab-empty {
+      opacity: .45;
+      cursor: default;
+    }
+    .item-tab-badge {
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(18,102,200,.12);
+      color: #0b5ca8;
+      font-size: 11px;
+      font-weight: 800;
+      min-width: 56px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      box-sizing: border-box;
+    }
+    .item-tab.active .item-tab-badge {
+      background: rgba(18,102,200,.18);
     }
     .brand-mark {
       width: 42px;
@@ -662,30 +934,28 @@ HTML = r"""<!doctype html>
       border-radius: 3px 3px 0 0;
       background: var(--nav);
     }
-    .edit-label {
-      width: 24px;
-      height: 24px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      border: 0;
-      border-radius: 4px;
-      background: transparent;
-      color: rgba(255,255,255,.7);
-      font-size: 13px;
+    .tree-link[disabled],
+    .side-link[disabled] {
+      opacity: .5;
+      cursor: default;
+      pointer-events: none;
+    }
+    .badge-wip {
       flex: 0 0 auto;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.16);
+      color: rgba(255,255,255,.85);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
     }
-    .edit-label:hover { background: rgba(255,255,255,.12); color: #fff; }
-    .edit-label::before {
-      content: "";
-      width: 12px;
-      height: 3px;
-      background: currentColor;
-      border-radius: 2px;
-      transform: rotate(45deg);
-      box-shadow: 6px 0 0 -1px currentColor;
+    .side-exit-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
+    .side-exit-row .side-link { width: auto; flex: 1; }
     .nav-symbol {
       width: 22px;
       height: 22px;
@@ -866,16 +1136,11 @@ HTML = r"""<!doctype html>
       height: var(--results-section-height, 100%);
       min-height: 0;
     }
-    body.results-window .analysis-results-section > .condition-title {
+    body.results-window #summaryStrip {
       display: none !important;
     }
-    body.results-window .reliability-tabs {
+    body.results-window .analysis-results-section > .condition-title {
       display: none !important;
-      padding: 10px 22px;
-      gap: 14px;
-      border-bottom: 2px solid #022b44;
-      background: linear-gradient(90deg, #011526, #062b43);
-      flex: 0 0 auto;
     }
     body.results-window .analysis-results-scroll {
       display: block;
@@ -925,7 +1190,7 @@ HTML = r"""<!doctype html>
     }
     body.results-window #passResultsGrid:not(.results-hidden) {
       display: grid;
-      grid-template-columns: minmax(760px, 1.55fr) minmax(540px, 1fr);
+      grid-template-columns: minmax(0, 4fr) minmax(0, 3fr);  /* 본창과 동일한 4:3 */
       grid-template-rows: minmax(0, 1fr);
       grid-template-areas: none;
       gap: 10px;
@@ -942,7 +1207,11 @@ HTML = r"""<!doctype html>
     }
     body.results-window .result-table-column,
     body.results-window .result-graph-column {
-      display: grid;
+      /* 본창과 동일하게 세로 flex. grid 로 두면 .ctl(KPI 상자)까지 행을 배정받아
+         늘어나면서 본창(54px)과 달리 334px 로 벌어졌다. */
+      display: flex;
+      flex-direction: column;
+      grid-area: auto;
       min-width: 0;
       min-height: 0;
       height: 100%;
@@ -953,7 +1222,6 @@ HTML = r"""<!doctype html>
       grid-area: auto;
     }
     body.results-window .result-table-column {
-      grid-template-rows: minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.15fr);
       padding: 0;
       border: 1px solid #d7e3f1;
       border-radius: 9px;
@@ -995,9 +1263,8 @@ HTML = r"""<!doctype html>
       min-height: 0;
       padding: 8px 12px 12px;
     }
-    body.results-window .over-panel {
-      display: flex !important;
-    }
+    /* 새 창에서 Abnormal Shift Sample 을 강제 표시하던 규칙을 뺐다.
+       본창과 동일한 형식으로 맞추기 위해 updatePanelMode() 의 판단에 맡긴다. */
     body.results-window .chart-panel,
     body.results-window .diff-cdf-panel,
     body.results-window .ppf-panel,
@@ -1135,8 +1402,14 @@ HTML = r"""<!doctype html>
       height: 100%;
     }
     .toolbar-mode button.active {
-      background: linear-gradient(180deg, #078c99, #05717f);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 4.02:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #07828e, #056976);
       color: #fff;
+    }
+    .result-tab-groups {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .status-pill {
       display: inline-flex;
@@ -1149,6 +1422,71 @@ HTML = r"""<!doctype html>
     }
     .panel-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
     .flag-alpha-label { font-weight: 400; font-size: 12px; color: var(--muted); }
+    .column-toggle-wrap { position: relative; flex: 0 0 auto; }
+    .column-toggle-btn {
+      background: #eef6fa;
+      color: #0b6070;
+      border: 1px solid #bdd3df;
+      border-radius: 13px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .column-toggle-btn:hover { background: #e0eef4; }
+    .column-toggle-menu {
+      display: none;
+      position: fixed;
+      z-index: 200;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(20, 40, 70, 0.15);
+      padding: 8px;
+      min-width: 160px;
+      max-height: min(420px, 60vh);
+      overflow-y: auto;
+    }
+    .column-toggle-menu.open { display: block; }
+    .column-menu-head {
+      position: sticky;
+      top: -8px;
+      margin: -8px -8px 4px;
+      padding: 8px 8px 6px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      z-index: 1;
+    }
+    .column-menu-head .column-toggle-item { padding: 0; font-weight: 700; }
+    .column-menu-reset {
+      background: none;
+      border: 1px solid #bdd3df;
+      border-radius: 12px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #0b6070;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .column-menu-reset:hover { background: #eef6fa; }
+    .column-menu-body { display: flex; flex-direction: column; }
+    .column-toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 6px;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .column-toggle-item:hover { background: #f4f8fb; border-radius: 4px; }
     #cdfPanelTitle,
     #diffCdfPanelTitle,
     #scatterPanelTitle {
@@ -1258,7 +1596,6 @@ HTML = r"""<!doctype html>
       color: #10305f;
     }
     .app-shell {
-      grid-template-columns: 354px minmax(0, 1fr);
       background: transparent;
     }
     .side {
@@ -1305,7 +1642,8 @@ HTML = r"""<!doctype html>
     .side-link.active,
     .tree-link:hover,
     .tree-link.active {
-      background: linear-gradient(90deg, #14b9e9, #176fe0);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.3:1, 실제 렌더링에서 이 규칙이 우선 적용됨) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(90deg, #0e80a1, #104d9b);
       box-shadow: inset 4px 0 0 rgba(60,235,255,.85), 0 8px 20px rgba(1,87,187,.35);
       color: #fff;
     }
@@ -1314,7 +1652,7 @@ HTML = r"""<!doctype html>
       padding-bottom: 28px;
     }
     .content {
-      padding: 36px 34px 28px;
+      padding: 0;
       background:
         radial-gradient(circle at 96% 0%, rgba(25,124,212,.10), transparent 28%),
         #f8fbff;
@@ -1475,7 +1813,8 @@ HTML = r"""<!doctype html>
       background: #fff;
     }
     .toolbar-mode button.active {
-      background: linear-gradient(180deg, #11b7b5, #008f88);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.48:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c8281, #006661);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
     }
     .status-pill {
@@ -1498,13 +1837,6 @@ HTML = r"""<!doctype html>
     .grid {
       gap: 16px;
     }
-    .grid.fail-grid {
-      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
-      grid-template-rows: 250px 330px;
-      grid-template-areas:
-        "summary detail"
-        "chart diffcdf";
-    }
     .panel {
       border: 1px solid #d7e3f1;
       border-radius: 9px;
@@ -1512,8 +1844,8 @@ HTML = r"""<!doctype html>
       box-shadow: 0 8px 22px rgba(28,70,136,.07);
     }
     .panel h2 {
-      min-height: 48px;
-      padding: 13px 18px;
+      min-height: 36px;
+      padding: 7px 18px;
       background: linear-gradient(180deg, #ffffff, #f6f9fd);
       color: #0b438c;
       border-bottom: 1px solid #dce8f4;
@@ -1534,7 +1866,8 @@ HTML = r"""<!doctype html>
       min-height: 0;
     }
     th {
-      background: linear-gradient(180deg, #10aaa5, #078a87);
+      /* WCAG AA 미달(밝은 쪽 정지점 대비 2.87:1) 이라 명도만 낮춤, 색상 계열 유지 */
+      background: linear-gradient(180deg, #0c837f, #056a68);
       border-color: #49bdb8;
       color: #fff;
       font-weight: 800;
@@ -1583,12 +1916,9 @@ HTML = r"""<!doctype html>
       max-width: 100%;
       overflow-x: hidden;
     }
-    .app-shell {
-      grid-template-columns: 280px minmax(0, 1fr);
-    }
     .content {
       height: 100vh;
-      padding: 28px 30px 22px;
+      padding: 0;
     }
     .view-title {
       font-size: 28px;
@@ -1673,6 +2003,15 @@ HTML = r"""<!doctype html>
       line-height: 1.12;
       white-space: normal;
     }
+    #resultTabBar, #resultViewBar {
+      flex-wrap: nowrap;
+    }
+    #resultTabBar button, #resultViewBar button {
+      width: auto;
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 0 8px;
+    }
     button {
       min-height: 34px;
       padding: 6px 12px;
@@ -1696,6 +2035,26 @@ HTML = r"""<!doctype html>
       padding: 7px 14px;
       white-space: nowrap;
     }
+    .status-pill.st-ok   { background: #e6f5ec; color: #14683f; }
+    .status-pill.st-warn { background: #fff4e0; color: #8a5a00; }
+    .status-pill.st-err  { background: #fbecee; color: #8c1020; }
+    .analyze-error {
+      display: none;
+      flex: 0 0 auto;
+      margin: 10px 0 0;
+      padding: 10px 14px;
+      border: 1px solid #f0c8ce;
+      border-left: 4px solid #b00020;
+      border-radius: 6px;
+      background: #fbecee;
+      color: #8c1020;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: pre-wrap;
+    }
+    .analyze-error.open { display: block; }
+    .field.invalid select,
+    .field.invalid input { border-color: #b00020; background: #fff6f7; }
     .latest-date {
       flex: 0 0 auto;
       margin-left: 0;
@@ -1747,55 +2106,211 @@ HTML = r"""<!doctype html>
           "scatter";
       }
     }
+
+    /* ── W4-2~4 : 표/그래프 컨트롤 카드 통합 레이아웃 (source-order로 위 정의를 override) ── */
+    :root{
+      --acc:#2b5fb8; --acc-d:#17427f; --acc-s:#eaf1fb; --acc-b:#c9dcf4;
+      --ink:#1c2534; --ink2:#5b6b81; --ink3:#93a1b3;
+      --line:#e5ebf2; --line2:#f0f4f8; --bg:#eff3f8;
+      --neg:#c2413a; --pos:#1c7a4b; --warn:#a06a08;
+    }
+
+    /* ── 2열 : 표 5 : 그래프 3 ── */
+    .grid{
+      display:grid;
+      grid-template-columns:minmax(0,4fr) minmax(0,3fr);
+      grid-template-rows:minmax(0,1fr);
+      grid-template-areas:"resulttab graphtab";
+      gap:14px; flex:1 1 auto; min-height:560px;
+      padding:0; border:0; background:transparent; align-items:stretch;
+    }
+    .result-table-column,.result-graph-column{
+      display:flex; flex-direction:column; gap:12px; min-width:0; min-height:0;
+    }
+    .summary-panel{ flex:1 1 0; min-height:0; }
+    .over-panel   { flex:1 1 0; min-height:0; }
+    .detail-panel { flex:1 1 0; min-height:0; }
+
+    #analysisFilterBar, #graphFilterBar{ display:contents; }
+
+    .ctl{ flex:0 0 auto; height:auto; min-height:134px; display:flex; flex-direction:column;
+      background:#fff; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
+    /* 134px 는 KPI(52) + 시험항목 탭(40) + 하단 필터(40) 가 모두 있을 때의 높이다.
+       단일 시험 항목을 고르면 필터 바가 비는데, 고정 높이 탓에 그만큼 빈 칸이 남았다.
+       비어 있을 때만 내용 높이에 맞춘다. */
+    .ctl:has(> .analysis-filter-bar:empty){ height:auto; }
+    .crow{ display:flex; align-items:center; gap:14px; padding:0 14px; min-width:0; }
+    .crow+.crow{ border-top:1px solid var(--line2); }
+    .crow.tabs{ border-top:1px solid var(--line2); }
+    .crow.foot{ border-top:1px solid var(--line2); }
+    .crow.kpi{ height:52px } .crow.foot{ height:40px }
+    /* 시험 항목이 많으면 한 줄에 다 안 들어가 오른쪽이 잘렸다. 여러 줄로 접는다. */
+    .crow.tabs{ height:auto; min-height:40px; padding:4px 0 4px 8px; align-items:flex-start }
+    .crow.tabs .tabwrap{ height:auto }
+    .crow.tabs .tabwrap::after{ display:none }
+    /* 아래쪽 `.item-tabs,.graph-tabs` 규칙이 nowrap 을 걸기 때문에
+       특이도를 한 단계 높여서(.crow.tabs 하위) 확실히 이긴다. */
+    .crow.tabs .item-tabs{ flex-wrap:wrap; overflow:visible; height:auto; row-gap:2px }
+    .crow.tabs .item-tab{ height:32px }
+    .crow.tabs .item-tab-badge{ min-width:0 }
+    .tail2{ margin-left:auto; display:flex; align-items:center; gap:12px; flex:0 0 auto; padding-left:12px }
+    .lbl{ font-size:11px; font-weight:700; color:var(--ink3); letter-spacing:.03em; flex:0 0 auto }
+    .gsum{ gap:0 }
+    .gname{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+    .gname b{ font-size:14px; font-weight:800; letter-spacing:-.01em; line-height:1.2 }
+    .gname span{ font-size:11px; color:var(--ink3) }
+
+    .summary-strip{ display:flex; align-items:center; gap:0; height:100%; margin:0; flex:1 1 auto; min-width:0 }
+    /* 카드 폭을 140px 로 균등하게. 예전에는 글자 길이대로 폭이 정해져서
+       구분선 간격이 들쭉날쭉했다(102/138/77/105px). */
+    .summary-card{ display:flex; align-items:baseline; gap:6px; padding:0 0 0 16px; margin:0;
+      border:0; border-right:1px solid var(--line2); border-radius:0; background:none;
+      min-width:140px; flex:0 0 auto; }
+    .summary-card:first-of-type{ padding-left:0 }
+    .summary-card:last-of-type{ border-right:0 }
+    .summary-card-value{ font-size:20px; font-weight:800; letter-spacing:-.02em;
+      font-variant-numeric:tabular-nums; line-height:1 }
+    .summary-card-label{ font-size:11px; font-weight:600; color:var(--ink2) }
+    .summary-card-flag .summary-card-value{ color:var(--neg) }
+    .summary-card-ok   .summary-card-value{ color:var(--pos) }
+    .summary-card-warn{ background:none; border-color:var(--line2) }
+    .summary-card-warn .summary-card-value{ color:var(--warn) }
+    .judgment-footnote{ margin-left:auto; text-align:right; font-size:10.5px; color:var(--ink3);
+      line-height:1.55; flex:0 0 auto; white-space:normal }
+
+    .tabwrap{ position:relative; flex:1 1 auto; min-width:0; display:flex; height:100% }
+    .tabwrap::after{ content:""; position:absolute; right:0; top:0; bottom:0; width:24px;
+      pointer-events:none; background:linear-gradient(to right,rgba(255,255,255,0),#fff) }
+    .item-tabs,.graph-tabs{ display:flex; align-items:stretch; gap:0; height:100%;
+      flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none; min-width:0; flex:1 1 auto; border:0; margin:0 }
+    .item-tabs::-webkit-scrollbar,.graph-tabs::-webkit-scrollbar{ display:none }
+    .item-tab,.graph-tabs button{ display:inline-flex; align-items:center; gap:6px; padding:0 12px;
+      flex:0 0 auto; position:relative; height:100%; min-height:0; min-width:0;
+      border:0; border-radius:0; background:none; box-shadow:none;
+      font-size:12.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .item-tab.active,.graph-tabs button.active{ color:var(--acc-d); background:none }
+    .item-tab.active::after,.graph-tabs button.active::after{ content:""; position:absolute;
+      left:10px; right:10px; bottom:0; height:2.5px; background:var(--acc); border-radius:2px 2px 0 0 }
+    .item-tab-badge{ font-size:10.5px; font-weight:700; color:var(--ink3);
+      font-variant-numeric:tabular-nums; min-width:46px; text-align:right;
+      padding:0; border-radius:0; background:none }
+    .item-tab.active .item-tab-badge{ color:var(--acc); background:none }
+    .item-tab-empty{ color:var(--ink3); opacity:.55 }
+
+    .pill{ display:inline-flex; align-items:center; height:26px; padding:2px;
+      border-radius:8px; background:var(--bg); flex:0 0 auto }
+    .pill button{ height:22px; padding:0 12px; border:0; border-radius:6px; background:none;
+      font-size:11.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .pill button.active{ background:#fff; color:var(--acc-d); box-shadow:0 1px 2px rgba(20,40,70,.10) }
+    .filter-chip{ height:22px; min-height:0; padding:0 12px; border:0; border-radius:6px;
+      background:none; font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .filter-chip.active{ background:#fff; color:var(--acc-d);
+      box-shadow:0 1px 2px rgba(20,40,70,.10); border:0 }
+    /* FT TEMP. 은 알약 배경 대신 탭과 같은 밑줄로 표시한다 */
+    .temp-filter-group .filter-chip{ height:40px; border-radius:0; padding:0 12px;
+      position:relative; font-size:12.5px; min-width:0 }
+    .temp-filter-group .filter-chip.active{ background:none; box-shadow:none; color:var(--acc-d) }
+    .temp-filter-group .filter-chip.active::after{ content:""; position:absolute;
+      left:10px; right:10px; bottom:0; height:2.5px; background:var(--acc);
+      border-radius:2px 2px 0 0 }
+    .readout-toggle,.filter-check{ height:26px; min-height:0; padding:0 4px; border:0; background:none;
+      font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .readout-toggle input,.filter-check input{ accent-color:var(--acc) }
+
+    .panel{ background:#fff; border:1px solid var(--line); border-radius:11px; box-shadow:none;
+      display:flex; flex-direction:column; min-height:0; overflow:hidden }
+    .ptabs{ flex:0 0 auto; display:flex; height:40px; background:#fafcfe;
+      border-bottom:1px solid var(--line) }
+    .pt{ display:inline-flex; align-items:center; gap:7px; padding:0 18px; border:0; background:none;
+      font-size:12.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
+    .pt+.pt{ border-left:1px solid var(--line2) }
+    .pt.active{ background:#fff; color:var(--acc-d); box-shadow:inset 0 2.5px 0 var(--acc) }
+    .pt .c{ font-size:10.5px; font-weight:800; color:var(--ink3); font-variant-numeric:tabular-nums }
+    .pt.active .c{ color:var(--acc) }
+    .pt .tab-count-badge,.pt .fail-count-badge{ font-size:10.5px; font-weight:800; color:var(--ink3);
+      font-variant-numeric:tabular-nums; margin-left:4px; padding:0; background:none; border-radius:0 }
+    .pt.active .tab-count-badge,.pt.active .fail-count-badge{ color:var(--acc) }
+    .ptool{ flex:0 0 auto; display:flex; align-items:center; gap:10px; height:38px; padding:0 12px;
+      border-bottom:1px solid var(--line2) }
+    .ptool .r{ margin-left:auto; display:flex; align-items:center; gap:8px }
+    .chead{ flex:0 0 auto; display:flex; align-items:center; gap:10px; height:40px; padding:0 14px;
+      border-bottom:1px solid var(--line2); background:none }
+    .chead h2,.chead h3{ margin:0; font-size:12.5px; font-weight:800; color:var(--ink); white-space:nowrap }
+    .chead .s{ font-size:11px; color:var(--ink3) }
+    .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
+      background:#fff; font-size:11.5px; font-weight:700; color:var(--ink2) }
+    .gbtn:hover{ border-color:var(--acc-b); color:var(--acc-d); background:var(--acc-s) }
+
+    .table-wrap{ flex:1 1 auto; min-height:0; overflow:auto;
+      background:linear-gradient(to left,rgba(28,37,52,.05),rgba(28,37,52,0) 20px) right center/20px 100% no-repeat;
+      background-attachment:local,scroll }
+    table{ border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:11.5px }
+    th{ position:sticky; top:0; z-index:2; background:#fafcfe; color:var(--ink2);
+      font-weight:700; font-size:10.5px; letter-spacing:.02em; padding:8px 10px;
+      text-align:center; white-space:nowrap; border:0; border-bottom:1px solid var(--line);
+      box-shadow:0 1px 0 var(--line); cursor:pointer; user-select:none }
+    td{ padding:6.5px 10px; text-align:center; white-space:nowrap; border:0;
+      border-bottom:1px solid var(--line2); font-variant-numeric:tabular-nums; color:var(--ink) }
+    td.item,td.over-item{ text-align:left; font-weight:600 }
+    tbody tr:nth-child(even) td{ background:none }
+    tbody tr:hover td{ background:#fafcfe }
+    tr.active td,td.over-item.active{ background:var(--acc-s); box-shadow:none }
+    tr.active td:first-child{ box-shadow:inset 2.5px 0 0 var(--acc) }
+    td.sigma-fail{ background:none; color:var(--neg); font-weight:800 }
+
+    /* 그래프 4종은 탭으로 하나만 표시 */
+    .chart-panel,.diff-cdf-panel,.ppf-panel,.scatter-panel{
+      display:none; flex:1 1 0; min-height:0 }
+    .chart-panel.active-graph,.diff-cdf-panel.active-graph,
+    .ppf-panel.active-graph,.scatter-panel.active-graph{ display:flex }
+    /* Wafer Map 은 상시 표시. 활성 그래프와 세로 1 : 1 (flex-basis 0 이어야 정확히 1:1) */
+    .wafer-panel{ display:flex; flex:1 1 0; min-height:0 }
+
+    #detailPanelMeta.is-loading{ color:var(--acc); opacity:.85 }
+
+    /* ── 선택 항목 상세 표: 열 폭 고정 ─────────────────────────
+       예전에는 본창에만 table-layout 지정이 없어서 브라우저가 내용 길이에 맞춰
+       매번 열 폭을 다시 계산했다. 그래서 상단 표에서 항목을 바꿀 때마다 상세 표의
+       열이 좌우로 흔들렸다(실측 최대 11px, 실제 데이터에서는 더 큼).
+       새 창에는 이미 같은 규칙이 있었는데 본창에는 빠져 있었다.
+       detailColumns() 는 pass·fail 모드 모두 항상 12열을 반환한다. */
+    .detail-panel .table-wrap{ overflow-x:hidden }
+    #detailTable{ width:100%; min-width:0; table-layout:fixed }
+    #detailTable th, #detailTable td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    #detailTable th{ line-height:1.15; white-space:normal; word-break:keep-all }
+    #detailTable th:nth-child(1), #detailTable td:nth-child(1){ width:7.5% }
+    #detailTable th:nth-child(2), #detailTable td:nth-child(2){ width:7% }
+    #detailTable th:nth-child(3), #detailTable td:nth-child(3){ width:12% }
+    #detailTable th:nth-child(4), #detailTable td:nth-child(4){ width:8.5% }
+    #detailTable th:nth-child(5), #detailTable td:nth-child(5){ width:8.5% }
+    #detailTable th:nth-child(6), #detailTable td:nth-child(6){ width:8.5% }
+    #detailTable th:nth-child(7), #detailTable td:nth-child(7){ width:8.5% }
+    #detailTable th:nth-child(8), #detailTable td:nth-child(8){ width:6% }
+    #detailTable th:nth-child(9), #detailTable td:nth-child(9){ width:9% }
+    #detailTable th:nth-child(10), #detailTable td:nth-child(10){ width:8% }
+    #detailTable th:nth-child(11), #detailTable td:nth-child(11){ width:8% }
+    #detailTable th:nth-child(12), #detailTable td:nth-child(12){ width:9% }
   </style>
 </head>
 <body>
   <main>
     <section class="app-shell">
-      <nav class="side">
-        <h1 class="side-title">
-          <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
-          <span class="brand-text"><strong data-label-key="brand">Work Manager</strong><small>Automation Suite</small></span>
-          <button class="edit-label" type="button" data-edit-target="brand" title="Edit folder name"></button>
-        </h1>
-        <div class="tree">
-          <div class="tree-group">
-            <div class="tree-parent">
-              <button class="side-link" data-view="managerView"><span class="nav-symbol home-symbol"></span><span data-label-key="dashboard">Dashboard</span></button>
-              <button class="edit-label" type="button" data-edit-target="dashboard" title="Edit folder name"></button>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="reliability">Reliability</span><button class="edit-label" type="button" data-edit-target="reliability" title="Edit folder name"></button></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link active" data-view="rdaView"><span data-label-key="rda">Reliability Data Analysis</span></button><button class="edit-label" type="button" data-edit-target="rda" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="schedule">Schedule Management</span></button><button class="edit-label" type="button" data-edit-target="schedule" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="final">Final Result</span></button><button class="edit-label" type="button" data-edit-target="final" title="Edit folder name"></button></div>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="iso">ISO 26262</span><button class="edit-label" type="button" data-edit-target="iso" title="Edit folder name"></button></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="fsView"><span data-label-key="fs">FS Deliverables Management</span></button><button class="edit-label" type="button" data-edit-target="fs" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="deliverables">Deliverables Status</span></button><button class="edit-label" type="button" data-edit-target="deliverables" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="matrix">Traceability Matrix</span></button><button class="edit-label" type="button" data-edit-target="matrix" title="Edit folder name"></button></div>
-            </div>
-          </div>
-          <div class="tree-group">
-            <div class="tree-parent"><span class="tree-icon"></span><span data-label-key="rma">RMA</span><button class="edit-label" type="button" data-edit-target="rma" title="Edit folder name"></button></div>
-            <div class="tree-children">
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" data-view="reportView"><span data-label-key="report">8D Report</span></button><button class="edit-label" type="button" data-edit-target="report" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="action">Action Tracking</span></button><button class="edit-label" type="button" data-edit-target="action" title="Edit folder name"></button></div>
-              <div class="tree-child"><span class="tree-dot"></span><button class="tree-link" type="button"><span data-label-key="effect">Effectiveness Check</span></button><button class="edit-label" type="button" data-edit-target="effect" title="Edit folder name"></button></div>
-            </div>
-          </div>
-        </div>
-        <div class="side-exit">
-          <button class="side-link" type="button"><span class="nav-symbol gear-symbol"></span><span data-label-key="settings">Settings</span></button>
-          <button id="exitBtn" class="side-link exit-button" type="button"><span class="nav-symbol power-symbol"></span><span>Exit Tool</span></button>
-        </div>
-      </nav>
       <div class="content">
+        <header class="top">
+          <div class="ttl"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></div>
+          <div class="vr"></div>
+          <button type="button" class="cond" id="conditionSecBtn" aria-expanded="true">
+            <span class="n">1</span><span class="t">분석 조건</span>
+            <span class="m" id="conditionSummaryLine"></span><span class="c">▾</span>
+          </button>
+          <div class="rt">
+            <button type="button" class="lnk" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled>결과 새 창</button>
+            <div class="vr"></div>
+            <span class="pathtxt" id="dataPath">-</span>
+            <button type="button" class="lnk" id="browseDataPathBtn">경로 변경</button>
+          </div>
+        </header>
         <section id="managerView" class="view">
           <div class="manager-section">
             <h2>On-Going RMA Status</h2>
@@ -1827,30 +2342,22 @@ HTML = r"""<!doctype html>
           </div>
         </section>
         <section id="rdaView" class="view active">
-          <div class="view-header">
-            <div><h2 class="view-title">Reliability Data Analysis</h2><div class="view-subtitle">Reliability Data Analyzer_Ver.0.027</div></div>
-            <div class="path-tools"><strong>Data Path:</strong><span class="status" id="dataPath">-</span><button id="browseDataPathBtn" class="secondary" type="button">Browse...</button><span class="top-icons"><span class="top-icon">?</span><span class="top-icon">!</span><span class="top-icon">U</span></span></div>
-          </div>
-          <section class="rda-card">
-            <div class="condition-title"><span class="filter-icon"></span><span>1. Analysis Condition</span></div>
-            <div class="rda-form">
-              <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
-              <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
-              <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
-              <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
-              <div class="field"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
-              <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
-              <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
+          <section class="rda-card condition-card" id="conditionCard">
+            <div class="condition-body" id="conditionBody">
+              <div class="rda-form">
+                <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
+                <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
+                <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
+                <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
+                <div class="field"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
+                <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
+                <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
+              </div>
             </div>
           </section>
-        <section class="reliability-tabs" id="reliabilityTabs" aria-label="Reliability Items"></section>
-        <section class="toolbar">
+        <section class="toolbar condition-attached" id="executionToolbar">
           <button id="analyzeBtn" class="primary">▶ &nbsp;Analyze</button>
           <button id="stopAnalyzeBtn" class="secondary" type="button" disabled>Stop</button>
-          <div class="toolbar-mode">
-            <button id="failModeBtn" type="button" data-mode="fail">Fail Data Analysis Results</button>
-            <button id="passModeBtn" class="active" type="button" data-mode="pass">Pass Data Analysis Results</button>
-          </div>
           <label><input id="includePreCheck" type="checkbox" checked> Including Pre</label>
           <button id="initializeBtn" class="secondary" type="button">Analysis Initialization</button>
           <strong>Status:</strong><span class="status-pill" id="status">Ready</span>
@@ -1858,50 +2365,63 @@ HTML = r"""<!doctype html>
           <span class="status latest-date" id="latestAnalysisDate">Latest Analysis Date: -</span>
           <button id="rawExportBtn" class="secondary raw-export-btn" type="button" disabled>Raw Data Export</button>
         </section>
+        <div id="analyzeError" class="analyze-error" role="alert"></div>
         <section class="analysis-results-section">
-          <div class="condition-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span><button id="openResultsWindowBtn" class="icon-window-btn" type="button" title="Open Analysis Results in a new window" disabled></button></div>
           <div class="analysis-results-scroll">
-        <section id="analysisFilterBar" class="analysis-filter-bar"></section>
         <section id="passResultsGrid" class="grid results-hidden">
       <div class="result-table-column">
       <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
-      <section class="panel summary-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-summary"></span>Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)<span id="flagAlphaLabel" class="flag-alpha-label"></span></span><span class="panel-actions">□ ⋮</span></h2>
-        <div class="table-wrap"><table id="resultTable"></table></div>
+      <section class="ctl">
+        <div class="crow kpi"><section id="summaryStrip" class="summary-strip"></section></div>
+        <section id="analysisFilterBar" class="analysis-filter-bar"></section>
       </section>
-      <section class="panel detail-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-detail"></span>Abnormal Shift Details</span><span class="panel-actions">□ ⋮</span></h2>
-        <div class="table-wrap"><table id="detailTable"></table></div>
+      <section class="panel summary-panel">
+        <div class="ptabs" id="resultModeBar" title="Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)">
+          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 항목</button>
+          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Abnormal Pass</button>
+        </div>
+        <div class="ptool">
+          <div class="pill" id="resultViewBar">
+            <button id="itemViewBtn" class="active" type="button" data-view="item">항목 기준</button>
+            <button id="sampleViewBtn" type="button" data-view="sample">샘플 기준</button>
+          </div>
+          <span id="flagAlphaLabel" class="flag-alpha-label"></span>
+          <div class="r"><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></div>
+        </div>
+        <div class="table-wrap" id="resultTableWrap"><table id="resultTable"></table></div>
+        <div class="table-wrap" id="overSampleTableWrap"><table id="overSampleTable"></table></div>
       </section>
       <section class="panel over-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-sample"></span>Abnormal Shift Sample</span><span class="panel-actions">□ ⋮</span></h2>
+        <h2><span class="panel-label"><span class="panel-icon icon-sample"></span>Abnormal Shift Sample</span></h2>
         <div class="table-wrap"><table id="overTable"></table></div>
+      </section>
+      <section class="panel detail-panel">
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span></div>
+        <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
       <div class="result-graph-column">
-      <div class="chart-tools graph-item-toolbar">
-        <label>Test Item</label>
-        <select id="itemSelect"></select>
-        <span class="status" id="itemThresholdLabel"></span>
-      </div>
+      <section class="ctl">
+        <div class="crow kpi gsum">
+          <div class="gname"><b id="graphItemName">—</b><span id="graphItemMeta"></span></div>
+          <div class="tail2"><select id="itemSelect"></select><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
+        </div>
+        <section id="graphFilterBar" class="graph-filter-bar"></section>
+      </section>
       <section class="panel chart-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="cdfPanelTitle">CDF Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="cdfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="cdfCanvas"></canvas></div>
       </section>
       <section class="panel diff-cdf-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="diffCdfPanelTitle">Diff. CDF Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="diffCdfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="diffCdfCanvas"></canvas></div>
       </section>
       <section class="panel ppf-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-cdf"></span><span id="ppfPanelTitle">Standard Normal Distribution</span></span><button class="copy-chart-btn" type="button" data-canvas="ppfCanvas">Copy</button></h2>
         <div class="chart-box"><canvas id="ppfCanvas"></canvas></div>
       </section>
       <section class="panel scatter-panel">
-        <h2><span class="panel-label"><span class="panel-icon icon-scatter"></span><span id="scatterPanelTitle">Scattered Plot</span></span><button class="copy-chart-btn" type="button" data-canvas="scatterCanvas">Copy</button></h2>
         <div class="scatter-box"><canvas id="scatterCanvas"></canvas></div>
       </section>
       <section class="panel wafer-panel">
-        <h2><span class="panel-label">Wafer No. &amp; Wafer Map</span></h2>
+        <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span></div>
         <div class="wafer-box"><canvas id="waferCanvas"></canvas></div>
       </section>
       </div>
@@ -1929,6 +2449,7 @@ let highlightMode = null;
 let sortState = { column: "severity", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
+let resultViewMode = "item";
 let modePayloads = {};
 let stopAnalysisRequested = false;
 let activeAnalysisRunId = "";
@@ -1950,10 +2471,13 @@ function chartPixelRatio() {
 
 function setupHiResCanvas(canvas, minWidth, minHeight) {
   const box = canvas.parentElement.getBoundingClientRect();
-  const width = Math.max(minWidth, Math.floor(box.width));
-  const height = Math.max(minHeight, Math.floor(box.height));
+  // 박스가 0(숨김 상태)일 때만 minWidth/minHeight 로 폴백한다.
+  // 기존처럼 Math.max(min, box) 를 쓰면 박스가 min 보다 작을 때
+  // canvas{width:100%;height:100%} 에 의해 그림이 눌리거나 잘린다.
+  const width  = Math.max(80, Math.floor(box.width)  || minWidth);
+  const height = Math.max(80, Math.floor(box.height) || minHeight);
   const ratio = chartPixelRatio();
-  canvas.width = Math.floor(width * ratio);
+  canvas.width  = Math.floor(width  * ratio);
   canvas.height = Math.floor(height * ratio);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -1983,14 +2507,33 @@ function drawGraphNotice(canvas, message, minWidth = 360, minHeight = 260) {
 function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
   drawGraphNotice(canvas, "Binary unit item is excluded from graph display.", minWidth, minHeight);
 }
+// 표의 열 순서는 이 배열 순서를 그대로 따른다("+ 열" 로 켠 열도 여기 위치에 끼어든다).
+// 앞의 10개가 기본 표시이고, 뒤쪽은 "+ 열" 메뉴에서 켜야 보인다.
 const passColumns = [
-  ["test_number", "Test No."], ["item", "Item"], ["reason", "Reason"], ["n", "N (σ n-1)"], ["unit", "Unit"], ["lower_limit", "LL"],
-  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev. (n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
-  ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["severity", "Max |σ|"], ["qty", "Q'ty"], ["qty_ratio", "%"],
-  ["sample_numbers", "Sample No."]
+  // ── 기본 표시 ──
+  ["test_number", "Test No."], ["item", "Item"], ["avg", "Avg."], ["unit", "Unit"],
+  ["lower_limit", "LL"], ["upper_limit", "UL"], ["min", "Min."], ["max", "Max."],
+  ["stdev", "Stdev."], ["qty", "Q'ty"],
+  // ── 기본 숨김: "+ 열" 에서 켠다 ──
+  ["reason", "Reason"], ["n", "N (σ n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
+  ["diff_mean", "Δ Mean"], ["severity", "Max |σ|"], ["qty_ratio", "%"], ["sample_numbers", "Sample No."]
 ];
+// Fail 목록도 Abnormal Pass 와 완전히 같은 열 구성을 쓴다 -- 두 탭을 오갈 때 열 위치가
+// 바뀌지 않게 하기 위해서다. Fail 행에는 reason 이 없어 같은 성격의 fail_type(이탈 유형)을
+// Reason 자리에 넣고(summaryCellValue 참조), severity/shift/shift_sigma 는 값이 없어 N/A 다.
 const failColumns = passColumns;
+// 기본으로 보여줄 열. 두 탭이 같은 목록을 쓴다.
+const DEFAULT_COLUMN_KEYS = [
+  "test_number", "item", "avg", "unit", "lower_limit", "upper_limit", "min", "max", "stdev", "qty"
+];
+const DEFAULT_VISIBLE_COLUMNS_PASS = DEFAULT_COLUMN_KEYS;
+const DEFAULT_VISIBLE_COLUMNS_FAIL = DEFAULT_COLUMN_KEYS;
+const columnVisibility = {
+  pass: new Set(DEFAULT_VISIBLE_COLUMNS_PASS),
+  fail: new Set(DEFAULT_VISIBLE_COLUMNS_FAIL)
+};
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
+const AUTO_LATEST_READOUT = "__latest__";
 const lookupOrder = [
   ["ver", "verSelect"],
   ["lot", "lotSelect"],
@@ -2000,6 +2543,7 @@ const lookupOrder = [
   ["ft_temp", "ftTempSelect"]
 ];
 const lookupState = { device: "", ver: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
+let pendingLookup = null;   // 진행 중인 refreshLookup 체인
 function normalizedAnalysisSelection(extra = {}) {
   const payload = { ...lookupState, ...extra };
   const hasBaseSelection = ["device", "ver", "purpose", "lot"].every(key => (payload[key] || "").trim());
@@ -2015,48 +2559,31 @@ let dataRootPath = "";
 
 function setStatus(text) {
   const target = document.getElementById("status") || document.getElementById("dataPath");
-  if (target) target.textContent = text;
+  if (!target) return;
+  target.textContent = text;
+  if (!target.classList.contains("status-pill")) return;
+  target.classList.remove("st-ok", "st-warn", "st-err");
+  target.classList.add(
+    /fail|error|실패/i.test(text) ? "st-err"
+    : /running|searching|initial|stopp|preparing|\d%/i.test(text) ? "st-warn"
+    : "st-ok");
 }
-function activeReliabilityItem() {
-  const item = (isResultsWindow ? analysisFilters.reliability_item : "") || analysis?.reliability_item || lookupState.item || "";
-  const upper = item.toUpperCase();
-  return reliabilityItems.find(candidate => candidate.toUpperCase() === upper) || "";
+function showAnalyzeError(message, missingKeys = []) {
+  const el = document.getElementById("analyzeError");
+  if (el) { el.textContent = message; el.classList.add("open"); }
+  document.querySelectorAll(".field.invalid").forEach(f => f.classList.remove("invalid"));
+  const ID = { device: "deviceInput", ver: "verSelect", lot: "lotSelect", purpose: "purposeSelect" };
+  missingKeys.forEach(k => document.getElementById(ID[k])?.closest(".field")?.classList.add("invalid"));
+}
+function clearAnalyzeError() {
+  document.getElementById("analyzeError")?.classList.remove("open");
+  document.querySelectorAll(".field.invalid").forEach(f => f.classList.remove("invalid"));
 }
 function updateReliabilityTabs() {
-  const active = activeReliabilityItem();
-  document.querySelectorAll(".reliability-tab").forEach(button => {
-    button.classList.toggle("active", button.dataset.item === active);
+  const active = analysisFilters.reliability_item || "";
+  document.querySelectorAll("#analysisFilterBar .item-tab").forEach(button => {
+    button.classList.toggle("active", (button.dataset.item || "") === active);
   });
-}
-function renderReliabilityTabs() {
-  const bar = document.getElementById("reliabilityTabs");
-  if (!bar) return;
-  bar.innerHTML = "";
-  reliabilityItems.forEach(item => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "reliability-tab";
-    button.dataset.item = item;
-    button.textContent = item;
-    button.addEventListener("click", async () => {
-      if (isResultsWindow) {
-        analysisFilters.reliability_item = analysisFilters.reliability_item === item ? "" : item;
-        updateReliabilityTabs();
-        ensureSelectedItemVisible();
-        renderSummary();
-        await refreshSelectedItem();
-        return;
-      }
-      const select = document.getElementById("reliabilityItemSelect");
-      if (!select) return;
-      select.value = item;
-      lookupState.item = item;
-      updateReliabilityTabs();
-      await refreshLookup("readout");
-    });
-    bar.appendChild(button);
-  });
-  updateReliabilityTabs();
 }
 function bindNavigation() {
   const navButtons = document.querySelectorAll(".side-link[data-view], .tree-link[data-view]");
@@ -2085,30 +2612,6 @@ function bindNavigation() {
     });
   }
 }
-function bindEditableTreeLabels() {
-  const storageKey = "qmsTreeLabels";
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(storageKey) || "{}"); }
-  catch (_err) { saved = {}; }
-  Object.entries(saved).forEach(([key, value]) => {
-    document.querySelectorAll(`[data-label-key="${key}"]`).forEach(label => { label.textContent = value; });
-  });
-  document.querySelectorAll(".edit-label[data-edit-target]").forEach(button => {
-    button.addEventListener("click", event => {
-      event.stopPropagation();
-      const key = button.dataset.editTarget;
-      const label = document.querySelector(`[data-label-key="${key}"]`);
-      if (!label) return;
-      const next = prompt("폴더명", label.textContent.trim());
-      if (next === null) return;
-      const name = next.trim();
-      if (!name) return;
-      document.querySelectorAll(`[data-label-key="${key}"]`).forEach(target => { target.textContent = name; });
-      saved[key] = name;
-      localStorage.setItem(storageKey, JSON.stringify(saved));
-    });
-  });
-}
 function setSelectOptions(selectId, options, placeholder = "", disabled = false) {
   const sel = document.getElementById(selectId);
   const previous = sel.value;
@@ -2127,7 +2630,34 @@ function setSelectOptions(selectId, options, placeholder = "", disabled = false)
   if (options.includes(previous)) sel.value = previous;
 }
 function setReadoutOptions(options, placeholder = "Select") {
-  setSelectOptions("readoutSelect", options, placeholder, !lookupState.item || options.length === 0);
+  const sel = document.getElementById("readoutSelect");
+  const previous = sel.value;
+  sel.innerHTML = "";
+  sel.disabled = !lookupState.item || options.length === 0;
+  if (options.length) {
+    // 맨 위 "최신 자동" 이 기본값이다 - 특정 회차를 고르면 그 시점 기준으로
+    // 판정하는 기존 동작은 그대로 유지된다.
+    const auto = document.createElement("option");
+    auto.value = AUTO_LATEST_READOUT;
+    auto.textContent = "최신 자동";
+    sel.appendChild(auto);
+  } else {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = placeholder;
+    sel.appendChild(empty);
+  }
+  options.forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value;
+    sel.appendChild(opt);
+  });
+  const nextValue = options.length
+    ? (previous === AUTO_LATEST_READOUT || options.includes(previous) ? previous : AUTO_LATEST_READOUT)
+    : "";
+  sel.value = nextValue;
+  lookupState.readout = nextValue;
 }
 function setFtTempOptions(options, placeholder = "Select") {
   setSelectOptions("ftTempSelect", options, placeholder, !lookupState.readout || options.length === 0);
@@ -2187,6 +2717,12 @@ async function loadLookup(field) {
   return data;
 }
 async function refreshLookup(field) {
+  const task = _refreshLookupInner(field);
+  pendingLookup = task;
+  try { return await task; }
+  finally { if (pendingLookup === task) pendingLookup = null; }
+}
+async function _refreshLookupInner(field) {
   if (field !== "device" && !lookupState.device) return;
   try {
     setStatus("Searching data...");
@@ -2198,6 +2734,7 @@ async function refreshLookup(field) {
       if (entry) {
         if (field === "readout") {
           setReadoutOptions(data.options || [], (data.options || []).length ? "Select" : "No data");
+          if (lookupState.readout) await refreshLookup("ft_temp");
         } else if (field === "ft_temp") {
           setFtTempOptions(data.options || [], (data.options || []).length ? "Select" : "No data");
         } else {
@@ -2210,7 +2747,7 @@ async function refreshLookup(field) {
       purposeSelect.value = data.options[0];
       lookupState.purpose = data.options[0];
       const itemData = await loadLookup("item");
-      setSelectOptions("reliabilityItemSelect", itemData.options || [], "Select");
+      setSelectOptions("reliabilityItemSelect", itemData.options || [], "전체 (미선택)");
     }
     if (field === "device") setDataRootPath(data.path);
     setStatus("Ready");
@@ -2280,6 +2817,7 @@ function bindLookupControls() {
       setSelectOptions(selectId, [], "Select");
     }
     sel.addEventListener("change", async () => {
+      clearAnalyzeError();
       lookupState[key] = sel.value;
       modePayloads = {};
       clearAnalysisDisplay("");
@@ -2353,9 +2891,8 @@ function setParallelAnalysisProgress(mode, percent, message = "Analyzing") {
 }
 function setAnalysisMode(mode, renderExisting = true) {
   analysisMode = mode === "fail" ? "fail" : "pass";
-  document.querySelectorAll(".toolbar-mode button").forEach(button => {
-    button.classList.toggle("active", button.dataset.mode === analysisMode);
-  });
+  updateResultTabButtons();
+  updateResultTabVisibility();
   if (isResultsWindow && renderExisting && !modePayloads[analysisMode]) {
     loadLatestAnalysis(analysisMode, { retry: true });
     return;
@@ -2403,13 +2940,18 @@ function detailColumns() {
     const overPanel = document.querySelector(".over-panel");
     if (grid) grid.classList.toggle("fail-grid", mode === "fail");
     if (section) section.classList.toggle("fail-layout", mode === "fail");
-    if (summaryTitle) summaryTitle.lastChild.textContent = isResultsWindow ? "1. Fail Data List" : "Fail & Abnormal Data Lists - All";
-    if (detailTitle) detailTitle.lastChild.textContent = isResultsWindow ? "3. Data Analysis Result" : "Fail & Abnormal Data Analysis Result";
+    // 결과 새 창도 본창과 같은 형식으로 통일한다.
+    // (예전에는 새 창만 "1./2./3." 번호가 붙은 보고서 형식이었고 Fail 목록과
+    //  Abnormal Pass 목록을 별도 패널로 분리했다 — 두 화면을 오갈 때 혼란스러웠다.)
+    if (summaryTitle) summaryTitle.lastChild.textContent = "Fail & Abnormal Data Lists - All";
+    if (detailTitle) detailTitle.lastChild.textContent = "Fail & Abnormal Data Analysis Result";
     if (overPanel) {
-      overPanel.style.display = isResultsWindow ? "" : mode === "fail" ? "none" : "";
+      overPanel.style.display = "none";
       const overTitle = overPanel.querySelector(".panel-label");
-      if (overTitle) overTitle.lastChild.textContent = isResultsWindow ? "2. Abnormal Pass List" : "Abnormal Shift Sample";
+      if (overTitle) overTitle.lastChild.textContent = "Abnormal Shift Sample";
     }
+    updateResultTabButtons();
+    updateResultTabVisibility();
     updateGraphPanels();
   }
 function emptyAnalysisPayload(mode = analysisMode, message = "") {
@@ -2425,9 +2967,33 @@ function emptyAnalysisPayload(mode = analysisMode, message = "") {
 function itemKey(row) {
   return row?.item_key || row?.item || "";
 }
+let itemNameMapCache = null;
+let itemNameMapSource = null;
+function itemNameMap() {
+  // 전체 분석에서 item_key 는 "{item}__{sha1[:10]}" 형태라 그대로 표시하면 안 된다.
+  // analysis 응답의 각 행에 깨끗한 item 이름이 함께 오므로 여기서 키->이름 표를 만든다.
+  // analysis 객체가 교체되면(새 분석/모드 전환/초기화) 자동으로 다시 만들어진다.
+  if (itemNameMapCache && itemNameMapSource === analysis) return itemNameMapCache;
+  const map = new Map();
+  for (const list of [analysis?.results, analysis?.selected_summary]) {
+    for (const row of (list || [])) {
+      const key = itemKey(row);
+      if (key && row?.item && !map.has(key)) map.set(key, row.item);
+    }
+  }
+  itemNameMapCache = map;
+  itemNameMapSource = analysis;
+  return map;
+}
 function itemDisplayName(key) {
   const data = itemCache[key];
-  return data?.item || data?.display_item || key;
+  if (data?.item) return data.item;
+  if (data?.display_item) return data.display_item;
+  // 아직 클릭하지 않아 itemCache 에 없는 항목: payload 에서 이름을 찾는다.
+  const name = itemNameMap().get(key);
+  if (name) return name;
+  // 최후 방어 — 그래도 못 찾으면 해시 접미사만 떼어낸다.
+  return String(key || "").replace(/__[0-9a-f]{10}$/, "");
 }
 function selectedResultRow() {
   return (analysis?.results || []).find(row => itemKey(row) === selectedItem)
@@ -2440,17 +3006,9 @@ function selectedItemTitleName() {
 }
 function updateChartTitles() {
   const itemName = selectedItemTitleName();
-  const suffix = itemName ? ` - ${itemName}` : "";
-  const titles = [
-    ["cdfPanelTitle", "CDF Distribution"],
-    ["diffCdfPanelTitle", "Diff. CDF Distribution"],
-    ["ppfPanelTitle", "Standard Normal Distribution"],
-    ["scatterPanelTitle", "Scattered Plot"]
-  ];
-  titles.forEach(([id, base]) => {
-    const node = document.getElementById(id);
-    if (node) node.textContent = `${base}${suffix}`;
-  });
+  const nameNode = document.getElementById("graphItemName");
+  if (nameNode) nameNode.textContent = itemName || "—";
+  renderItemThresholdLabel();
 }
 function updateGraphPanels() {
   const panelMap = {
@@ -2458,6 +3016,13 @@ function updateGraphPanels() {
     diff: "diff-cdf-panel",
     ppf: "ppf-panel",
     scatter: "scatter-panel"
+  };
+  const canvasMap = {
+    cdf: "cdfCanvas",
+    diff: "diffCdfCanvas",
+    ppf: "ppfCanvas",
+    scatter: "scatterCanvas",
+    wafer: "waferCanvas"
   };
   document.querySelectorAll(".graph-tabs button").forEach(button => {
     button.classList.toggle("active", button.dataset.graph === activeGraphTab);
@@ -2467,6 +3032,8 @@ function updateGraphPanels() {
       panel.classList.toggle("active-graph", key === activeGraphTab);
     });
   });
+  const copyBtn = document.querySelector(".crow.gsum .copy-chart-btn");
+  if (copyBtn) copyBtn.dataset.canvas = canvasMap[activeGraphTab] || "cdfCanvas";
 }
 function itemOptionText(row) {
   return row.test_number ? `${row.test_number} - ${row.item}` : (row.item || "");
@@ -2555,37 +3122,64 @@ function ensureSelectedItemVisible() {
     selectedItem = itemKey(rows[0]);
   }
 }
+function overSigmaRows() {
+  return (analysis?.over_sigma || []).filter(rowMatchesAnalysisFilters);
+}
+function ensureSelectedOverItemVisible() {
+  const keys = [];
+  overSigmaRows().forEach(row => (row.items || []).forEach(item => { if (item) keys.push(item); }));
+  if (!keys.length) {
+    selectedItem = "";
+    return;
+  }
+  if (!keys.includes(selectedItem)) {
+    selectedItem = keys[0];
+  }
+}
+function ensureSelectedItemVisibleForActiveTab() {
+  if (!isResultsWindow && resultViewMode === "sample") ensureSelectedOverItemVisible();
+  else ensureSelectedItemVisible();
+}
+function updateResultTabButtons() {
+  document.querySelectorAll("#resultModeBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.mode === analysisMode);
+  });
+  document.querySelectorAll("#resultViewBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.view === resultViewMode);
+  });
+}
+function updateResultTabVisibility() {
+  const resultWrap = document.getElementById("resultTableWrap");
+  const overWrap = document.getElementById("overSampleTableWrap");
+  const toggleWrap = document.getElementById("columnToggleWrap");
+  const showOver = resultViewMode === "sample";
+  if (resultWrap) resultWrap.style.display = showOver ? "none" : "";
+  if (overWrap) overWrap.style.display = showOver ? "block" : "none";
+  if (toggleWrap) toggleWrap.style.display = showOver ? "none" : "";
+}
+function setResultViewMode(view) {
+  resultViewMode = view === "sample" ? "sample" : "item";
+  updateResultTabButtons();
+  updateResultTabVisibility();
+  ensureSelectedItemVisibleForActiveTab();
+  refreshSelectedItem();
+}
 function renderAnalysisFilterBar() {
   const bar = document.getElementById("analysisFilterBar");
   if (!bar) return;
-  if (!analysis || (!analysis.total_analysis && !isResultsWindow)) {
+  // 본창과 동일한 조건. 예전에는 새 창이면 무조건 그려서, 단일 항목만 분석해도
+  // HAST·uHAST·TC 처럼 데이터 없는 빈 탭이 줄줄이 뜨고 그만큼 여백도 남았다.
+  if (!analysis || !analysis.total_analysis) {
     bar.classList.remove("active");
     bar.innerHTML = "";
     return;
   }
   bar.classList.add("active");
   bar.innerHTML = "";
-  const tableFilterArea = document.createElement("div");
-  tableFilterArea.className = "table-filter-area";
   const reliabilityRow = document.createElement("div");
-  reliabilityRow.className = "filter-row reliability-filter-row";
+  reliabilityRow.className = "crow tabs";
   const secondaryRow = document.createElement("div");
-  secondaryRow.className = "filter-row secondary-filter-row";
-  const makeButton = (group, value, label) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "filter-chip";
-    button.textContent = label;
-    button.classList.toggle("active", analysisFilters[group] === value);
-    button.addEventListener("click", async () => {
-      analysisFilters[group] = value;
-      if (group === "reliability_item") updateReliabilityTabs();
-      ensureSelectedItemVisible();
-      renderSummary();
-      await refreshSelectedItem();
-    });
-    return button;
-  };
+  secondaryRow.className = "crow foot";
   const makeTempButton = temp => {
     const button = document.createElement("button");
     button.type = "button";
@@ -2601,23 +3195,66 @@ function renderAnalysisFilterBar() {
       }
       renderAnalysisFilterBar();
       renderGraphFilterBar();
-      ensureSelectedItemVisible();
+      ensureSelectedItemVisibleForActiveTab();
       renderSummary();
       await refreshSelectedItem();
     });
     return button;
   };
   const reliabilityGroup = document.createElement("div");
-  reliabilityGroup.className = "filter-group reliability-filter-group";
-  reliabilityGroup.innerHTML = "<strong>Reliability</strong>";
+  reliabilityGroup.className = "item-tabs";
+  reliabilityGroup.setAttribute("role", "tablist");
+  reliabilityGroup.setAttribute("aria-label", "시험 항목");
+  const itemCounts = {};
+  (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
+  const makeItemTab = (value, label, count) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "item-tab";
+    button.dataset.item = value;
+    const isEmpty = count && count.total === 0;
+    button.classList.toggle("item-tab-empty", !!isEmpty);
+    if (isEmpty) button.disabled = true;
+    button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "item-tab-label";
+    labelSpan.textContent = label;
+    button.appendChild(labelSpan);
+    if (count) {
+      const badge = document.createElement("span");
+      badge.className = "item-tab-badge";
+      badge.textContent = `${count.select}/${count.total}`;
+      badge.title = analysisMode === "fail"
+        ? `Fail ${count.select}대 / 전체 Sample ${count.total}대`
+        : `이상 데이터 식별 ${count.select}건 / 분석 항목 ${count.total}건`;
+      button.appendChild(badge);
+    }
+    button.addEventListener("click", async () => {
+      analysisFilters.reliability_item = value;
+      updateReliabilityTabs();
+      ensureSelectedItemVisibleForActiveTab();
+      renderSummary();
+      await refreshSelectedItem();
+    });
+    return button;
+  };
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
-  reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeButton("reliability_item", item, item)));
-  reliabilityRow.appendChild(reliabilityGroup);
-  tableFilterArea.appendChild(reliabilityRow);
+  // 「전체」 탭을 없앴으므로, 선택이 비었거나 0건 항목이면 건수가 있는 첫 항목으로 이동
+  const firstWithData = reliabilityOptions.find(it => (itemCounts[it]?.total || 0) > 0);
+  const cur = analysisFilters.reliability_item || "";
+  if (!cur || (itemCounts[cur]?.total || 0) === 0) {
+    analysisFilters.reliability_item = firstWithData || reliabilityOptions[0] || "";
+  }
+  reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeItemTab(item, item, itemCounts[item] || null)));
+  const reliabilityTabwrap = document.createElement("div");
+  reliabilityTabwrap.className = "tabwrap";
+  reliabilityTabwrap.appendChild(reliabilityGroup);
+  reliabilityRow.appendChild(reliabilityTabwrap);
+  bar.appendChild(reliabilityRow);
 
   const tempGroup = document.createElement("div");
   tempGroup.className = "filter-group temp-filter-group";
-  tempGroup.innerHTML = "<strong>FT Temp.</strong>";
+  tempGroup.innerHTML = "<span class=\"lbl\">FT TEMP.</span>";
   availableFilterTemps().forEach(temp => tempGroup.appendChild(makeTempButton(temp)));
   tempGroup.appendChild(makeGraphCheckbox("Multi", analysisFilters.ft_temp_multi, async checked => {
     analysisFilters.ft_temp_multi = checked;
@@ -2629,13 +3266,7 @@ function renderAnalysisFilterBar() {
     await refreshSelectedItem();
   }));
   secondaryRow.appendChild(tempGroup);
-  tableFilterArea.appendChild(secondaryRow);
-  bar.appendChild(tableFilterArea);
-
-  const graphBar = document.createElement("div");
-  graphBar.id = "graphFilterBar";
-  graphBar.className = "graph-filter-bar";
-  bar.appendChild(graphBar);
+  bar.appendChild(secondaryRow);
 }
 function makeGraphCheckbox(labelText, checked, onChange) {
   const label = document.createElement("label");
@@ -2649,6 +3280,7 @@ function makeGraphCheckbox(labelText, checked, onChange) {
   return label;
 }
 function graphTabOptions() {
+  // Wafer Map 은 탭이 아니라 그래프 아래에 상시 표시한다
   return [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"], ["scatter", "Scattered Plot"]];
 }
 function makeGraphTabButton(key, label) {
@@ -2674,8 +3306,21 @@ function renderGraphFilterBar() {
   }
   bar.classList.add("active");
   bar.innerHTML = "";
-  const readoutStack = document.createElement("div");
-  readoutStack.className = "graph-readout-stack";
+  const tabsRow = document.createElement("div");
+  tabsRow.className = "crow tabs";
+  const graphTabs = document.createElement("div");
+  graphTabs.className = "graph-tabs";
+  graphTabs.setAttribute("role", "tablist");
+  graphTabs.setAttribute("aria-label", "Graph Type");
+  graphTabOptions().forEach(([key, label]) => graphTabs.appendChild(makeGraphTabButton(key, label)));
+  const graphTabwrap = document.createElement("div");
+  graphTabwrap.className = "tabwrap";
+  graphTabwrap.appendChild(graphTabs);
+  tabsRow.appendChild(graphTabwrap);
+  bar.appendChild(tabsRow);
+
+  const footRow = document.createElement("div");
+  footRow.className = "crow foot";
   const readoutGroup = document.createElement("div");
   readoutGroup.className = "graph-filter-group";
   readoutGroup.innerHTML = "<strong>Read-out</strong>";
@@ -2685,23 +3330,16 @@ function renderGraphFilterBar() {
       drawCharts();
     }));
   });
-  readoutStack.appendChild(readoutGroup);
-  const graphTabs = document.createElement("div");
-  graphTabs.className = "graph-tabs";
-  graphTabs.setAttribute("role", "tablist");
-  graphTabs.setAttribute("aria-label", "Graph Type");
-  graphTabOptions().forEach(([key, label]) => graphTabs.appendChild(makeGraphTabButton(key, label)));
-  readoutStack.appendChild(graphTabs);
-  bar.appendChild(readoutStack);
-
+  footRow.appendChild(readoutGroup);
   const graphGroup = document.createElement("div");
   graphGroup.className = "graph-filter-group graph-option-group";
   graphGroup.innerHTML = "<strong>Graph</strong>";
-  graphGroup.appendChild(makeGraphCheckbox("Fail Exception", analysisFilters.fail_exception, async checked => {
+  graphGroup.appendChild(makeGraphCheckbox("Fail 항목 제외", analysisFilters.fail_exception, async checked => {
     analysisFilters.fail_exception = checked;
     drawCharts();
   }));
-  bar.appendChild(graphGroup);
+  footRow.appendChild(graphGroup);
+  bar.appendChild(footRow);
 }
 function setResultPanelsVisible(visible) {
   const grid = document.getElementById("passResultsGrid");
@@ -2811,10 +3449,25 @@ async function requestAnalysisMode(mode) {
 
 async function runAnalysis() {
   const btn = document.getElementById("analyzeBtn");
+  clearAnalyzeError();
+  // 텍스트 입력의 change 는 blur 시점에 늦게 발생한다. Analyze 버튼 클릭이 그 blur 를
+  // 유발하면 lookupState 가 비워진 채 payload 가 만들어진다 — 먼저 확정시킨다.
+  document.getElementById("deviceInput")?.blur();
+  await new Promise(r => setTimeout(r, 0));
+  if (pendingLookup) { try { await pendingLookup; } catch (_) {} }
+  // 화면의 select 값을 정본으로 삼아 lookupState 를 재동기화
+  const deviceEl = document.getElementById("deviceInput");
+  if (deviceEl && deviceEl.value.trim()) lookupState.device = deviceEl.value.trim();
+  lookupOrder.forEach(([key, selectId]) => {
+    const el = document.getElementById(selectId);
+    if (el && el.value) lookupState[key] = el.value;
+  });
   const stopBtn = document.getElementById("stopAnalyzeBtn");
   const displayMode = analysisMode;
   activeAnalysisRunId = createAnalysisRunId();
-  openAnalysisResultsWindow(displayMode, true, activeAnalysisRunId);
+  // 결과 새 창은 사용자가 "결과 새 창" 버튼을 눌렀을 때만 띄운다.
+  // 예전에는 Analyze 를 누르면 매번 자동으로 팝업이 떠서 방해가 됐다.
+  // (버튼은 분석 결과가 준비되면 활성화된다 — setResultPanelsVisible 참조)
   btn.disabled = true;
   stopBtn.disabled = false;
   stopAnalysisRequested = false;
@@ -2835,6 +3488,7 @@ async function runAnalysis() {
     const loaded = [passData, failData].every(data => data.cache_status === "loaded");
     setStatus(loaded ? "Loaded" : "Done");
     document.getElementById("summary").textContent = displayData.message || `Pass/Fail analysis completed. Showing ${displayMode === "fail" ? "Fail" : "Pass"} results.`;
+    if (!isResultsWindow) setConditionCollapsed(true);
   } catch (err) {
     if (stopAnalysisRequested || err.message === "Analysis stopped.") {
       setStatus("Stopped");
@@ -2843,7 +3497,9 @@ async function runAnalysis() {
     } else {
       setStatus("Failed");
       await reportAnalysisResultsRunStatus("error", err.message || "Analyze failed.");
-      alert(err.message);
+      const sel = normalizedAnalysisSelection();
+      const missing = ["device", "ver", "purpose", "lot"].filter(k => !(sel[k] || "").trim());
+      showAnalyzeError(err.message || "Analyze failed.", missing);
     }
   } finally {
     btn.disabled = false;
@@ -3049,6 +3705,7 @@ function applyParentResultsTuning(params) {
   const visibility = parseToggleValue(firstQueryValue(params, ["showParentResults", "parentResults"]));
   if (visibility === false) {
     document.body.classList.remove("parent-results-visible", "parent-results-fixed-height");
+    document.body.classList.add("parent-results-hidden");
     return;
   }
 
@@ -3085,6 +3742,7 @@ function applyParentResultsTuning(params) {
     gridHeight || gridMinHeight || sectionOverflow || scrollOverflow || gridOverflow;
   if (!hasTuning) return;
 
+  document.body.classList.remove("parent-results-hidden");
   document.body.classList.add("parent-results-visible");
   if (adjustedHeight) {
     setParentResultsCssVar("--parent-results-section-height", adjustedHeight, applied, "parentResultsHeight");
@@ -3171,10 +3829,11 @@ function exportRawData() {
 }
 
 function bindResultControls() {
-  document.querySelectorAll(".toolbar-mode button").forEach(button => {
-    button.addEventListener("click", () => {
-      setAnalysisMode(button.dataset.mode);
-    });
+  document.querySelectorAll("#resultModeBar button").forEach(button => {
+    button.addEventListener("click", () => setAnalysisMode(button.dataset.mode));
+  });
+  document.querySelectorAll("#resultViewBar button").forEach(button => {
+    button.addEventListener("click", () => setResultViewMode(button.dataset.view));
   });
   document.querySelectorAll(".copy-chart-btn").forEach(button => {
     button.addEventListener("click", () => copyCanvasToClipboard(button.dataset.canvas, button));
@@ -3187,11 +3846,52 @@ function bindResultControls() {
     highlightMode = null;
     await refreshSelectedItem();
   });
+  const columnToggleBtn = document.getElementById("columnToggleBtn");
+  const columnToggleMenu = document.getElementById("columnToggleMenu");
+  if (columnToggleBtn && columnToggleMenu) {
+    // .panel 은 overflow:hidden 이라 absolute 메뉴가 잘린다. body 로 옮기고
+    // position:fixed 로 버튼 기준 좌표를 계산해 배치한다.
+    document.body.appendChild(columnToggleMenu);
+    const positionColumnMenu = () => {
+      const btnRect = columnToggleBtn.getBoundingClientRect();
+      const menuRect = columnToggleMenu.getBoundingClientRect();
+      let left = btnRect.right - menuRect.width;
+      let top = btnRect.bottom + 6;
+      left = Math.max(8, Math.min(left, window.innerWidth - menuRect.width - 8));
+      if (top + menuRect.height > window.innerHeight - 8) {
+        top = Math.max(8, btnRect.top - menuRect.height - 6);
+      }
+      columnToggleMenu.style.left = `${Math.round(left)}px`;
+      columnToggleMenu.style.top = `${Math.round(top)}px`;
+    };
+    const closeColumnMenu = () => columnToggleMenu.classList.remove("open");
+    columnToggleBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      if (columnToggleMenu.classList.contains("open")) {
+        closeColumnMenu();
+      } else {
+        columnToggleMenu.classList.add("open");
+        positionColumnMenu();
+      }
+    });
+    document.addEventListener("click", event => {
+      if (!columnToggleMenu.classList.contains("open")) return;
+      if (columnToggleMenu.contains(event.target) || event.target === columnToggleBtn) return;
+      closeColumnMenu();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && columnToggleMenu.classList.contains("open")) closeColumnMenu();
+    });
+    window.addEventListener("resize", () => {
+      if (columnToggleMenu.classList.contains("open")) positionColumnMenu();
+    });
+    window.addEventListener("scroll", () => {
+      if (columnToggleMenu.classList.contains("open")) positionColumnMenu();
+    }, true);
+  }
 }
 
 function bindParentControls() {
-  bindNavigation();
-  bindEditableTreeLabels();
   document.getElementById("analyzeBtn").addEventListener("click", runAnalysis);
   document.getElementById("stopAnalyzeBtn").addEventListener("click", () => {
     stopAnalysisRequested = true;
@@ -3200,9 +3900,41 @@ function bindParentControls() {
   document.getElementById("initializeBtn").addEventListener("click", initializeAnalysis);
   document.getElementById("openResultsWindowBtn").addEventListener("click", () => openAnalysisResultsWindow());
   bindLookupControls();
+  bindConditionToggle();
 }
 
-renderReliabilityTabs();
+function setConditionCollapsed(collapsed) {
+  const rdaView = document.getElementById("rdaView");
+  if (!rdaView) return;
+  rdaView.classList.toggle("condition-collapsed", collapsed);
+  const toggle = document.getElementById("conditionSecBtn");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  if (collapsed) renderConditionSummaryLine();
+}
+
+function renderConditionSummaryLine() {
+  const line = document.getElementById("conditionSummaryLine");
+  if (!line) return;
+  const parts = [];
+  if (lookupState.device) parts.push(lookupState.device);
+  if (lookupState.ver) parts.push(lookupState.ver);
+  if (lookupState.lot) parts.push(`Lot ${lookupState.lot}`);
+  if (lookupState.purpose) parts.push(lookupState.purpose);
+  parts.push(lookupState.item ? lookupState.item : "전체 시험 항목");
+  if (lookupState.readout && lookupState.readout !== AUTO_LATEST_READOUT) parts.push(lookupState.readout);
+  if (lookupState.ft_temp) parts.push(lookupState.ft_temp);
+  const includePre = document.getElementById("includePreCheck")?.checked;
+  line.textContent = `✓ ${parts.join(" · ")}${includePre ? " · Pre 포함" : " · Pre 제외"}`;
+}
+
+function bindConditionToggle() {
+  document.getElementById("conditionSecBtn")?.addEventListener("click", () => {
+    const view = document.getElementById("rdaView");
+    const next = !view.classList.contains("condition-collapsed");
+    setConditionCollapsed(next);
+  });
+}
+
 bindResultControls();
 if (isResultsWindow) {
   initializeResultsWindow();
@@ -3215,11 +3947,161 @@ function renderSummary() {
   renderAnalysisFilterBar();
   renderGraphFilterBar();
   updateGraphPanels();
-  ensureSelectedItemVisible();
+  ensureSelectedItemVisibleForActiveTab();
   renderItemSelect();
   renderResultTable();
   renderOverTable();
   renderFlagAlphaLabel();
+  renderSummaryStrip();
+}
+function failSelectCount() {
+  // "항목 List" 탭이므로 배지는 항목 수 기준으로 맞춘다(Pass 쪽 요약 스트립의
+  // "이상 데이터 식별" 카드와 동일 단위). 상세(샘플) 건수는 참고용으로 병기한다.
+  const payload = modePayloads.fail;
+  if (!payload) return null;
+  const itemCount = Array.isArray(payload.selected_summary) ? payload.selected_summary.length : null;
+  const detailCount = payload.select_count;
+  return {
+    items: Number.isFinite(itemCount) ? itemCount : null,
+    details: Number.isFinite(detailCount) ? detailCount : null,
+  };
+}
+function passSelectCount() {
+  const payload = modePayloads.pass;
+  const value = payload?.summary_counts?.select;
+  return Number.isFinite(value) ? value : null;
+}
+function overSampleItemCount(payload = modePayloads.pass) {
+  if (!payload) return null;
+  const keys = new Set();
+  (payload.over_sigma || []).forEach(row => (row.items || []).forEach(item => { if (item) keys.add(item); }));
+  return keys.size;
+}
+function setTabBadge(btn, value, title) {
+  if (!btn) return;
+  let badge = btn.querySelector(".tab-count-badge");
+  if (value != null) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "tab-count-badge";
+      btn.appendChild(badge);
+    }
+    badge.textContent = value;
+    if (title) badge.title = title;
+  } else if (badge) {
+    badge.remove();
+  }
+}
+function renderSummaryStrip() {
+  const strip = document.getElementById("summaryStrip");
+  const failBtn = document.getElementById("failModeBtn");
+  if (failBtn) {
+    let badge = failBtn.querySelector(".fail-count-badge");
+    const failCount = failSelectCount();
+    if (failCount && failCount.items) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "fail-count-badge";
+        failBtn.appendChild(badge);
+      }
+      // 탭 버튼이 고정폭(166px)이라 배지는 항목 수만 짧게 표시하고, 상세 건수는
+      // 필요할 때 마우스오버로 확인하도록 title 에 병기한다.
+      badge.textContent = failCount.items;
+      badge.title = (failCount.details != null && failCount.details !== failCount.items)
+        ? `이상 항목 ${failCount.items}개 / 상세 ${failCount.details}건`
+        : `이상 항목 ${failCount.items}개`;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+  const passCount = passSelectCount();
+  setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
+  if (!strip) return;
+  strip.innerHTML = "";
+  // Pass 는 항목 기준(분석 항목 수 중 몇 개가 이상인지), Fail 은 유닛 기준(전체 Sample 중
+  // 몇 대가 Fail/Pass 인지) -- 서로 다른 질문이라 카드 구성 자체를 모드별로 나눈다.
+  const counts = analysisMode === "pass" ? analysis?.summary_counts : analysis?.sample_counts;
+  if (!counts) return;
+  const cards = analysisMode === "pass" ? [
+    { key: "total_items", label: "분석 항목" },
+    { key: "select", label: "이상 데이터 식별", cls: "flag" },
+    { key: "ok", label: "정상", cls: "ok" },
+    { key: "not_evaluated", label: "판정 불가", cls: "warn", icon: "⚠", hideIfZero: true }
+  ] : [
+    { key: "total", label: "전체 Sample" },
+    { key: "fail", label: "Fail", cls: "flag" },
+    { key: "pass", label: "Pass", cls: "ok" }
+  ];
+  cards.forEach(card => {
+    const value = counts[card.key] ?? 0;
+    if (card.hideIfZero && !value) return;
+    const div = document.createElement("div");
+    div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
+    const valueEl = document.createElement("div");
+    valueEl.className = "summary-card-value";
+    valueEl.textContent = card.icon ? `${value} ${card.icon}` : `${value}`;
+    const labelEl = document.createElement("div");
+    labelEl.className = "summary-card-label";
+    labelEl.textContent = card.label;
+    div.appendChild(valueEl);
+    div.appendChild(labelEl);
+    strip.appendChild(div);
+  });
+  const footnote = document.createElement("div");
+  footnote.id = "judgmentFootnote";
+  footnote.className = "judgment-footnote";
+  strip.appendChild(footnote);
+  renderJudgmentFootnote();
+}
+function renderJudgmentFootnote() {
+  const el = document.getElementById("judgmentFootnote");
+  if (!el) return;
+  if (!analysis) { el.innerHTML = ""; return; }
+  if (analysisMode === "fail") { renderFailJudgmentFootnote(el); return; }
+  const parts = ["판정 기준 Grubbs"];
+  if (analysis.flag_mode === "fixed") {
+    parts.push(`고정 임계=${analysis.flag_limit ?? 3}`);
+  } else {
+    const alpha = Number(analysis.flag_alpha);
+    if (Number.isFinite(alpha)) parts.push(`α ${alpha}`);
+  }
+  const row = selectedResultRow() || {};
+  const n = Number(row.n_post);
+  const mea = Number(row.mea_threshold ?? itemCache[selectedItem]?.mea_threshold);
+  if (Number.isFinite(n)) parts.push(`유닛 ${n}개`);
+  if (Number.isFinite(mea)) parts.push(`임계 ${mea.toFixed(3)}`);
+  let text = parts.join(" · ");
+  const readout = row.judged_readout;
+  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
+  const textSpan = document.createElement("span");
+  textSpan.textContent = text;
+  const infoSpan = document.createElement("span");
+  infoSpan.className = "footnote-info";
+  infoSpan.title = "임계는 유닛 수에 따라 달라집니다 (N=57→3.539, N=145→3.879, N=3000→4.673)";
+  infoSpan.textContent = "ⓘ";
+  el.innerHTML = "";
+  el.appendChild(textSpan);
+  el.appendChild(infoSpan);
+}
+function renderFailJudgmentFootnote(el) {
+  // Fail 목록은 규격(LSL/USL) 이탈이 1차 선별 기준이라 Pass 탭의 "판정 기준 Grubbs·임계"
+  // 문구를 그대로 쓰면 오해를 준다. Grubbs 통계(mea/diff threshold)는 이탈 유형
+  // (Intermittent/Unstable/Excessive/Slight/Tail) 을 보조 분류하는 데만 쓰인다.
+  const parts = ["판정 기준 규격 이탈(Spec Out)"];
+  const failItemCount = (analysis.selected_summary || []).length;
+  if (failItemCount) parts.push(`Fail 항목 ${failItemCount}건`);
+  let text = parts.join(" · ");
+  const readout = (selectedResultRow() || {}).judged_readout;
+  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
+  const textSpan = document.createElement("span");
+  textSpan.textContent = text;
+  const infoSpan = document.createElement("span");
+  infoSpan.className = "footnote-info";
+  infoSpan.title = "Fail 목록은 규격(LSL/USL) 이탈 여부를 1차 기준으로 선별합니다. 이탈 유형(Intermittent/Unstable/Excessive/Slight/Tail)은 정상 표본 분포 기준 Grubbs 통계로 보조 분류한 결과입니다.";
+  infoSpan.textContent = "ⓘ";
+  el.innerHTML = "";
+  el.appendChild(textSpan);
+  el.appendChild(infoSpan);
 }
 function renderFlagAlphaLabel() {
   // §S7: 판정 임계가 항목별 Grubbs(alpha 기반)로 바뀐 뒤, 패널 제목에 박혀 있던
@@ -3238,7 +4120,7 @@ function renderFlagAlphaLabel() {
 function renderItemThresholdLabel() {
   // 선택된 항목의 실제 판정 임계값(n_post/n_diff 에 따라 항목마다 다름). payload 에
   // 이미 있는 mea_threshold/diff_threshold(§S3) 를 표시만 한다 — 재계산하지 않는다.
-  const el = document.getElementById("itemThresholdLabel");
+  const el = document.getElementById("graphItemMeta");
   if (!el) return;
   const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
   const mea = Number(data.mea_threshold);
@@ -3309,11 +4191,29 @@ async function refreshSelectedItem() {
     renderOverTable();
     const itemSelect = document.getElementById("itemSelect");
     if (itemSelect) itemSelect.value = selectedItem;
-    renderDetailTable();
-    await loadItem(selectedItem);
-    await loadRelatedGraphItems();
+
+    // 상세 표를 미리 그리지 않는다.
+    // 예전에는 데이터가 오기 전에 한 번 그려서 헤더 + "Loading..." 한 줄로 표가
+    // 접혔다가, 로드가 끝나면 다시 펼쳐졌다. 그 사이 패널 높이가 요동쳐서
+    // 항목을 처음 고를 때마다 깜빡이는 것처럼 보였다(실측 173 → 70 → 173px).
+    //   - 이미 캐시에 있으면 즉시 그린다 (서버 왕복이 없어 깜빡일 일이 없다)
+    //   - 표가 아직 비어 있으면 그려준다 (접힐 내용이 없으므로 안전하고,
+    //     첫 분석 직후 빈 패널만 보이는 것을 막는다)
+    //   - 그 외에는 직전 내용을 그대로 두고 제목 옆에만 로딩 표시를 띄운다
+    const detailCached = !!itemCache[selectedItem];
+    const detailHasRows = !!document.querySelector("#detailTable tbody tr");
+    if (detailCached || !detailHasRows) renderDetailTable();
+    else setDetailLoading(true);
+
+    try {
+      await loadItem(selectedItem);
+      await loadRelatedGraphItems();
+    } finally {
+      setDetailLoading(false);
+    }
     renderDetailTable();
     renderItemThresholdLabel();
+    renderJudgmentFootnote();
     drawCharts();
     if (analysis) setStatus("Done");
   } catch (err) {
@@ -3351,6 +4251,8 @@ function summaryCellValue(row, key, payload = analysis) {
     const ratio = Number(row.diff_mean);
     return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(2)}%` : "";
   }
+  // Fail 행에는 reason 이 없다 -- 같은 성격의 fail_type(이탈 유형)으로 대체한다.
+  if (key === "reason") return row.reason || row.fail_type || "";
   if (key === "unit") return row.unit || data.unit || "";
   if (key === "lower_limit") return row.lower_limit ?? data.lower_limit;
   if (key === "upper_limit") return row.upper_limit ?? data.upper_limit;
@@ -3439,11 +4341,9 @@ function scheduleModeItemLoad(mode, item) {
   }).catch(() => {});
 }
 function renderResultTable() {
+  // 새 창도 본창과 동일하게 현재 모드(Fail / Abnormal Pass)의 목록을 그린다.
+  // 예전에는 새 창이 항상 Fail 목록만 그려서, 같은 분석인데 표 내용이 달랐다.
   const table = document.getElementById("resultTable");
-  if (isResultsWindow) {
-    renderFailDataListTable(table);
-    return;
-  }
   renderSummaryListTable(table, analysis, analysis?.analysis_mode || analysisMode);
 }
 function renderFailDataListTable(table) {
@@ -3452,15 +4352,83 @@ function renderFailDataListTable(table) {
 function renderAbnormalPassListTable(table) {
   renderSummaryListTable(table, payloadForMode("pass"), "pass");
 }
+function renderColumnToggleMenu(resultMode, allCols) {
+  const menu = document.getElementById("columnToggleMenu");
+  if (!menu) return;
+  const defaultCols = resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS;
+  const visible = columnVisibility[resultMode] || new Set(defaultCols);
+  menu.innerHTML = "";
+
+  const head = document.createElement("div");
+  head.className = "column-menu-head";
+  const selectAllItem = document.createElement("label");
+  selectAllItem.className = "column-toggle-item";
+  const selectAllBox = document.createElement("input");
+  selectAllBox.type = "checkbox";
+  const updateSelectAllState = () => {
+    const total = allCols.length;
+    const checkedCount = allCols.filter(([key]) => visible.has(key)).length;
+    selectAllBox.checked = total > 0 && checkedCount === total;
+    selectAllBox.indeterminate = checkedCount > 0 && checkedCount < total;
+  };
+  selectAllBox.addEventListener("change", () => {
+    if (selectAllBox.checked) allCols.forEach(([key]) => visible.add(key));
+    else allCols.forEach(([key]) => visible.delete(key));
+    renderResultTable();
+    renderOverTable();
+  });
+  selectAllItem.appendChild(selectAllBox);
+  selectAllItem.appendChild(document.createTextNode("전체 선택"));
+  head.appendChild(selectAllItem);
+
+  const resetBtn = document.createElement("button");
+  resetBtn.type = "button";
+  resetBtn.className = "column-menu-reset";
+  resetBtn.textContent = "기본값으로";
+  resetBtn.addEventListener("click", () => {
+    visible.clear();
+    defaultCols.forEach(key => visible.add(key));
+    renderResultTable();
+    renderOverTable();
+  });
+  head.appendChild(resetBtn);
+  menu.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "column-menu-body";
+  allCols.forEach(([key, label]) => {
+    const item = document.createElement("label");
+    item.className = "column-toggle-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = visible.has(key);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) visible.add(key); else visible.delete(key);
+      updateSelectAllState();
+      renderResultTable();
+      renderOverTable();
+    });
+    item.appendChild(checkbox);
+    item.appendChild(document.createTextNode(label));
+    body.appendChild(item);
+  });
+  menu.appendChild(body);
+  updateSelectAllState();
+}
 function renderSummaryListTable(table, payload, mode) {
   table.innerHTML = "";
   const thead = table.createTHead();
   const hr = thead.insertRow();
-  const cols = resultColumnsForPayload(payload, mode);
+  const resultMode = mode === "fail" ? "fail" : (payload?.analysis_mode || "pass");
+  const allCols = resultColumnsForPayload(payload, mode);
+  const visible = columnVisibility[resultMode] || new Set(resultMode === "fail" ? DEFAULT_VISIBLE_COLUMNS_FAIL : DEFAULT_VISIBLE_COLUMNS_PASS);
+  const cols = allCols.filter(([key]) => visible.has(key));
+  renderColumnToggleMenu(resultMode, allCols);
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
-    th.textContent = label + (sortState.column === key ? (sortState.reverse ? " v" : " ^") : "");
+    th.textContent = label + (sortState.column === key ? (sortState.reverse ? " ▼" : " ▲") : "");
     if (key === "n") th.title = "표준편차 계산에 사용된 유닛 수";
+    if (key === "stdev") th.title = "표본표준편차 (ddof = 1, n-1)";
     th.onclick = () => {
       if (sortState.column === key) sortState.reverse = !sortState.reverse;
       else sortState = { column: key, reverse: false };
@@ -3498,13 +4466,12 @@ function renderSummaryListTable(table, payload, mode) {
   });
 }
 function renderOverTable() {
-  const table = document.getElementById("overTable");
-  if (isResultsWindow) {
-    renderAbnormalPassListTable(table);
-    return;
-  }
+  renderOverSampleTable(document.getElementById("overSampleTable"));
+}
+function renderOverSampleTable(table) {
+  if (!table) return;
   table.innerHTML = "";
-  const overRows = (analysis.over_sigma || []).filter(rowMatchesAnalysisFilters);
+  const overRows = overSigmaRows();
   const maxItems = Math.max(1, ...overRows.map(r => r.items.length));
   const head = table.createTHead().insertRow();
   ["Sample #", ...Array.from({ length: maxItems }, (_, i) => i === 0 ? "Abnormal Shift Items" : "")].forEach(label => {
@@ -3522,6 +4489,7 @@ function renderOverTable() {
       td.textContent = itemDisplayName(item);
       if (item) {
         td.className = "over-item";
+        td.classList.toggle("active", item === selectedItem);
         td.onclick = async () => {
           selectedItem = item;
           highlightSample = row.sample;
@@ -3564,14 +4532,28 @@ function detailCellValue(row, key) {
   if (key === "unit") return row.unit || summary.unit || data.unit || "";
   return row[key];
 }
+// 상세 표를 다시 그리지 않고 제목 옆에만 로딩 상태를 보여준다.
+// 끄는 것은 곧바로 이어지는 renderDetailTable() 이 문구를 덮어쓰며 처리한다.
+function setDetailLoading(on) {
+  const meta = document.getElementById("detailPanelMeta");
+  if (!meta) return;
+  meta.classList.toggle("is-loading", !!on);
+  if (on) meta.textContent = `${selectedItemTitleName()} · 불러오는 중…`;
+}
 function renderDetailTable() {
+  const metaNode = document.getElementById("detailPanelMeta");
+  if (metaNode) {
+    const item = itemCache[selectedItem];
+    const count = item?.details?.length || 0;
+    metaNode.textContent = selectedItem ? `${selectedItemTitleName()} · ${count}건` : "";
+  }
   const table = document.getElementById("detailTable");
   table.innerHTML = "";
   const head = table.createTHead().insertRow();
   const cols = detailColumns();
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
-    th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " v" : " ^") : "");
+    th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " ▼" : " ▲") : "");
     th.onclick = () => {
       if (detailSortState.column === key) detailSortState.reverse = !detailSortState.reverse;
       else detailSortState = { column: key, reverse: false };
@@ -4198,6 +5180,14 @@ function waferPositionForSample(sample) {
   return { row: Math.floor(index / 12), col: index % 12 };
 }
 function drawWaferMap() {
+  const metaEl = document.getElementById("waferPanelMeta");
+  if (metaEl) {
+    const data0 = itemCache[selectedItem];
+    const row0 = data0?.details?.find(r => String(r.sample) === String(highlightSample)) || data0?.details?.[0] || {};
+    const wafer = row0.wafer || row0.wafer_no || data0?.wafer_no || "W--";
+    const sample = highlightSample || row0.sample;
+    metaEl.textContent = `Wafer ${wafer}` + (sample != null && sample !== "" ? ` · Sample ${sample}` : "");
+  }
   const canvas = document.getElementById("waferCanvas");
   if (!canvas) return;
   const { ctx, w, h } = setupHiResCanvas(canvas, 520, 300);
@@ -4206,15 +5196,16 @@ function drawWaferMap() {
   ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = "#0b438c";
   ctx.font = "800 16px Segoe UI";
-  ctx.fillText("Wafer No.:", 18, 30);
   const selectedDetail = data?.details?.find(row => String(row.sample) === String(highlightSample)) || data?.details?.[0] || {};
-  ctx.fillText(selectedDetail.wafer || selectedDetail.wafer_no || data?.wafer_no || "W--", 106, 30);
   const rows = 10, cols = 12;
-  const cell = Math.min((w - 250) / cols, (h - 70) / rows);
-  const gridW = cols * cell;
-  const gridH = rows * cell;
   const left = 115;
   const top = 50;
+  const legendReserve = Math.min(190, Math.max(110, w * 0.24));
+  const cellW = (w - left - legendReserve - 16) / cols;
+  const cellH = (h - top - 14) / (rows + 0.9);  // 0.9 = 반지름 여유(0.45셀) + 하단 여백
+  const cell = Math.max(6, Math.min(cellW, cellH));
+  const gridW = cols * cell;
+  const gridH = rows * cell;
   const cx = left + gridW / 2;
   const cy = top + gridH / 2;
   const radius = Math.min(gridW, gridH) / 2 + cell * 0.45;
@@ -4253,7 +5244,7 @@ function drawWaferMap() {
   for (let col = 0; col < cols; col++) ctx.fillText(String(col + 1), left + col * cell + cell / 2, top - 12);
   ctx.textAlign = "right";
   "ABCDEFGHIJ".split("").forEach((label, row) => ctx.fillText(label, left - 10, top + row * cell + cell / 2 + 4));
-  const legendX = left + gridW + 64;
+  const legendX = Math.min(left + gridW + 40, w - 150);
   const legendY = top + 70;
   const legend = [["#ff6b6b", `Fail${highlightSample ? ` (Sample #${highlightSample})` : ""}`], ["#b8dafc", "Good"], ["#cfcfcf", "Edge / No Die"]];
   ctx.textAlign = "left";
@@ -4732,10 +5723,33 @@ function markerLabel(ctx, x, y, label, color, align = "left") {
   ctx.fillText(label, startX + markerWidth + gap, y + 4);
   ctx.restore();
 }
-window.addEventListener("resize", () => analysis && drawCharts());
+let chartRedrawRaf = 0;
+let lastGraphBoxKey = "";
+function scheduleChartRedraw() {
+  if (chartRedrawRaf) return;
+  chartRedrawRaf = requestAnimationFrame(() => {
+    chartRedrawRaf = 0;
+    if (analysis) drawCharts();
+  });
+}
+window.addEventListener("resize", scheduleChartRedraw);
+if (typeof ResizeObserver !== "undefined") {
+  const graphColumn = document.querySelector(".result-graph-column");
+  if (graphColumn) {
+    new ResizeObserver(entries => {
+      const box = entries[0] && entries[0].contentRect;
+      if (!box) return;
+      const key = `${Math.round(box.width)}x${Math.round(box.height)}`;
+      if (key === lastGraphBoxKey) return;
+      lastGraphBoxKey = key;
+      scheduleChartRedraw();
+    }).observe(graphColumn);
+  }
+}
 </script>
 </body>
 </html>"""
+HTML = HTML.replace("__APP_REVISION__", APP_REVISION)
 
 
 class MultipartPart:
@@ -4855,6 +5869,20 @@ def filter_records_by_allowed_units(pre_records, post_records):
     )
 
 
+def excluded_items_by_unit(pre_records, post_records):
+    """unit_is_allowed() 에서 걸러진 항목을 item/unit 단위로 모은다 (인라인 배너용)."""
+    all_items = set(pre_records) | set(post_records)
+    excluded = []
+    for item in all_items:
+        if item_has_allowed_unit(pre_records.get(item, [])) or item_has_allowed_unit(post_records.get(item, [])):
+            continue
+        records = post_records.get(item) or pre_records.get(item) or []
+        unit = records[0].get("unit", "") if records else ""
+        excluded.append({"item": item, "unit": unit, "reason": "unit_not_allowed"})
+    excluded.sort(key=lambda row: natural_key(row["item"]))
+    return excluded
+
+
 RECORD_CACHE = {}
 RECORD_CACHE_LOCK = threading.Lock()
 RECORD_PARSE_LOCKS = {}
@@ -4935,10 +5963,12 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     if bin1_only:
         update(70, "Filtering Pass Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
+        app.excluded_items = excluded_items_by_unit(app.pre_records, app.post_records)
         app.pre_records, app.post_records = filter_records_by_allowed_units(app.pre_records, app.post_records)
     else:
         update(70, "Excluding Fail Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
+        app.excluded_items = []
     # pre_cdf_values_for_item() 의 PASS_SAMPLE_IDS_AUTO 센티널을 여기서 한 번만 실제 값으로
     # 치환한다. 그렇지 않으면 item_to_json() 이 항목마다 pass_sample_ids_from_records(전체
     # pre_records)를 다시 순회한다 (항목 수 x pre 레코드 수 규모로 재계산, §2 벤치에서 실측:
@@ -5679,30 +6709,45 @@ def reliability_sort_key(value):
 
 
 def total_analysis_combinations(selection):
+    # §W0: 조합 키에서 readout 을 뺀다 - 판정은 "분석 시점 기준 마지막 Read-out" 하나로만
+    # 한다. T0~T3 (post_history) 는 추세 비교용일 뿐 판정에는 쓰지 않는다.
     base_path = selected_data_path(selection)
     post_dir = child_dir_containing(base_path, "post")
     groups = {}
+    filename_warnings = []
     for path in data_files(post_dir):
         parsed = parse_post_file_name(path)
         if not parsed:
             continue
+        if parsed.get("readout_missing"):
+            filename_warnings.append({
+                "file": os.path.basename(path),
+                "reason": "readout_not_found",
+                "used": parsed["readout"],
+            })
         temps = file_ft_temps(path)
         if not temps:
             temp = ft_temp_from_code(parsed["temp_code"])
             temps = [temp] if temp else []
         for temp in temps:
-            key = (parsed["item"], parsed["readout"], temp)
-            groups.setdefault(key, []).append(path)
+            key = (parsed["item"], temp)
+            groups.setdefault(key, {}).setdefault(parsed["readout"], []).append(path)
     combos = []
-    for (item, readout, ft_temp), files in groups.items():
+    for (item, ft_temp), readout_files in groups.items():
+        # post_history_files_by_readout() 와 동일하게 readout_sort_key 로 정렬해
+        # "마지막 회차"를 고른다 (재사용: 같은 정렬 기준을 두 곳에서 어긋나지 않게 유지).
+        readout_history = sorted(readout_files.keys(), key=readout_sort_key)
+        judged_readout = readout_history[-1]
         combos.append({
             "item": item,
-            "readout": readout,
+            "readout": judged_readout,
+            "judged_readout": judged_readout,
+            "readout_history": readout_history,
             "ft_temp": ft_temp,
-            "post_files": sorted(files, key=stage_sort_key),
+            "post_files": sorted(readout_files[judged_readout], key=stage_sort_key),
         })
-    combos.sort(key=lambda row: (reliability_sort_key(row["item"]), temp_sort_key(row["ft_temp"]), readout_sort_key(row["readout"])))
-    return base_path, combos
+    combos.sort(key=lambda row: (reliability_sort_key(row["item"]), temp_sort_key(row["ft_temp"])))
+    return base_path, combos, filename_warnings
 
 
 def pre_file_for_total_combo(base_path, ft_temp, include_pre):
@@ -5721,7 +6766,8 @@ def total_item_key(reliability_item, ft_temp, readout, item):
     return f"{item}__{suffix}"
 
 
-def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
+def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_history=None):
+    history = readout_history or [readout]
     key_by_item = {}
     for row in payload.get("results", []):
         original_item = row.get("item", "")
@@ -5731,6 +6777,8 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
     for row in payload.get("selected_summary", []):
         original_item = row.get("item", "")
         key = key_by_item.get(original_item) or total_item_key(reliability_item, ft_temp, readout, original_item)
@@ -5739,6 +6787,8 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
     decorated_items = {}
     for original_item, item_payload in (payload.get("items") or {}).items():
         key = key_by_item.get(original_item) or total_item_key(reliability_item, ft_temp, readout, original_item)
@@ -5748,12 +6798,16 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout):
         enriched["reliability_item"] = reliability_item
         enriched["ft_temp"] = ft_temp
         enriched["readout"] = readout
+        enriched["judged_readout"] = readout
+        enriched["readout_history"] = history
         decorated_items[key] = enriched
     payload["items"] = decorated_items
     for row in payload.get("over_sigma", []):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+        row["judged_readout"] = readout
+        row["readout_history"] = history
         row["items"] = [key_by_item.get(item, item) for item in row.get("items", [])]
     return payload
 
@@ -5803,6 +6857,49 @@ def merge_combo_payloads(combo_payloads, mode):
     merged["total_reliability_items"] = sorted(reliability_seen, key=reliability_sort_key)
     merged["total_ft_temps"] = sorted(temp_seen, key=temp_sort_key)
     merged["message"] = f"Total Analysis completed. Conditions {len(combo_payloads)}, Items {len(merged['selected_summary'])}"
+    if mode == "pass":
+        summary_counts = {"total_items": 0, "select": 0, "ok": 0, "not_evaluated": 0, "insufficient_n": 0}
+        excluded_seen = {}
+        item_counts_by_item = {}
+        for payload in combo_payloads:
+            counts = payload.get("summary_counts") or {}
+            for key in ("total_items", "select", "ok", "not_evaluated", "insufficient_n"):
+                summary_counts[key] += counts.get(key, 0) or 0
+            for excl in payload.get("excluded_items", []):
+                excluded_seen[(excl.get("item"), excl.get("unit"))] = excl
+            for entry in payload.get("item_counts", []):
+                item = entry.get("reliability_item", "")
+                agg = item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+                agg["select"] += entry.get("select", 0) or 0
+                agg["total"] += entry.get("total", 0) or 0
+        summary_counts["excluded"] = len(excluded_seen)
+        for item in RELIABILITY_ITEMS:
+            item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+        merged["summary_counts"] = summary_counts
+        merged["excluded_items"] = sorted(excluded_seen.values(), key=lambda row: natural_key(row.get("item", "")))
+        merged["item_counts"] = sorted(
+            item_counts_by_item.values(),
+            key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
+        )
+    elif mode == "fail":
+        sample_counts = {"total": 0, "fail": 0, "pass": 0}
+        item_counts_by_item = {}
+        for payload in combo_payloads:
+            counts = payload.get("sample_counts") or {}
+            for key in ("total", "fail", "pass"):
+                sample_counts[key] += counts.get(key, 0) or 0
+            for entry in payload.get("item_counts", []):
+                item = entry.get("reliability_item", "")
+                agg = item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+                agg["select"] += entry.get("select", 0) or 0
+                agg["total"] += entry.get("total", 0) or 0
+        for item in RELIABILITY_ITEMS:
+            item_counts_by_item.setdefault(item, {"reliability_item": item, "select": 0, "total": 0})
+        merged["sample_counts"] = sample_counts
+        merged["item_counts"] = sorted(
+            item_counts_by_item.values(),
+            key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
+        )
     return merged
 
 
@@ -5996,6 +7093,20 @@ def fail_type_for_detail(
     return "Tail"
 
 
+FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2, "Slight": 3, "Tail": 4}
+
+
+def worst_fail_type(details):
+    """항목의 detail 행들 중 가장 심각한 fail_type 을 고른다.
+
+    우선순위는 fail_type_for_detail() 주석에 명시된 순서를 그대로 쓴다:
+    Intermittent > Unstable > Excessive > Slight > Tail.
+    """
+    if not details:
+        return ""
+    return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
+
+
 def selected_summary_rows(app):
     rows = []
     for row in app.results:
@@ -6078,6 +7189,35 @@ def selected_summary_rows(app):
     return sorted(rows, key=lambda row: (natural_key(row["test_number"]), row["item"]))
 
 
+def compute_summary_counts(results, excluded_items):
+    """results 의 확정된 result 값을 세기만 한다 (판정 로직에는 관여하지 않음).
+
+    SELECT/OK/INSUFFICIENT N 이외의 모든 result(NOT EVALUATED, NO PRE ITEM 등
+    "판정 불가" 계열)는 not_evaluated 로 묶는다 (verdict_diff.classify_result 의
+    판정불가 그룹과 동일한 분류 기준). 이렇게 하면 select+ok+not_evaluated+
+    insufficient_n 합이 total_items 와 항상 일치한다.
+    """
+    select = ok = not_evaluated = insufficient_n = 0
+    for row in results:
+        result = row.get("result")
+        if result == "SELECT":
+            select += 1
+        elif result == "OK":
+            ok += 1
+        elif result == "INSUFFICIENT N":
+            insufficient_n += 1
+        else:
+            not_evaluated += 1
+    return {
+        "total_items": len(results),
+        "select": select,
+        "ok": ok,
+        "not_evaluated": not_evaluated,
+        "insufficient_n": insufficient_n,
+        "excluded": len(excluded_items),
+    }
+
+
 def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     app = make_app(pre_path, post_path, bin1_only, progress, include_pre)
     if progress:
@@ -6090,11 +7230,14 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
     app.results.sort(key=lambda row: (natural_key(row.get("test_number")), row.get("item", "")))
     results = [{k: to_jsonable(v) for k, v in row.items()} for row in app.results]
     selected_summary = [{k: to_jsonable(v) for k, v in row.items()} for row in selected_summary_rows(app)]
+    excluded_items = list(getattr(app, "excluded_items", []))
     payload = {
         "results": results,
         "selected_summary": selected_summary,
         "over_sigma": over_rows,
         "select_count": CdfCompareApp.count_flags(app),
+        "summary_counts": compute_summary_counts(results, excluded_items),
+        "excluded_items": excluded_items,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
@@ -6300,6 +7443,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                 "qty": len(details),
                 "qty_ratio": (len(details) / n_pass) if n_pass else None,
                 "sample_numbers": ", ".join(sample_numbers),
+                "fail_type": worst_fail_type(details),
             }
         )
         results.append({"test_number": test_number, "item": item, "result": "SELECT"})
@@ -6318,6 +7462,17 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         }
     summary_rows.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
     results.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
+    over = {}
+    for item, item_payload in item_payloads.items():
+        for detail in item_payload["details"]:
+            if not detail.get("fail_type"):
+                continue
+            over.setdefault(detail["sample"], []).append(item)
+    over_rows = [
+        {"sample": sample, "items": sorted(items, key=lambda item: item_sort_key_for_records(sample_states, item))}
+        for sample, items in over.items()
+    ]
+    over_rows.sort(key=lambda row: (-len(row["items"]), natural_key(row["sample"])))
     message = f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}"
     match_summary = (
         match_summary_for_files(pre_records, cached_item_records(merged_files[0])) if include_pre else None
@@ -6325,13 +7480,20 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     payload = {
         "results": results,
         "selected_summary": [{key: to_jsonable(value) for key, value in row.items()} for row in summary_rows],
-        "over_sigma": [],
+        "over_sigma": over_rows,
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
+        # 유닛(Sample) 기준 요약 스트립용. fail_samples/pass_samples 는 이미 위에서
+        # 판정 완료된 목록이라 새로 계산하지 않고 개수만 센다.
+        "sample_counts": {
+            "total": len(sample_states),
+            "fail": len(fail_samples),
+            "pass": len(pass_samples),
+        },
     }
     if match_summary:
         payload["match_summary"] = match_summary
@@ -6895,6 +8057,10 @@ def payload_with_items(app, payload, mode, cache_status):
             item = row.get("item")
             if item and item not in items:
                 items[item] = item_to_json(app, item)
+        for over_row in payload.get("over_sigma", []):
+            for item in over_row.get("items", []):
+                if item and item not in items:
+                    items[item] = item_to_json(app, item)
     enriched = dict(payload)
     enriched["items"] = items
     enriched["analysis_mode"] = mode
@@ -7033,16 +8199,39 @@ def data_files(path):
     )
 
 
+def _token_looks_like_readout(token):
+    # 리드아웃 토큰(1000hrs, 168h, 500)은 항상 숫자를 포함한다. 반대로
+    # RELIABILITY_ITEMS(HTOL, HAST, uHAST, TC, PTC, HTSL, HBM, CDM, LU)에는
+    # 숫자를 포함하는 이름이 하나도 없어 이 기준과 절대 충돌하지 않는다.
+    return bool(re.search(r"\d", token))
+
+
 def parse_post_file_name(path):
     stem = os.path.splitext(os.path.basename(path))[0]
-    parts = stem.split("_")
-    if len(parts) < 2:
+    parts = [part.strip() for part in stem.split("_") if part.strip()]
+    if not parts:
         return None
-    item = parts[-2].strip()
-    readout = parts[-1].strip()
-    if not item or not readout:
+    temp_code = parts[1] if len(parts) > 1 else ""
+    last = parts[-1]
+    if len(parts) >= 2 and _token_looks_like_readout(last):
+        item = parts[-2]
+        readout = last
+        readout_missing = False
+    else:
+        # 리드아웃 토큰이 없다 (예: "..._HTOL.CSV"). 파일을 버리지 않고
+        # 기본 리드아웃 "Post" 하나로 취급한다 - 판정은 이 파일 하나로 한다.
+        item = last
+        readout = "Post"
+        readout_missing = True
+    if not item:
         return None
-    return {"stem": stem, "temp_code": parts[1].strip(), "item": item, "readout": readout}
+    return {
+        "stem": stem,
+        "temp_code": temp_code,
+        "item": item,
+        "readout": readout,
+        "readout_missing": readout_missing,
+    }
 
 
 def post_file_contains_item(path, item):
@@ -7131,6 +8320,19 @@ def post_file_ft_temps(path, item, readout):
     return sorted(available_temps, key=lambda temp: order.get(temp, 99))
 
 
+AUTO_LATEST_READOUT = "__latest__"
+
+
+def resolve_auto_readout(post_dir, item, readout):
+    # "최신 자동" 선택(sentinel) 이면 그 시점에 존재하는 회차 중 readout_sort_key
+    # 기준 마지막 것으로 해석한다. 특정 회차를 고른 경우는 그대로 통과시켜
+    # "500hrs 시점으로 다시 판정" 같은 기존 동작을 유지한다.
+    if readout != AUTO_LATEST_READOUT:
+        return readout
+    options = post_file_readouts(post_dir, item)
+    return options[-1] if options else ""
+
+
 def resolve_selection_files(selection):
     pre_path, post_files, base = resolve_selection_file_set(selection)
     return pre_path, post_files[-1], base
@@ -7139,11 +8341,14 @@ def resolve_selection_files(selection):
 def resolve_selection_file_set(selection):
     base = selected_data_path(selection)
     item = selection.get("item", "").strip()
-    readout = selection.get("readout", "").strip()
     ft_temp = selection.get("ft_temp", "").strip()
-    if not item or not readout or not ft_temp:
+    if not item or not ft_temp:
         raise ValueError("Reliability Items, Read-out, and FT Temp. are required.")
     post_dir = child_dir_containing(base, "post")
+    readout = resolve_auto_readout(post_dir, item, selection.get("readout", "").strip())
+    selection["readout"] = readout
+    if not readout:
+        raise ValueError("Reliability Items, Read-out, and FT Temp. are required.")
     include_pre = selection_includes_pre(selection)
     pre_files = []
     if include_pre:
@@ -7200,6 +8405,7 @@ def lookup_options(query):
             post_path = child_dir_containing(data_path, "post")
         except ValueError:
             return {"path": data_path, "options": []}
+        readout = resolve_auto_readout(post_path, item, readout)
         return {"path": data_path, "options": post_file_ft_temps(post_path, item, readout)}
     return {"path": data_path, "options": []}
 
@@ -7216,7 +8422,23 @@ def get_job(job_id):
         return dict(job) if job else None
 
 
-def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, cache_key=None, mode="pass", include_pre=True, reliability_item="", run_id="", post_history=None):
+def decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout):
+    """단일 조건 분석의 selected_summary 행에 Total 분석과 동일한 식별 필드를 싣는다.
+
+    decorate_combo_payload() 와 달리 item_key 재발급이나 items dict 재구성은 하지
+    않는다 (§U1에서 없앤 화면 열의 값만 복구하면 되고, items 키 구조를 바꾸면
+    프런트엔드 단일 조건 표시 로직에 영향을 줄 수 있어 범위를 넘어선다).
+    """
+    if not reliability_item and not ft_temp and not readout:
+        return payload
+    for row in payload.get("selected_summary", []):
+        row["reliability_item"] = reliability_item
+        row["ft_temp"] = ft_temp
+        row["judged_readout"] = readout
+    return payload
+
+
+def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, cache_key=None, mode="pass", include_pre=True, reliability_item="", run_id="", post_history=None, ft_temp="", readout=""):
     def progress(percent, message):
         update_job(job_id, progress=percent, message=message)
 
@@ -7225,6 +8447,16 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
         app, payload = analyze_to_json(pre_path, post_path, bin1_only, progress, include_pre)
         payload = payload_with_items(app, payload, mode, "saved" if cache_key else "none")
         apply_post_readout_history_to_payload(payload, post_history)
+        decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout)
+        if mode == "pass":
+            summary_counts = payload.get("summary_counts") or {}
+            payload["item_counts"] = [
+                {
+                    "reliability_item": reliability_item,
+                    "select": summary_counts.get("select", 0),
+                    "total": summary_counts.get("total_items", 0),
+                }
+            ]
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
@@ -7253,7 +8485,7 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
                     pass
 
 
-def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_pre=True, reliability_item="", run_id="", post_history=None):
+def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_pre=True, reliability_item="", run_id="", post_history=None, ft_temp="", readout=""):
     def progress(percent, message):
         update_job(job_id, progress=percent, message=message)
 
@@ -7262,6 +8494,16 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
         app, payload = analyze_fail_to_json(pre_path, post_files, progress, include_pre)
         payload = payload_with_items(app, payload, "fail", "saved" if cache_key else "none")
         apply_post_readout_history_to_payload(payload, post_history)
+        decorate_selected_summary_condition(payload, reliability_item, ft_temp, readout)
+        # Fail 모드 시험항목 탭 배지: 유닛(Sample) 기준 Fail 수 / 전체 수
+        fail_sample_counts = payload.get("sample_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": reliability_item,
+                "select": fail_sample_counts.get("fail", 0),
+                "total": fail_sample_counts.get("total", 0),
+            }
+        ]
         payload["reliability_item"] = reliability_item
         payload["analysis_run_id"] = run_id
         if cache_key:
@@ -7302,13 +8544,29 @@ def analyze_total_combo(base_path, combo, mode="pass", cache_key=None, include_p
     if mode == "fail":
         app, payload = analyze_fail_to_json(pre_path, combo["post_files"], None, include_pre)
         payload = payload_with_items(app, payload, "fail", "saved" if cache_key else "none")
+        fail_sample_counts = payload.get("sample_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": combo["item"],
+                "select": fail_sample_counts.get("fail", 0),
+                "total": fail_sample_counts.get("total", 0),
+            }
+        ]
     else:
         app, payload = analyze_to_json(pre_path, combo["post_files"][-1], True, None, include_pre)
         payload = payload_with_items(app, payload, "pass", "saved" if cache_key else "none")
+        summary_counts = payload.get("summary_counts") or {}
+        payload["item_counts"] = [
+            {
+                "reliability_item": combo["item"],
+                "select": summary_counts.get("select", 0),
+                "total": summary_counts.get("total_items", 0),
+            }
+        ]
     if include_pre:
         add_pre_only_items_to_payload(payload, app.pre_records, target_items or [])
     apply_post_readout_history_to_payload(payload, post_history)
-    decorate_combo_payload(payload, combo["item"], combo["ft_temp"], combo["readout"])
+    decorate_combo_payload(payload, combo["item"], combo["ft_temp"], combo["readout"], combo.get("readout_history"))
     return payload
 
 
@@ -7318,7 +8576,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
 
     try:
         progress(18, "Scanning Total Analysis data")
-        base_path, combos = total_analysis_combinations(selection)
+        base_path, combos, filename_warnings = total_analysis_combinations(selection)
         if not combos:
             raise ValueError("Total Analysis data was not found.")
         target_items_by_reliability = total_target_items_by_reliability(combos) if include_pre else {}
@@ -7351,6 +8609,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
         payload["reliability_item"] = "Total"
         payload["analysis_run_id"] = run_id
         payload["cache_status"] = "saved" if cache_key else "none"
+        payload["filename_warnings"] = filename_warnings
         if cache_key:
             save_cached_analysis(None, cache_key, payload)
         global CURRENT_APP, CURRENT_ITEMS, CURRENT_PAYLOADS, CURRENT_CACHE_KEYS
@@ -7844,7 +9103,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     threading.Thread(
                         target=run_fail_analyze_job,
-                        args=(job_id, pre_path, post_files, cache_key, include_pre, reliability_item, run_id, post_history),
+                        args=(job_id, pre_path, post_files, cache_key, include_pre, reliability_item, run_id, post_history, selection.get("ft_temp", "").strip(), selection.get("readout", "")),
                         daemon=True,
                     ).start()
                     self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": pre_path, "post_path": post_path})
@@ -7860,7 +9119,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 threading.Thread(
                     target=run_analyze_job,
-                    args=(job_id, pre_path, post_path, True, False, cache_key, "pass", include_pre, reliability_item, run_id, post_history),
+                    args=(job_id, pre_path, post_path, True, False, cache_key, "pass", include_pre, reliability_item, run_id, post_history, selection.get("ft_temp", "").strip(), selection.get("readout", "")),
                     daemon=True,
                 ).start()
                 self.send_json({"job_id": job_id, "base_path": base_path, "pre_path": pre_path, "post_path": post_path})

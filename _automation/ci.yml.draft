@@ -1,0 +1,72 @@
+# GitHub Actions 워크플로 초안
+# ----------------------------------------------------------------------
+# 아직 원격 저장소가 없어서 초안 상태로 둡니다.
+# GitHub private repo 를 만들기로 결정하면 이 파일을
+#   .github/workflows/ci.yml
+# 로 옮기면 동작합니다.
+#
+# 설계 원칙 3가지
+#  1. 사내 시험 데이터(Test Data / Perf Data)는 절대 올리지 않는다.
+#     → CI 에서는 단위 테스트만. 골든 회귀 검증은 데이터가 있는 로컬에서.
+#  2. 의존성은 numpy 뿐이다 (CLAUDE.md §5-7). pip install 목록을 늘리지 않는다.
+#  3. Windows 러너는 소모가 2배다. 태그를 달거나 수동 실행할 때만 exe 를 빌드한다.
+# ----------------------------------------------------------------------
+
+name: test-and-build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 값싼 Linux 러너에서 매 push 마다. tkinter 가 없는 환경이지만
+  # _automation/headless.py 스텁 덕분에 분석 모듈 import 가 가능하다.
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: numpy 설치 (유일한 의존성)
+        run: python -m pip install --upgrade pip numpy
+      - name: 단위 테스트
+        run: python _automation/run_checks.py
+
+  build-exe:
+    needs: unit-tests
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 의존성 설치
+        run: python -m pip install --upgrade pip numpy pyinstaller
+
+      # TODO: 실제 빌드 명령 확정 후 교체 (CLAUDE.md §8 이 아직 비어 있음)
+      #       현재 exe 는 CDFCompareToolHTML_Rev0.027.exe 이므로
+      #       --name 은 그 규칙을 따르는 것이 안전하다.
+      - name: exe 빌드
+        run: >
+          pyinstaller --onefile --name CDFCompareToolHTML
+          cdf_compare_web.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CDFCompareToolHTML-${{ github.sha }}
+          path: dist/CDFCompareToolHTML.exe
+          retention-days: 30
+
+      - name: 릴리스 발행 (태그일 때만)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} dist/CDFCompareToolHTML.exe --generate-notes

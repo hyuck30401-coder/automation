@@ -1,0 +1,34 @@
+#!/bin/sh
+# 로컬 push 게이트 (초안)
+#
+# 설치:  이 파일을 .git/hooks/pre-push 로 복사하고 실행 권한을 준다.
+#        Windows Git Bash 기준으로 동작한다.
+#
+# 하는 일: push 하기 전에 단위 테스트 + 골든 회귀 검증을 돌리고,
+#          실패하면 push 를 막는다. 사내 데이터가 있는 로컬에서만
+#          가능한 검증이므로 CI 가 아니라 여기에 둔다.
+
+DATA_ROOT="Test Data"
+
+echo "[pre-push] 검증 시작 — 시간이 좀 걸립니다"
+
+python _automation/run_checks.py --data-root "$DATA_ROOT"
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+    echo ""
+    echo "=============================================="
+    echo " 검증 실패. push 를 중단합니다."
+    echo " 분석 결과가 골든 스냅샷과 달라졌습니다."
+    echo ""
+    echo " 의도한 변경이라면 스냅샷을 재생성하고"
+    echo " MANIFEST 의 '변경 사유' 칸을 채우세요:"
+    echo "   python tools/regression_snapshot.py --data-root \"$DATA_ROOT\" --out tests/golden/"
+    echo ""
+    echo " 급하면:  git push --no-verify"
+    echo "=============================================="
+    exit 1
+fi
+
+echo "[pre-push] 통과"
+exit 0

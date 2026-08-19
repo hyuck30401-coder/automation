@@ -194,6 +194,11 @@ fixed(3.0) 와 grubbs(4.299) 가 거의 동일한 결과를 냈다.
      찍는데 실제로는 항목별 Grubbs 임계(n=57 → 3.1799)가 쓰였다 — 표시만 stale, 판정 로직
      자체는 정확함(전이 행렬로 확인). `verdict_diff.py:344` 의 `getattr(web, "FLAG_LIMIT", 3.0)`
      참조를 항목별 threshold 로 바꾸는 건 여전히 두 파일 편집 범위 밖이라 손대지 않음.
+  4. **[발견, 2026-08-10] `tests/verdict_base/` 가 현재 HEAD 대비 stale** — 코드 변경 없이
+     그대로 `verdict_diff.py --baseline tests/verdict_base/` 를 돌려도 SELECT 299→143 등
+     대량 차이가 난다(§S3 Grubbs 전환 이후 baseline 미갱신으로 추정). Fail 모드 `over_sigma`
+     추가 작업 검증 시 `--save` 로 새 baseline 을 즉석 생성해 전/후 비교로 우회함. 이 baseline
+     자체를 최신 HEAD 로 재저장할지는 범위 밖이라 결정 필요.
 
 ---
 
@@ -319,6 +324,19 @@ regression_check PASS (판정 결과 불변 확인, 순수 성능 수정).
 
 ## 🟡 P3 — 기능 판단 필요 (사용자 결정 대기)
 
+- **[발견, W3-1] `.summary-panel`(Abnormal Shift Items 표)이 두 해상도 모두에서 데이터 행 0개** —
+  지정된 6개 CSS(특히 `.panel min-height 260→150px`)만 정확히 적용한 결과, 범위 밖인
+  `.summary-panel{flex:1 1 0}` vs `.detail-panel{flex:2 1 0}` 비율과 summary-panel 내부
+  크롬(제목+Fail/Pass 탭+항목/샘플 서브탭+sticky 헤더)이 축소된 높이 예산을 거의 다 소진해
+  tbody 가 들어갈 공간이 남지 않음(table-wrap 실측 높이 ~40px). 1920×1080/1600×900,
+  조건 영역 접힘/펼침 4가지 조합 모두 동일 증상. flex 비율 조정 없이는 해결 불가 → 사용자 결정 필요.
+
+- **[발견, W3] Fail 모드 total_analysis payload 는 `item_counts` 를 채우지 않는다** —
+  `analyze_total_combo()` 에서 `item_counts` 설정이 pass 모드 분기(`else`)에만 있고 Fail
+  모드 분기엔 없음. 시험 항목 탭의 "0건 탭 접기"(W3-6)는 `item_counts` 부재 시 아무것도
+  접지 않게(모든 탭 표시) 만들어 안전하게 우회했지만, 근본적으로 Fail 탭에서는 항목별
+  select/total 배지 자체가 빈 채로 남는다. §5-6 범위 밖이라 이번엔 고치지 않음.
+
 - **Reliability Items 가 파일을 보지 않는다** — `RELIABILITY_ITEMS` 고정 9종을 항상 반환해서,
   Post 폴더에 HTOL 파일밖에 없어도 HAST/TC 를 고를 수 있고 고르면 Read-out 이 빈 채로 막힌다.
   → Post 파일명에서 실제 존재하는 항목만 뽑도록 바꿀지 결정 필요.
@@ -343,3 +361,9 @@ regression_check PASS (판정 결과 불변 확인, 순수 성능 수정).
 - 확장자 대문자(`.CSV`)는 정상 처리된다.
 - 검증용 데이터에 **회복 케이스(1회차 fail → 마지막 Bin1)가 0건**이다.
   `Intermittent` 작업 전에 회복 케이스가 있는 파일을 확보해야 한다.
+
+### 회귀 검증 범위 (regression_check.py)
+골든 스냅샷은 payload 의 results / selected_summary / over_sigma / items 4개 키만 저장한다.
+summary_counts / sample_counts / item_counts / excluded_items 는 비교 대상이 아니다.
+→ 요약 스트립 숫자와 시험항목 탭 배지가 깨져도 regression_check 는 PASS 한다.
+   해당 값은 화면 확인 또는 별도 스냅샷 항목 추가로 검증해야 한다. (P3 백로그)

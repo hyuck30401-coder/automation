@@ -11,3 +11,6 @@ tests/verdict_base*/
 Test Data/
 # 벤치마크 전용 합성 데이터 (tools/make_perf_fixture.py 로 생성, 회귀 검증에는 쓰지 않음)
 Perf Data/
+
+# 실행 로그 — 사내 경로·데이터가 찍힐 수 있어 올리지 않는다
+*.log
