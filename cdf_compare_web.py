@@ -2133,7 +2133,7 @@ HTML = r"""<!doctype html>
 
     #analysisFilterBar, #graphFilterBar{ display:contents; }
 
-    .ctl{ flex:0 0 auto; height:134px; display:flex; flex-direction:column;
+    .ctl{ flex:0 0 auto; height:auto; min-height:134px; display:flex; flex-direction:column;
       background:#fff; border:1px solid var(--line); border-radius:11px; overflow:hidden; }
     /* 134px 는 KPI(52) + 시험항목 탭(40) + 하단 필터(40) 가 모두 있을 때의 높이다.
        단일 시험 항목을 고르면 필터 바가 비는데, 고정 높이 탓에 그만큼 빈 칸이 남았다.
@@ -2143,7 +2143,16 @@ HTML = r"""<!doctype html>
     .crow+.crow{ border-top:1px solid var(--line2); }
     .crow.tabs{ border-top:1px solid var(--line2); }
     .crow.foot{ border-top:1px solid var(--line2); }
-    .crow.kpi{ height:52px } .crow.tabs{ height:40px; padding:0 0 0 8px } .crow.foot{ height:40px }
+    .crow.kpi{ height:52px } .crow.foot{ height:40px }
+    /* 시험 항목이 많으면 한 줄에 다 안 들어가 오른쪽이 잘렸다. 여러 줄로 접는다. */
+    .crow.tabs{ height:auto; min-height:40px; padding:4px 0 4px 8px; align-items:flex-start }
+    .crow.tabs .tabwrap{ height:auto }
+    .crow.tabs .tabwrap::after{ display:none }
+    /* 아래쪽 `.item-tabs,.graph-tabs` 규칙이 nowrap 을 걸기 때문에
+       특이도를 한 단계 높여서(.crow.tabs 하위) 확실히 이긴다. */
+    .crow.tabs .item-tabs{ flex-wrap:wrap; overflow:visible; height:auto; row-gap:2px }
+    .crow.tabs .item-tab{ height:32px }
+    .crow.tabs .item-tab-badge{ min-width:0 }
     .tail2{ margin-left:auto; display:flex; align-items:center; gap:12px; flex:0 0 auto; padding-left:12px }
     .lbl{ font-size:11px; font-weight:700; color:var(--ink3); letter-spacing:.03em; flex:0 0 auto }
     .gsum{ gap:0 }
@@ -2152,8 +2161,12 @@ HTML = r"""<!doctype html>
     .gname span{ font-size:11px; color:var(--ink3) }
 
     .summary-strip{ display:flex; align-items:center; gap:0; height:100%; margin:0; flex:1 1 auto; min-width:0 }
-    .summary-card{ display:flex; align-items:baseline; gap:6px; padding:0 16px 0 0; margin:0 16px 0 0;
-      border:0; border-right:1px solid var(--line2); border-radius:0; background:none; min-width:0; }
+    /* 카드 폭을 140px 로 균등하게. 예전에는 글자 길이대로 폭이 정해져서
+       구분선 간격이 들쭉날쭉했다(102/138/77/105px). */
+    .summary-card{ display:flex; align-items:baseline; gap:6px; padding:0 0 0 16px; margin:0;
+      border:0; border-right:1px solid var(--line2); border-radius:0; background:none;
+      min-width:140px; flex:0 0 auto; }
+    .summary-card:first-of-type{ padding-left:0 }
     .summary-card:last-of-type{ border-right:0 }
     .summary-card-value{ font-size:20px; font-weight:800; letter-spacing:-.02em;
       font-variant-numeric:tabular-nums; line-height:1 }
@@ -2194,6 +2207,13 @@ HTML = r"""<!doctype html>
       background:none; font-size:11.5px; font-weight:700; color:var(--ink2) }
     .filter-chip.active{ background:#fff; color:var(--acc-d);
       box-shadow:0 1px 2px rgba(20,40,70,.10); border:0 }
+    /* FT TEMP. 은 알약 배경 대신 탭과 같은 밑줄로 표시한다 */
+    .temp-filter-group .filter-chip{ height:40px; border-radius:0; padding:0 12px;
+      position:relative; font-size:12.5px; min-width:0 }
+    .temp-filter-group .filter-chip.active{ background:none; box-shadow:none; color:var(--acc-d) }
+    .temp-filter-group .filter-chip.active::after{ content:""; position:absolute;
+      left:10px; right:10px; bottom:0; height:2.5px; background:var(--acc);
+      border-radius:2px 2px 0 0 }
     .readout-toggle,.filter-check{ height:26px; min-height:0; padding:0 4px; border:0; background:none;
       font-size:11.5px; font-weight:700; color:var(--ink2) }
     .readout-toggle input,.filter-check input{ accent-color:var(--acc) }
@@ -2246,6 +2266,31 @@ HTML = r"""<!doctype html>
     .ppf-panel.active-graph,.scatter-panel.active-graph{ display:flex }
     /* Wafer Map 은 상시 표시. 활성 그래프와 세로 1 : 1 (flex-basis 0 이어야 정확히 1:1) */
     .wafer-panel{ display:flex; flex:1 1 0; min-height:0 }
+
+    #detailPanelMeta.is-loading{ color:var(--acc); opacity:.85 }
+
+    /* ── 선택 항목 상세 표: 열 폭 고정 ─────────────────────────
+       예전에는 본창에만 table-layout 지정이 없어서 브라우저가 내용 길이에 맞춰
+       매번 열 폭을 다시 계산했다. 그래서 상단 표에서 항목을 바꿀 때마다 상세 표의
+       열이 좌우로 흔들렸다(실측 최대 11px, 실제 데이터에서는 더 큼).
+       새 창에는 이미 같은 규칙이 있었는데 본창에는 빠져 있었다.
+       detailColumns() 는 pass·fail 모드 모두 항상 12열을 반환한다. */
+    .detail-panel .table-wrap{ overflow-x:hidden }
+    #detailTable{ width:100%; min-width:0; table-layout:fixed }
+    #detailTable th, #detailTable td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    #detailTable th{ line-height:1.15; white-space:normal; word-break:keep-all }
+    #detailTable th:nth-child(1), #detailTable td:nth-child(1){ width:7.5% }
+    #detailTable th:nth-child(2), #detailTable td:nth-child(2){ width:7% }
+    #detailTable th:nth-child(3), #detailTable td:nth-child(3){ width:12% }
+    #detailTable th:nth-child(4), #detailTable td:nth-child(4){ width:8.5% }
+    #detailTable th:nth-child(5), #detailTable td:nth-child(5){ width:8.5% }
+    #detailTable th:nth-child(6), #detailTable td:nth-child(6){ width:8.5% }
+    #detailTable th:nth-child(7), #detailTable td:nth-child(7){ width:8.5% }
+    #detailTable th:nth-child(8), #detailTable td:nth-child(8){ width:6% }
+    #detailTable th:nth-child(9), #detailTable td:nth-child(9){ width:9% }
+    #detailTable th:nth-child(10), #detailTable td:nth-child(10){ width:8% }
+    #detailTable th:nth-child(11), #detailTable td:nth-child(11){ width:8% }
+    #detailTable th:nth-child(12), #detailTable td:nth-child(12){ width:9% }
   </style>
 </head>
 <body>
@@ -2462,21 +2507,27 @@ function drawGraphNotice(canvas, message, minWidth = 360, minHeight = 260) {
 function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
   drawGraphNotice(canvas, "Binary unit item is excluded from graph display.", minWidth, minHeight);
 }
+// 표의 열 순서는 이 배열 순서를 그대로 따른다("+ 열" 로 켠 열도 여기 위치에 끼어든다).
+// 앞의 10개가 기본 표시이고, 뒤쪽은 "+ 열" 메뉴에서 켜야 보인다.
 const passColumns = [
-  ["test_number", "Test No."], ["item", "Item"], ["reason", "Reason"], ["n", "N (σ n-1)"], ["unit", "Unit"], ["lower_limit", "LL"],
-  ["upper_limit", "UL"], ["avg", "Avg."], ["stdev", "Stdev. (n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
-  ["diff_mean", "Δ Mean"], ["min", "Min."], ["max", "Max."], ["severity", "Max |σ|"], ["qty", "Q'ty"], ["qty_ratio", "%"],
-  ["sample_numbers", "Sample No."]
+  // ── 기본 표시 ──
+  ["test_number", "Test No."], ["item", "Item"], ["avg", "Avg."], ["unit", "Unit"],
+  ["lower_limit", "LL"], ["upper_limit", "UL"], ["min", "Min."], ["max", "Max."],
+  ["stdev", "Stdev."], ["qty", "Q'ty"],
+  // ── 기본 숨김: "+ 열" 에서 켠다 ──
+  ["reason", "Reason"], ["n", "N (σ n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
+  ["diff_mean", "Δ Mean"], ["severity", "Max |σ|"], ["qty_ratio", "%"], ["sample_numbers", "Sample No."]
 ];
-// Fail 목록은 규격 이탈로 이미 선별된 항목이라 Reason/Max |σ| (Pass 전용 판정 근거) 가
-// 없다 -- 값 없는 열을 N/A 로 채우는 대신 아예 목록에서 뺀다. 대신 이탈 유형(fail_type)과
-// 시험(reliability_item) 을 추가한다.
-const failColumns = [
-  ["test_number", "Test No."], ["reliability_item", "시험"], ["item", "Item"], ["fail_type", "이탈 유형"],
-  ["n", "N (σ n-1)"], ["qty", "Q'ty"], ["sample_numbers", "Sample No."]
+// Fail 목록도 Abnormal Pass 와 완전히 같은 열 구성을 쓴다 -- 두 탭을 오갈 때 열 위치가
+// 바뀌지 않게 하기 위해서다. Fail 행에는 reason 이 없어 같은 성격의 fail_type(이탈 유형)을
+// Reason 자리에 넣고(summaryCellValue 참조), severity/shift/shift_sigma 는 값이 없어 N/A 다.
+const failColumns = passColumns;
+// 기본으로 보여줄 열. 두 탭이 같은 목록을 쓴다.
+const DEFAULT_COLUMN_KEYS = [
+  "test_number", "item", "avg", "unit", "lower_limit", "upper_limit", "min", "max", "stdev", "qty"
 ];
-const DEFAULT_VISIBLE_COLUMNS_PASS = passColumns.map(([key]) => key);
-const DEFAULT_VISIBLE_COLUMNS_FAIL = failColumns.map(([key]) => key);
+const DEFAULT_VISIBLE_COLUMNS_PASS = DEFAULT_COLUMN_KEYS;
+const DEFAULT_VISIBLE_COLUMNS_FAIL = DEFAULT_COLUMN_KEYS;
 const columnVisibility = {
   pass: new Set(DEFAULT_VISIBLE_COLUMNS_PASS),
   fail: new Set(DEFAULT_VISIBLE_COLUMNS_FAIL)
@@ -2916,9 +2967,33 @@ function emptyAnalysisPayload(mode = analysisMode, message = "") {
 function itemKey(row) {
   return row?.item_key || row?.item || "";
 }
+let itemNameMapCache = null;
+let itemNameMapSource = null;
+function itemNameMap() {
+  // 전체 분석에서 item_key 는 "{item}__{sha1[:10]}" 형태라 그대로 표시하면 안 된다.
+  // analysis 응답의 각 행에 깨끗한 item 이름이 함께 오므로 여기서 키->이름 표를 만든다.
+  // analysis 객체가 교체되면(새 분석/모드 전환/초기화) 자동으로 다시 만들어진다.
+  if (itemNameMapCache && itemNameMapSource === analysis) return itemNameMapCache;
+  const map = new Map();
+  for (const list of [analysis?.results, analysis?.selected_summary]) {
+    for (const row of (list || [])) {
+      const key = itemKey(row);
+      if (key && row?.item && !map.has(key)) map.set(key, row.item);
+    }
+  }
+  itemNameMapCache = map;
+  itemNameMapSource = analysis;
+  return map;
+}
 function itemDisplayName(key) {
   const data = itemCache[key];
-  return data?.item || data?.display_item || key;
+  if (data?.item) return data.item;
+  if (data?.display_item) return data.display_item;
+  // 아직 클릭하지 않아 itemCache 에 없는 항목: payload 에서 이름을 찾는다.
+  const name = itemNameMap().get(key);
+  if (name) return name;
+  // 최후 방어 — 그래도 못 찾으면 해시 접미사만 떼어낸다.
+  return String(key || "").replace(/__[0-9a-f]{10}$/, "");
 }
 function selectedResultRow() {
   return (analysis?.results || []).find(row => itemKey(row) === selectedItem)
@@ -3390,7 +3465,9 @@ async function runAnalysis() {
   const stopBtn = document.getElementById("stopAnalyzeBtn");
   const displayMode = analysisMode;
   activeAnalysisRunId = createAnalysisRunId();
-  openAnalysisResultsWindow(displayMode, true, activeAnalysisRunId);
+  // 결과 새 창은 사용자가 "결과 새 창" 버튼을 눌렀을 때만 띄운다.
+  // 예전에는 Analyze 를 누르면 매번 자동으로 팝업이 떠서 방해가 됐다.
+  // (버튼은 분석 결과가 준비되면 활성화된다 — setResultPanelsVisible 참조)
   btn.disabled = true;
   stopBtn.disabled = false;
   stopAnalysisRequested = false;
@@ -4114,9 +4191,26 @@ async function refreshSelectedItem() {
     renderOverTable();
     const itemSelect = document.getElementById("itemSelect");
     if (itemSelect) itemSelect.value = selectedItem;
-    renderDetailTable();
-    await loadItem(selectedItem);
-    await loadRelatedGraphItems();
+
+    // 상세 표를 미리 그리지 않는다.
+    // 예전에는 데이터가 오기 전에 한 번 그려서 헤더 + "Loading..." 한 줄로 표가
+    // 접혔다가, 로드가 끝나면 다시 펼쳐졌다. 그 사이 패널 높이가 요동쳐서
+    // 항목을 처음 고를 때마다 깜빡이는 것처럼 보였다(실측 173 → 70 → 173px).
+    //   - 이미 캐시에 있으면 즉시 그린다 (서버 왕복이 없어 깜빡일 일이 없다)
+    //   - 표가 아직 비어 있으면 그려준다 (접힐 내용이 없으므로 안전하고,
+    //     첫 분석 직후 빈 패널만 보이는 것을 막는다)
+    //   - 그 외에는 직전 내용을 그대로 두고 제목 옆에만 로딩 표시를 띄운다
+    const detailCached = !!itemCache[selectedItem];
+    const detailHasRows = !!document.querySelector("#detailTable tbody tr");
+    if (detailCached || !detailHasRows) renderDetailTable();
+    else setDetailLoading(true);
+
+    try {
+      await loadItem(selectedItem);
+      await loadRelatedGraphItems();
+    } finally {
+      setDetailLoading(false);
+    }
     renderDetailTable();
     renderItemThresholdLabel();
     renderJudgmentFootnote();
@@ -4157,6 +4251,8 @@ function summaryCellValue(row, key, payload = analysis) {
     const ratio = Number(row.diff_mean);
     return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(2)}%` : "";
   }
+  // Fail 행에는 reason 이 없다 -- 같은 성격의 fail_type(이탈 유형)으로 대체한다.
+  if (key === "reason") return row.reason || row.fail_type || "";
   if (key === "unit") return row.unit || data.unit || "";
   if (key === "lower_limit") return row.lower_limit ?? data.lower_limit;
   if (key === "upper_limit") return row.upper_limit ?? data.upper_limit;
@@ -4332,6 +4428,7 @@ function renderSummaryListTable(table, payload, mode) {
     const th = document.createElement("th");
     th.textContent = label + (sortState.column === key ? (sortState.reverse ? " ▼" : " ▲") : "");
     if (key === "n") th.title = "표준편차 계산에 사용된 유닛 수";
+    if (key === "stdev") th.title = "표본표준편차 (ddof = 1, n-1)";
     th.onclick = () => {
       if (sortState.column === key) sortState.reverse = !sortState.reverse;
       else sortState = { column: key, reverse: false };
@@ -4434,6 +4531,14 @@ function detailCellValue(row, key) {
   if (["post_t1", "post_t2", "post_t3"].includes(key)) return detailReadoutValue(row, key);
   if (key === "unit") return row.unit || summary.unit || data.unit || "";
   return row[key];
+}
+// 상세 표를 다시 그리지 않고 제목 옆에만 로딩 상태를 보여준다.
+// 끄는 것은 곧바로 이어지는 renderDetailTable() 이 문구를 덮어쓰며 처리한다.
+function setDetailLoading(on) {
+  const meta = document.getElementById("detailPanelMeta");
+  if (!meta) return;
+  meta.classList.toggle("is-loading", !!on);
+  if (on) meta.textContent = `${selectedItemTitleName()} · 불러오는 중…`;
 }
 function renderDetailTable() {
   const metaNode = document.getElementById("detailPanelMeta");
