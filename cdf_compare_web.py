@@ -1326,25 +1326,27 @@ HTML = r"""<!doctype html>
     body.results-window #detailTable th:nth-child(2),
     body.results-window #detailTable td:nth-child(2) { width: 7%; }
     body.results-window #detailTable th:nth-child(3),
-    body.results-window #detailTable td:nth-child(3) { width: 12%; }
+    body.results-window #detailTable td:nth-child(3) { width: 10%; }
     body.results-window #detailTable th:nth-child(4),
-    body.results-window #detailTable td:nth-child(4) { width: 8.5%; }
+    body.results-window #detailTable td:nth-child(4) { width: 8%; }
     body.results-window #detailTable th:nth-child(5),
-    body.results-window #detailTable td:nth-child(5) { width: 8.5%; }
+    body.results-window #detailTable td:nth-child(5) { width: 8%; }
     body.results-window #detailTable th:nth-child(6),
-    body.results-window #detailTable td:nth-child(6) { width: 8.5%; }
+    body.results-window #detailTable td:nth-child(6) { width: 8%; }
     body.results-window #detailTable th:nth-child(7),
-    body.results-window #detailTable td:nth-child(7) { width: 8.5%; }
+    body.results-window #detailTable td:nth-child(7) { width: 8%; }
     body.results-window #detailTable th:nth-child(8),
     body.results-window #detailTable td:nth-child(8) { width: 6%; }
     body.results-window #detailTable th:nth-child(9),
-    body.results-window #detailTable td:nth-child(9) { width: 9%; }
+    body.results-window #detailTable td:nth-child(9) { width: 8.5%; }
     body.results-window #detailTable th:nth-child(10),
-    body.results-window #detailTable td:nth-child(10) { width: 8%; }
+    body.results-window #detailTable td:nth-child(10) { width: 7.5%; }
     body.results-window #detailTable th:nth-child(11),
-    body.results-window #detailTable td:nth-child(11) { width: 8%; }
+    body.results-window #detailTable td:nth-child(11) { width: 7.5%; }
     body.results-window #detailTable th:nth-child(12),
-    body.results-window #detailTable td:nth-child(12) { width: 8.5%; }
+    body.results-window #detailTable td:nth-child(12) { width: 7%; }
+    body.results-window #detailTable th:nth-child(13),
+    body.results-window #detailTable td:nth-child(13) { width: 7%; }
     body.results-window #overTable th:nth-child(1),
     body.results-window #overTable td:nth-child(1) { width: 9%; }
     body.results-window #overTable th:not(:first-child),
@@ -2269,28 +2271,48 @@ HTML = r"""<!doctype html>
 
     #detailPanelMeta.is-loading{ color:var(--acc); opacity:.85 }
 
+    /* 그래프에서 뺀 샘플이 있다는 표시. 체크해놓고 잊으면 "왜 점이 안 보이지"가 된다. */
+    .graph-exclude-note{ display:none; margin-left:10px; font-size:11.5px; color:#B26A00;
+      background:#FFF4E0; border:1px solid #F0C987; border-radius:10px; padding:1px 8px }
+    .graph-exclude-note.on{ display:inline-flex; align-items:center; gap:6px }
+    .graph-exclude-note button{ border:0; background:none; color:#8A5200; font-size:11.5px;
+      text-decoration:underline; cursor:pointer; padding:0 }
+
     /* ── 선택 항목 상세 표: 열 폭 고정 ─────────────────────────
        예전에는 본창에만 table-layout 지정이 없어서 브라우저가 내용 길이에 맞춰
        매번 열 폭을 다시 계산했다. 그래서 상단 표에서 항목을 바꿀 때마다 상세 표의
        열이 좌우로 흔들렸다(실측 최대 11px, 실제 데이터에서는 더 큼).
        새 창에는 이미 같은 규칙이 있었는데 본창에는 빠져 있었다.
-       detailColumns() 는 pass·fail 모드 모두 항상 12열을 반환한다. */
+       detailColumns() 는 pass·fail 모드 모두 항상 13열을 반환한다.
+       ★ 열을 추가하면 아래 nth-child 폭도 함께 고쳐야 한다(합이 100%). */
     .detail-panel .table-wrap{ overflow-x:hidden }
     #detailTable{ width:100%; min-width:0; table-layout:fixed }
     #detailTable th, #detailTable td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
     #detailTable th{ line-height:1.15; white-space:normal; word-break:keep-all }
     #detailTable th:nth-child(1), #detailTable td:nth-child(1){ width:7.5% }
     #detailTable th:nth-child(2), #detailTable td:nth-child(2){ width:7% }
-    #detailTable th:nth-child(3), #detailTable td:nth-child(3){ width:12% }
-    #detailTable th:nth-child(4), #detailTable td:nth-child(4){ width:8.5% }
-    #detailTable th:nth-child(5), #detailTable td:nth-child(5){ width:8.5% }
-    #detailTable th:nth-child(6), #detailTable td:nth-child(6){ width:8.5% }
-    #detailTable th:nth-child(7), #detailTable td:nth-child(7){ width:8.5% }
+    #detailTable th:nth-child(3), #detailTable td:nth-child(3){ width:10% }
+    #detailTable th:nth-child(4), #detailTable td:nth-child(4){ width:8% }
+    #detailTable th:nth-child(5), #detailTable td:nth-child(5){ width:8% }
+    #detailTable th:nth-child(6), #detailTable td:nth-child(6){ width:8% }
+    #detailTable th:nth-child(7), #detailTable td:nth-child(7){ width:8% }
     #detailTable th:nth-child(8), #detailTable td:nth-child(8){ width:6% }
-    #detailTable th:nth-child(9), #detailTable td:nth-child(9){ width:9% }
-    #detailTable th:nth-child(10), #detailTable td:nth-child(10){ width:8% }
-    #detailTable th:nth-child(11), #detailTable td:nth-child(11){ width:8% }
-    #detailTable th:nth-child(12), #detailTable td:nth-child(12){ width:9% }
+    #detailTable th:nth-child(9), #detailTable td:nth-child(9){ width:8.5% }
+    #detailTable th:nth-child(10), #detailTable td:nth-child(10){ width:7.5% }
+    #detailTable th:nth-child(11), #detailTable td:nth-child(11){ width:7.5% }
+    #detailTable th:nth-child(12), #detailTable td:nth-child(12){ width:7% }
+    #detailTable th:nth-child(13), #detailTable td:nth-child(13){ width:7% }
+
+    /* ── 샘플 기준 표: 열 폭 고정 ──────────────────────────────
+       이 표는 열 개수가 데이터에 따라 달라진다(한 샘플이 가진 최대 항목 수).
+       기본 `table{ min-width:100% }` 때문에 열이 적은 Fail 탭에서는 남는 폭을
+       열들이 나눠 가져, 같은 표인데도 Abnormal Pass 탭보다 훨씬 넓어 보였다.
+       폭을 고정해 열 개수와 무관하게 두 탭이 같은 모양이 되게 한다.
+       잘린 이름은 renderOverSampleTable() 이 title 로 전체를 보여준다. */
+    #overSampleTable{ table-layout:fixed; width:max-content; min-width:0 }
+    #overSampleTable th, #overSampleTable td{
+      width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    #overSampleTable th:first-child, #overSampleTable td:first-child{ width:88px }
   </style>
 </head>
 <body>
@@ -2403,7 +2425,7 @@ HTML = r"""<!doctype html>
       <div class="result-graph-column">
       <section class="ctl">
         <div class="crow kpi gsum">
-          <div class="gname"><b id="graphItemName">—</b><span id="graphItemMeta"></span></div>
+          <div class="gname"><b id="graphItemName">—</b><span id="graphItemMeta"></span><span id="graphExcludeNote" class="graph-exclude-note"></span></div>
           <div class="tail2"><select id="itemSelect"></select><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
         </div>
         <section id="graphFilterBar" class="graph-filter-bar"></section>
@@ -2455,6 +2477,9 @@ let stopAnalysisRequested = false;
 let activeAnalysisRunId = "";
 let activeGraphTab = "cdf";
 let needBenchState = {};
+/* 그래프에서만 빼는 샘플. 판정·통계·표의 숫자에는 절대 손대지 않는다 (CLAUDE.md §5-1).
+   키 형태는 needBenchState 와 동일 — 분석을 다시 돌리거나 항목/모드를 바꾸면 자연히 풀린다. */
+let graphExcludeState = {};
 let pendingItemLoads = {};
 let analysisFilters = {
   reliability_item: "",
@@ -2928,7 +2953,7 @@ function detailColumns() {
     ["sample", "Sample No."], ["result", "Result"], ["spec_out_type", "Spec.-Out Type"],
     ["pre_value", "Pre"], ["post_t1", postReadoutHeader(1)], ["post_t2", postReadoutHeader(2)], ["post_t3", postReadoutHeader(3)],
     ["unit", "Unit"], ["mea_s", "σ (Measured)"], ["diff", "Delta"],
-    ["diff_s", "σ (Delta)"], ["need_bench", "Need Bench?"]
+    ["diff_s", "σ (Delta)"], ["graph_exclude", "Exclude"], ["need_bench", "Need Bench?"]
   ];
 }
   function updatePanelMode() {
@@ -4129,6 +4154,7 @@ function renderItemThresholdLabel() {
   if (Number.isFinite(mea)) parts.push(`Mea threshold=${mea.toFixed(4)}`);
   if (Number.isFinite(diff)) parts.push(`Diff threshold=${diff.toFixed(4)}`);
   el.textContent = parts.join("  /  ");
+  renderGraphExcludeNote();
 }
 function analysisResultsWindowUrl(mode = analysisMode, waitForResults = false, runId = "") {
   const params = new URLSearchParams({ mode: mode === "fail" ? "fail" : "pass" });
@@ -4486,7 +4512,10 @@ function renderOverSampleTable(table) {
     for (let i = 0; i < maxItems; i++) {
       const td = tr.insertCell();
       const item = row.items[i] || "";
-      td.textContent = itemDisplayName(item);
+      const name = itemDisplayName(item);
+      td.textContent = name;
+      // 열 폭이 고정이라 긴 이름은 잘린다 -- 전체 이름은 툴팁으로 남긴다.
+      if (name) td.title = name;
       if (item) {
         td.className = "over-item";
         td.classList.toggle("active", item === selectedItem);
@@ -4522,6 +4551,41 @@ function detailReadoutValue(row, key) {
 }
 function needBenchKey(row) {
   return [activeAnalysisRunId || "latest", analysis?.analysis_mode || analysisMode, selectedItem, row.sample].join("|");
+}
+function graphExcludeKey(row) {
+  return needBenchKey(row);
+}
+/** 이 샘플을 그래프에서 뺐는가. row 든 point 든 sample 만 있으면 된다. */
+function isGraphExcluded(entry) {
+  if (!entry || entry.sample === undefined || entry.sample === null) return false;
+  return !!graphExcludeState[graphExcludeKey(entry)];
+}
+/** 현재 항목에서 그래프에 안 그리기로 한 샘플 수 */
+function graphExcludedCount() {
+  const data = itemCache[selectedItem];
+  if (!data) return 0;
+  return (data.details || []).filter(isGraphExcluded).length;
+}
+function clearGraphExcludes() {
+  const data = itemCache[selectedItem];
+  (data?.details || []).forEach(row => { delete graphExcludeState[graphExcludeKey(row)]; });
+  renderGraphExcludeNote();
+  renderDetailTable();
+  drawCharts();
+}
+function renderGraphExcludeNote() {
+  const el = document.getElementById("graphExcludeNote");
+  if (!el) return;
+  const n = graphExcludedCount();
+  el.innerHTML = "";
+  el.classList.toggle("on", n > 0);
+  if (!n) return;
+  el.appendChild(document.createTextNode(`그래프 제외 ${n}건`));
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = "되돌리기";
+  btn.addEventListener("click", clearGraphExcludes);
+  el.appendChild(btn);
 }
 function detailCellValue(row, key) {
   const data = itemCache[selectedItem] || {};
@@ -4575,6 +4639,21 @@ function renderDetailTable() {
     if (String(d.sample) === String(highlightSample)) tr.classList.add("active");
     cols.forEach(([key]) => {
       const td = tr.insertCell();
+      if (key === "graph_exclude") {
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = isGraphExcluded(d);
+        checkbox.title = "체크하면 이 샘플을 그래프에서 뺍니다 (판정·표의 숫자는 그대로)";
+        checkbox.addEventListener("change", event => {
+          event.stopPropagation();
+          if (checkbox.checked) graphExcludeState[graphExcludeKey(d)] = true;
+          else delete graphExcludeState[graphExcludeKey(d)];
+          renderGraphExcludeNote();
+          drawCharts();
+        });
+        td.appendChild(checkbox);
+        return;
+      }
       if (key === "need_bench") {
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
@@ -4926,6 +5005,18 @@ function failCdfForValue(value, row, fallbackValues = []) {
   if (upper !== null && value > upper) return 1;
   return cdfFraction(fallbackValues, value) ?? 0.5;
 }
+/** Fail 마커로 실제 찍히는 값들. 축 범위 계산과 그리기가 같은 값을 보게 한다. */
+function failReadoutMarkerValues(readoutSeries) {
+  const out = [];
+  (readoutSeries || []).forEach(series => {
+    (series.points || []).forEach(point => {
+      if (isGraphExcluded(point)) return;          // 그래프에서 뺀 샘플은 축도 늘리지 않는다
+      const value = finiteNumber(point.post_value);
+      if (value !== null) out.push(value);
+    });
+  });
+  return out;
+}
 function drawFailReadoutMarkers(ctx, readoutSeries, x, y) {
   ctx.save();
   readoutSeries.forEach(series => {
@@ -4933,6 +5024,7 @@ function drawFailReadoutMarkers(ctx, readoutSeries, x, y) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.4;
     (series.points || []).forEach(point => {
+      if (isGraphExcluded(point)) return;
       const value = finiteNumber(point.post_value);
       if (value === null) return;
       const cx = x(value);
@@ -4984,7 +5076,15 @@ function drawChart() {
     : hasReadoutSeries ? readoutSeries.flatMap(series => series.values) : fallbackPostSelected ? data.post_values : [];
   const failOverlay = failOverlayPoints(selectedFailItemData());
   const failOverlayValues = failOverlay.map(point => point.value);
-  const all = [...preAxisValues, ...postAxisValues, ...failOverlayValues];
+  /* Fail 마커는 series.points[].post_value 로 그리는데, 축 범위는 series.values 만
+     보고 있었다. Fail 샘플은 CDF 곡선용 값 집합에 없으므로 축이 늘어나지 않아
+     규격을 벗어난 Fail 값이 플롯 영역 밖에 찍혔다(실측: LSL 4.976 인데 Fail 4.8427).
+     그리는 값은 전부 축 계산에 넣는다. */
+  /* 그리는 조건과 **똑같이** 걸어야 한다. 안 그러면 마커를 그리지도 않는
+     Abnormal Pass 그래프까지 축이 넓어진다. */
+  const failMarkerValues = (mode === "fail" && !hideFailData && hasReadoutSeries)
+    ? failReadoutMarkerValues(readoutSeries) : [];
+  const all = [...preAxisValues, ...postAxisValues, ...failOverlayValues, ...failMarkerValues];
   if (showSpecLines && specSource.lower_limit !== null) all.push(specSource.lower_limit);
   if (showSpecLines && specSource.upper_limit !== null) all.push(specSource.upper_limit);
   if (!all.length) return;
@@ -5405,10 +5505,11 @@ function drawScatterPlot() {
   ctx.restore();
   let rows = hasReadoutSeries ? readoutSeries.flatMap(series =>
     series.points
+      .filter(point => !isGraphExcluded(point))
       .filter(point => finiteNumber(point.diff_s) !== null && finiteNumber(point.mea_s) !== null)
       .map(point => ({ ...point, series_label: series.label || series.key, color: series.color }))
   ) : fallbackPostSelected && !hideFailData ? [...data.details].filter(row =>
-    finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null
+    !isGraphExcluded(row) && finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null
   ) : [];
   const failScatterRows = fallbackPostSelected ? (selectedFailItemData()?.details || [])
     .filter(row => finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null)
