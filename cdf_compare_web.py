@@ -773,6 +773,11 @@ HTML = r"""<!doctype html>
       text-decoration: underline;
       text-underline-offset: 2px;
     }
+    td.sample-excluded {
+      color: #9aa7b2;
+      text-decoration: line-through;
+      cursor: default;
+    }
     td.active-cell {
       box-shadow: inset 0 0 0 2px #111;
     }
@@ -1321,32 +1326,7 @@ HTML = r"""<!doctype html>
       white-space: normal;
       word-break: keep-all;
     }
-    body.results-window #detailTable th:nth-child(1),
-    body.results-window #detailTable td:nth-child(1) { width: 7.5%; }
-    body.results-window #detailTable th:nth-child(2),
-    body.results-window #detailTable td:nth-child(2) { width: 7%; }
-    body.results-window #detailTable th:nth-child(3),
-    body.results-window #detailTable td:nth-child(3) { width: 10%; }
-    body.results-window #detailTable th:nth-child(4),
-    body.results-window #detailTable td:nth-child(4) { width: 8%; }
-    body.results-window #detailTable th:nth-child(5),
-    body.results-window #detailTable td:nth-child(5) { width: 8%; }
-    body.results-window #detailTable th:nth-child(6),
-    body.results-window #detailTable td:nth-child(6) { width: 8%; }
-    body.results-window #detailTable th:nth-child(7),
-    body.results-window #detailTable td:nth-child(7) { width: 8%; }
-    body.results-window #detailTable th:nth-child(8),
-    body.results-window #detailTable td:nth-child(8) { width: 6%; }
-    body.results-window #detailTable th:nth-child(9),
-    body.results-window #detailTable td:nth-child(9) { width: 8.5%; }
-    body.results-window #detailTable th:nth-child(10),
-    body.results-window #detailTable td:nth-child(10) { width: 7.5%; }
-    body.results-window #detailTable th:nth-child(11),
-    body.results-window #detailTable td:nth-child(11) { width: 7.5%; }
-    body.results-window #detailTable th:nth-child(12),
-    body.results-window #detailTable td:nth-child(12) { width: 7%; }
-    body.results-window #detailTable th:nth-child(13),
-    body.results-window #detailTable td:nth-child(13) { width: 7%; }
+    /* 열 폭은 본창과 동일하게 JS 가 계산한다 (R-023) */
     body.results-window #overTable th:nth-child(1),
     body.results-window #overTable td:nth-child(1) { width: 9%; }
     body.results-window #overTable th:not(:first-child),
@@ -1425,6 +1405,7 @@ HTML = r"""<!doctype html>
     .panel-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
     .flag-alpha-label { font-weight: 400; font-size: 12px; color: var(--muted); }
     .column-toggle-wrap { position: relative; flex: 0 0 auto; }
+    .detail-col-wrap { margin-left: auto; }
     .column-toggle-btn {
       background: #eef6fa;
       color: #0b6070;
@@ -2289,19 +2270,8 @@ HTML = r"""<!doctype html>
     #detailTable{ width:100%; min-width:0; table-layout:fixed }
     #detailTable th, #detailTable td{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
     #detailTable th{ line-height:1.15; white-space:normal; word-break:keep-all }
-    #detailTable th:nth-child(1), #detailTable td:nth-child(1){ width:7.5% }
-    #detailTable th:nth-child(2), #detailTable td:nth-child(2){ width:7% }
-    #detailTable th:nth-child(3), #detailTable td:nth-child(3){ width:10% }
-    #detailTable th:nth-child(4), #detailTable td:nth-child(4){ width:8% }
-    #detailTable th:nth-child(5), #detailTable td:nth-child(5){ width:8% }
-    #detailTable th:nth-child(6), #detailTable td:nth-child(6){ width:8% }
-    #detailTable th:nth-child(7), #detailTable td:nth-child(7){ width:8% }
-    #detailTable th:nth-child(8), #detailTable td:nth-child(8){ width:6% }
-    #detailTable th:nth-child(9), #detailTable td:nth-child(9){ width:8.5% }
-    #detailTable th:nth-child(10), #detailTable td:nth-child(10){ width:7.5% }
-    #detailTable th:nth-child(11), #detailTable td:nth-child(11){ width:7.5% }
-    #detailTable th:nth-child(12), #detailTable td:nth-child(12){ width:7% }
-    #detailTable th:nth-child(13), #detailTable td:nth-child(13){ width:7% }
+    /* 열 폭은 R-023 부터 표시 중인 열에 맞춰 JS(detailColumnWidths)가 계산한다.
+       열을 켜고 끌 수 있게 되면서 nth-child 고정 규칙으로는 감당이 안 된다. */
 
     /* ── 샘플 기준 표: 열 폭 고정 ──────────────────────────────
        이 표는 열 개수가 데이터에 따라 달라진다(한 샘플이 가진 최대 항목 수).
@@ -2418,7 +2388,7 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span></div>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
@@ -2468,7 +2438,7 @@ let itemCache = {};
 let selectedItem = "";
 let highlightSample = null;
 let highlightMode = null;
-let sortState = { column: "severity", reverse: true };
+let sortState = { column: "qty", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
 let resultViewMode = "item";
@@ -2535,21 +2505,24 @@ function drawBinaryGraphNotice(canvas, minWidth = 360, minHeight = 260) {
 // 표의 열 순서는 이 배열 순서를 그대로 따른다("+ 열" 로 켠 열도 여기 위치에 끼어든다).
 // 앞의 10개가 기본 표시이고, 뒤쪽은 "+ 열" 메뉴에서 켜야 보인다.
 const passColumns = [
-  // ── 기본 표시 ──
-  ["test_number", "Test No."], ["item", "Item"], ["avg", "Avg."], ["unit", "Unit"],
-  ["lower_limit", "LL"], ["upper_limit", "UL"], ["min", "Min."], ["max", "Max."],
-  ["stdev", "Stdev."], ["qty", "Q'ty"],
+  // ── 기본 표시 (R-020) ──
+  // 읽는 순서: 식별(Test No.·Item) → 규격(Unit·LL·UL) → 중심값(Avg.) → 변화율(Delta Mean) → 개수(Q'ty)
+  // 산포·범위(Stdev.·Min.·Max.)와 Pre 쪽 분포는 항목을 더블클릭해 Pre / Post 비교 새 창에서 본다. (R-022)
+  ["test_number", "Test No."], ["item", "Item"], ["unit", "Unit"],
+  ["lower_limit", "LL"], ["upper_limit", "UL"], ["avg", "Avg."],
+  ["diff_mean", "Delta Mean"], ["qty", "Q'ty"],
   // ── 기본 숨김: "+ 열" 에서 켠다 ──
-  ["reason", "Reason"], ["n", "N (σ n-1)"], ["shift", "Shift"], ["shift_sigma", "Shift/σ"],
-  ["diff_mean", "Δ Mean"], ["severity", "Max |σ|"], ["qty_ratio", "%"], ["sample_numbers", "Sample No."]
+  ["sample_numbers", "Sample No."]
 ];
 // Fail 목록도 Abnormal Pass 와 완전히 같은 열 구성을 쓴다 -- 두 탭을 오갈 때 열 위치가
-// 바뀌지 않게 하기 위해서다. Fail 행에는 reason 이 없어 같은 성격의 fail_type(이탈 유형)을
-// Reason 자리에 넣고(summaryCellValue 참조), severity/shift/shift_sigma 는 값이 없어 N/A 다.
+// 바뀌지 않게 하기 위해서다. R-020 에서 Fail 행에 값이 없어 늘 N/A 로 뜨던 열
+// (Shift·Shift/σ·Max |σ|)과 중복·오해 소지가 있던 열(Reason·N (σ n-1)·%)을 제거했다.
+// 판정축은 선택 항목 상세의 Fail Type / Reason 열에서 본다.
 const failColumns = passColumns;
 // 기본으로 보여줄 열. 두 탭이 같은 목록을 쓴다.
 const DEFAULT_COLUMN_KEYS = [
-  "test_number", "item", "avg", "unit", "lower_limit", "upper_limit", "min", "max", "stdev", "qty"
+  "test_number", "item", "unit", "lower_limit", "upper_limit", "avg",
+  "diff_mean", "qty"
 ];
 const DEFAULT_VISIBLE_COLUMNS_PASS = DEFAULT_COLUMN_KEYS;
 const DEFAULT_VISIBLE_COLUMNS_FAIL = DEFAULT_COLUMN_KEYS;
@@ -2946,14 +2919,156 @@ function readoutDetailColumns() {
 }
 function postReadoutHeader(index) {
   const labels = itemCache[selectedItem]?.post_readout_labels || analysis?.post_readout_labels || [];
-  return labels[index - 1] || `T${index}`;
+  const label = labels[index - 1];
+  // 회차를 먼저 읽게 t1/t2/t3 를 앞에 두고, 실제 리드아웃 이름이 있으면 괄호로 병기한다. (R-020)
+  return label ? `t${index} (${label})` : `t${index}`;
+}
+/* ── R-023: 상세 표 열 선택 ────────────────────────────────────
+   Z-Score 두 열은 판정 근거라 늘 필요하진 않다 — 기본은 숨기고 "＋ 열"에서 켠다.
+   열 폭은 표시 중인 열의 가중치를 100% 로 정규화해 계산한다. */
+const DETAIL_OPTIONAL_KEYS = ["mea_s", "diff_s"];
+const DETAIL_COLUMN_WEIGHT = {
+  sample: 8, spec_out_type: 11, pre_value: 8.5, post_t1: 8.5, post_t2: 8, post_t3: 8,
+  unit: 6, mea_s: 9, diff: 8, diff_s: 9, graph_exclude: 7, need_bench: 9
+};
+let detailColumnVisibility = null;   // 첫 렌더에서 기본값으로 채운다
+function defaultDetailColumnKeys() {
+  return detailColumns().map(([key]) => key).filter(key => !DETAIL_OPTIONAL_KEYS.includes(key));
+}
+function ensureDetailColumnVisibility() {
+  if (!detailColumnVisibility) detailColumnVisibility = new Set(defaultDetailColumnKeys());
+  return detailColumnVisibility;
+}
+function visibleDetailColumns() {
+  const visible = ensureDetailColumnVisibility();
+  const cols = detailColumns().filter(([key]) => visible.has(key));
+  return cols.length ? cols : detailColumns();   // 전부 끄면 빈 표가 되므로 방어
+}
+function detailColumnWidths(cols) {
+  const weights = cols.map(([key]) => DETAIL_COLUMN_WEIGHT[key] || 8);
+  const total = weights.reduce((a, c) => a + c, 0) || 1;
+  return weights.map(w => (w / total * 100));
+}
+/* ── R-023: 열 선택 메뉴 열고 닫는 배선. 결과 목록과 선택 항목 상세가 같이 쓴다.
+   .panel 이 overflow:hidden 이라 absolute 메뉴가 잘린다 — body 로 옮기고
+   position:fixed 로 버튼 기준 좌표를 계산해 배치한다. */
+function wireColumnToggleMenu(btnId, menuId) {
+  const btn = document.getElementById(btnId);
+  const menu = document.getElementById(menuId);
+  if (!btn || !menu) return;
+  document.body.appendChild(menu);
+  const place = () => {
+    const b = btn.getBoundingClientRect(), m = menu.getBoundingClientRect();
+    let left = b.right - m.width;
+    let top = b.bottom + 6;
+    left = Math.max(8, Math.min(left, window.innerWidth - m.width - 8));
+    if (top + m.height > window.innerHeight - 8) top = Math.max(8, b.top - m.height - 6);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  };
+  const close = () => menu.classList.remove("open");
+  btn.addEventListener("click", event => {
+    event.stopPropagation();
+    if (menu.classList.contains("open")) { close(); return; }
+    menu.classList.add("open");
+    place();
+  });
+  document.addEventListener("click", event => {
+    if (!menu.classList.contains("open")) return;
+    if (menu.contains(event.target) || event.target === btn) return;
+    close();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && menu.classList.contains("open")) close();
+  });
+  window.addEventListener("resize", () => { if (menu.classList.contains("open")) place(); });
+  window.addEventListener("scroll", () => { if (menu.classList.contains("open")) place(); }, true);
+}
+let detailMenuSignature = null;
+/* 체크 상태만 맞춘다. 열을 켜고 끌 때마다 메뉴를 통째로 다시 만들면 방금 누른
+   체크박스가 DOM 에서 떨어져 나가, 연속으로 두 개를 켜면 두 번째가 먹히지 않는다. */
+function syncDetailMenuChecks(menu, allCols, visible) {
+  const boxes = Array.from(menu.querySelectorAll(".column-menu-body input"));
+  boxes.forEach((box, i) => { if (allCols[i]) box.checked = visible.has(allCols[i][0]); });
+  const allBox = menu.querySelector(".column-menu-head input");
+  if (allBox) {
+    const checked = allCols.filter(([key]) => visible.has(key)).length;
+    allBox.checked = checked === allCols.length;
+    allBox.indeterminate = checked > 0 && checked < allCols.length;
+  }
+}
+function renderDetailColumnToggleMenu() {
+  const menu = document.getElementById("detailColumnToggleMenu");
+  if (!menu) return;
+  const allCols = detailColumns();
+  const visible = ensureDetailColumnVisibility();
+  // 헤더 라벨은 탭(Fail Type / Reason)과 리드아웃 이름에 따라 바뀐다 — 그때만 다시 만든다.
+  const signature = allCols.map(([key, label]) => `${key}|${label}`).join(",");
+  if (detailMenuSignature === signature && menu.childElementCount) {
+    syncDetailMenuChecks(menu, allCols, visible);
+    return;
+  }
+  detailMenuSignature = signature;
+  menu.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "column-menu-head";
+  const allItem = document.createElement("label");
+  allItem.className = "column-toggle-item";
+  const allBox = document.createElement("input");
+  allBox.type = "checkbox";
+  const syncAll = () => {
+    const checked = allCols.filter(([key]) => visible.has(key)).length;
+    allBox.checked = checked === allCols.length;
+    allBox.indeterminate = checked > 0 && checked < allCols.length;
+  };
+  allBox.addEventListener("change", () => {
+    if (allBox.checked) allCols.forEach(([key]) => visible.add(key));
+    else allCols.forEach(([key]) => visible.delete(key));
+    renderDetailTable();
+  });
+  allItem.appendChild(allBox);
+  allItem.appendChild(document.createTextNode("전체 선택"));
+  head.appendChild(allItem);
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.className = "column-menu-reset";
+  reset.textContent = "기본값으로";
+  reset.addEventListener("click", () => {
+    visible.clear();
+    defaultDetailColumnKeys().forEach(key => visible.add(key));
+    renderDetailTable();
+  });
+  head.appendChild(reset);
+  menu.appendChild(head);
+  const body = document.createElement("div");
+  body.className = "column-menu-body";
+  allCols.forEach(([key, label]) => {
+    const item = document.createElement("label");
+    item.className = "column-toggle-item";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = visible.has(key);
+    box.addEventListener("change", () => {
+      if (box.checked) visible.add(key); else visible.delete(key);
+      syncAll();
+      renderDetailTable();
+    });
+    item.appendChild(box);
+    item.appendChild(document.createTextNode(label));
+    body.appendChild(item);
+  });
+  menu.appendChild(body);
+  syncAll();
 }
 function detailColumns() {
+  // 같은 열에 담기는 값의 성격이 탭마다 다르다 — Fail 탭은 이탈 유형(Excessive·Slight…),
+  // Abnormal Pass 탭은 판정축(Measured·Delta). 한 이름으로 묶으면 같은 종류로 오해된다. (R-020)
+  const specOutHeader = (analysis?.analysis_mode || analysisMode) === "fail" ? "Fail Type" : "Reason";
   return [
-    ["sample", "Sample No."], ["result", "Result"], ["spec_out_type", "Spec.-Out Type"],
+    ["sample", "Sample No."], ["spec_out_type", specOutHeader],
     ["pre_value", "Pre"], ["post_t1", postReadoutHeader(1)], ["post_t2", postReadoutHeader(2)], ["post_t3", postReadoutHeader(3)],
-    ["unit", "Unit"], ["mea_s", "σ (Measured)"], ["diff", "Delta"],
-    ["diff_s", "σ (Delta)"], ["graph_exclude", "Exclude"], ["need_bench", "Need Bench?"]
+    ["unit", "Unit"], ["mea_s", "Z-Score (Value)"], ["diff", "Delta"],
+    ["diff_s", "Z-Score (Delta)"], ["graph_exclude", "Exclude"], ["need_bench", "Need Bench?"]
   ];
 }
   function updatePanelMode() {
@@ -3382,7 +3497,7 @@ function clearAnalysisDisplay(message = "") {
   selectedItem = "";
   highlightSample = null;
   highlightMode = null;
-  sortState = { column: "severity", reverse: true };
+  sortState = { column: "qty", reverse: true };
   detailSortState = { column: null, reverse: false };
   resetAnalysisFilters();
   renderSummary();
@@ -3396,7 +3511,7 @@ function applyAnalysisPayload(data, remember = true) {
   if (remember) modePayloads[analysis.analysis_mode || analysisMode] = analysis;
   setResultPanelsVisible(true);
   itemCache = analysis.items || {};
-  sortState = { column: "severity", reverse: true };
+  sortState = { column: "qty", reverse: true };
   detailSortState = { column: null, reverse: false };
   resetAnalysisFilters();
   selectedItem = itemKey(analysis.results?.[0]) || "";
@@ -3871,6 +3986,7 @@ function bindResultControls() {
     highlightMode = null;
     await refreshSelectedItem();
   });
+  wireColumnToggleMenu("detailColumnToggleBtn", "detailColumnToggleMenu");   // R-023
   const columnToggleBtn = document.getElementById("columnToggleBtn");
   const columnToggleMenu = document.getElementById("columnToggleMenu");
   if (columnToggleBtn && columnToggleMenu) {
@@ -4441,6 +4557,118 @@ function renderColumnToggleMenu(resultMode, allCols) {
   menu.appendChild(body);
   updateSelectAllState();
 }
+/* ── R-021: Pre / Post 비교 새 창 ───────────────────────────────
+   항목 기준 표에서 뺀 Stdev./Min./Max. 와, 목록에 아예 없던 Pre 쪽 분포를
+   한 화면에서 대조한다. 계산은 툴 본체와 같은 ddof=1 표본표준편차다. */
+function prePostSeriesStats(values) {
+  const nums = [];
+  (values || []).forEach(v => { const n = Number(v); if (Number.isFinite(n)) nums.push(n); });
+  if (!nums.length) return null;
+  const n = nums.length;
+  const mean = nums.reduce((a, c) => a + c, 0) / n;
+  const sigma = n > 1
+    ? Math.sqrt(nums.reduce((a, c) => a + (c - mean) * (c - mean), 0) / (n - 1))
+    : null;
+  let min = nums[0], max = nums[0];
+  for (const v of nums) { if (v < min) min = v; if (v > max) max = v; }
+  return { n, mean, sigma, min, max };
+}
+function prePostEscape(text) {
+  return String(text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function prePostCell(value, digits) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+  return digits === undefined ? fmt(value) : Number(value).toFixed(digits);
+}
+function openPrePostCompareWindow(itemName) {
+  const data = itemCache[itemName];
+  if (!data) { alert("항목 데이터를 먼저 불러온 뒤 다시 시도하세요."); return; }
+  const rows = analysis?.selected_summary || analysis?.results || [];
+  const summary = rows.find(r => itemKey(r) === itemName) || {};
+  const unit = summary.unit || data.unit || "";
+  const ll = summary.lower_limit ?? data.lower_limit;
+  const ul = summary.upper_limit ?? data.upper_limit;
+  const span = (Number.isFinite(Number(ll)) && Number.isFinite(Number(ul))) ? Number(ul) - Number(ll) : null;
+
+  const series = [];
+  const pre = prePostSeriesStats(data.pre_values);
+  if (pre) series.push({ label: "Pre", stats: pre, diffMean: null });
+  (data.post_readout_values || []).forEach(entry => {
+    const stats = prePostSeriesStats(entry?.values);
+    if (stats) series.push({ label: entry.label || entry.key, stats, diffMean: entry?.stats?.diff_mean ?? null });
+  });
+  if (series.length <= (pre ? 1 : 0)) {
+    const post = prePostSeriesStats(data.post_values);
+    if (post) series.push({ label: "Post", stats: post, diffMean: summary.diff_mean ?? null });
+  }
+
+  const distRows = series.map(s => {
+    const shift = pre && s.label !== "Pre" ? s.stats.mean - pre.mean : null;
+    return `<tr${s.label === "Pre" ? ' class="pre"' : ""}>
+      <td class="k">${prePostEscape(s.label)}</td>
+      <td>${s.stats.n}</td>
+      <td>${prePostCell(s.stats.mean)}</td>
+      <td>${prePostCell(s.stats.sigma)}</td>
+      <td>${prePostCell(s.stats.min)}</td>
+      <td>${prePostCell(s.stats.max)}</td>
+      <td>${shift === null ? "—" : (shift > 0 ? "+" : "") + prePostCell(shift)}</td>
+      <td>${s.diffMean === null || s.diffMean === undefined ? "—"
+            : (Number(s.diffMean) > 0 ? "+" : "") + (Number(s.diffMean) * 100).toFixed(2) + "%"}</td>
+    </tr>`;
+  }).join("");
+
+  const marginRows = series.map(s => {
+    const low = Number.isFinite(Number(ll)) ? s.stats.min - Number(ll) : null;
+    const high = Number.isFinite(Number(ul)) ? Number(ul) - s.stats.max : null;
+    return `<tr${s.label === "Pre" ? ' class="pre"' : ""}>
+      <td class="k">${prePostEscape(s.label)}</td>
+      <td>${prePostCell(low)}</td>
+      <td>${prePostCell(high)}</td>
+      <td>${span && low !== null ? (low / span * 100).toFixed(1) + "%" : "—"}</td>
+      <td>${span && high !== null ? (high / span * 100).toFixed(1) + "%" : "—"}</td>
+    </tr>`;
+  }).join("");
+
+  const cond = document.getElementById("conditionSummaryLine")?.textContent?.trim() || "";
+  const mea = Number(data.mea_threshold), diff = Number(data.diff_threshold);
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<title>Pre / Post 비교 — ${prePostEscape(itemName)}</title><style>
+ body{font:13px "Segoe UI","맑은 고딕",sans-serif;color:#1b2430;margin:0;padding:22px;background:#f7f9fc}
+ h1{font-size:19px;margin:0 0 4px}
+ .sub{color:#5a6b7b;font-size:12px;margin-bottom:16px}
+ .card{background:#fff;border:1px solid #d8e0e8;border-radius:8px;padding:14px 16px;margin-bottom:14px}
+ .card h2{font-size:13px;margin:0 0 10px;color:#065a82;letter-spacing:.3px}
+ table{border-collapse:collapse;width:100%}
+ th,td{border:1px solid #e3e9ef;padding:6px 10px;text-align:right;white-space:nowrap}
+ th{background:#1f3864;color:#fff;font-weight:600;text-align:center}
+ td.k{text-align:left;font-weight:600;color:#21295c}
+ tr.pre td{background:#f3f7fa}
+ .spec span{display:inline-block;margin-right:22px}
+ .spec b{color:#065a82}
+ .foot{color:#5a6b7b;font-size:11.5px;margin-top:2px}
+</style></head><body>
+<h1>${prePostEscape(itemName)}${summary.test_number ? ` <span style="color:#5a6b7b;font-weight:400">· Test No. ${prePostEscape(summary.test_number)}</span>` : ""}</h1>
+<div class="sub">${prePostEscape(cond)}</div>
+<div class="card spec"><h2>규격</h2>
+  <span>LL <b>${prePostCell(ll)}</b></span><span>UL <b>${prePostCell(ul)}</b></span>
+  <span>스펙폭 <b>${prePostCell(span)}</b></span><span>단위 <b>${prePostEscape(unit) || "—"}</b></span></div>
+<div class="card"><h2>분포 비교</h2>
+  <table><thead><tr><th>구분</th><th>N</th><th>평균</th><th>표준편차</th><th>Min.</th><th>Max.</th><th>Δ 평균</th><th>Δ %</th></tr></thead>
+  <tbody>${distRows}</tbody></table>
+  <div class="foot">표준편차는 표본표준편차(ddof = 1) — 판정에 쓰이는 σ 와 같은 값입니다. (항목 기준 표의 Stdev. 는 ddof = 0 이라 미세하게 다릅니다 — R-024)</div></div>
+<div class="card"><h2>규격 여유</h2>
+  <table><thead><tr><th>구분</th><th>하한까지 (Min − LL)</th><th>상한까지 (UL − Max)</th><th>하한 여유 %</th><th>상한 여유 %</th></tr></thead>
+  <tbody>${marginRows}</tbody></table>
+  <div class="foot">여유 % 는 스펙폭 대비 비율입니다. 값이 음수면 그 방향으로 규격을 벗어난 유닛이 있다는 뜻입니다.</div></div>
+<div class="card"><h2>판정 기준</h2>
+  <div>Grubbs 검정 · alpha ${prePostEscape(analysis?.flag_alpha ?? 0.01)} · 표본표준편차(ddof = 1)</div>
+  <div class="foot">Mea 임계 ${Number.isFinite(mea) ? mea.toFixed(4) : "—"} / Delta 임계 ${Number.isFinite(diff) ? diff.toFixed(4) : "—"} — 임계값은 표본 수 n 에 따라 항목마다 다릅니다.</div></div>
+</body></html>`;
+
+  const win = window.open("", "prePostCompareWindow", "width=980,height=760,resizable=yes,scrollbars=yes");
+  if (!win) { alert("새 창이 브라우저에서 차단됐습니다."); return; }
+  win.document.open(); win.document.write(html); win.document.close(); win.focus();
+}
 function renderSummaryListTable(table, payload, mode) {
   table.innerHTML = "";
   const thead = table.createTHead();
@@ -4453,8 +4681,6 @@ function renderSummaryListTable(table, payload, mode) {
   cols.forEach(([key, label]) => {
     const th = document.createElement("th");
     th.textContent = label + (sortState.column === key ? (sortState.reverse ? " ▼" : " ▲") : "");
-    if (key === "n") th.title = "표준편차 계산에 사용된 유닛 수";
-    if (key === "stdev") th.title = "표본표준편차 (ddof = 1, n-1)";
     th.onclick = () => {
       if (sortState.column === key) sortState.reverse = !sortState.reverse;
       else sortState = { column: key, reverse: false };
@@ -4483,6 +4709,14 @@ function renderSummaryListTable(table, payload, mode) {
       highlightMode = null;
       await refreshSelectedItem();
     };
+    // 목록에서 뺀 Stdev./Min./Max. 와 Pre 쪽 분포는 여기서 본다. (R-021)
+    tr.title = "더블클릭하면 Pre / Post 비교 표가 새 창으로 열립니다";
+    tr.ondblclick = async () => {
+      if (!activatePayloadMode(mode, key)) return;
+      selectedItem = key;
+      await refreshSelectedItem();
+      openPrePostCompareWindow(key);
+    };
     cols.forEach(([key]) => {
       const td = tr.insertCell();
       td.textContent = fmtCell(summaryCellValue(r, key, payload));
@@ -4500,7 +4734,9 @@ function renderOverSampleTable(table) {
   const overRows = overSigmaRows();
   const maxItems = Math.max(1, ...overRows.map(r => r.items.length));
   const head = table.createTHead().insertRow();
-  ["Sample #", ...Array.from({ length: maxItems }, (_, i) => i === 0 ? "Abnormal Shift Items" : "")].forEach(label => {
+  // 탭에 따라 목록의 성격이 다르다 — Fail 탭은 규격 이탈 항목, Abnormal Pass 탭은 통계 판정 항목.
+  const sampleItemsLabel = (analysis?.analysis_mode || analysisMode) === "fail" ? "Fail Items" : "Abnormal Shift Items";
+  ["Sample #", ...Array.from({ length: maxItems }, (_, i) => i === 0 ? sampleItemsLabel : "")].forEach(label => {
     const th = document.createElement("th");
     th.textContent = label;
     head.appendChild(th);
@@ -4592,6 +4828,13 @@ function detailCellValue(row, key) {
   const summary = selectedResultRow() || {};
   if (key === "result") return detailResultLabel(row);
   if (key === "spec_out_type") return detailSpecOutType(row);
+  // 항목 기준 표의 Delta Mean 이 % 라 여기도 % 로 맞춘다 — 같은 diff_ratio 인데
+  // 한쪽은 비율 원값이라 표기가 어긋나 있었다. 정렬은 원값 기준 그대로다. (R-020)
+  if (key === "diff") {
+    if (row.diff === null || row.diff === undefined) return null;
+    const ratio = Number(row.diff);
+    return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(2)}%` : "";
+  }
   if (["post_t1", "post_t2", "post_t3"].includes(key)) return detailReadoutValue(row, key);
   if (key === "unit") return row.unit || summary.unit || data.unit || "";
   return row[key];
@@ -4614,9 +4857,12 @@ function renderDetailTable() {
   const table = document.getElementById("detailTable");
   table.innerHTML = "";
   const head = table.createTHead().insertRow();
-  const cols = detailColumns();
-  cols.forEach(([key, label]) => {
+  const cols = visibleDetailColumns();
+  const widths = detailColumnWidths(cols);
+  renderDetailColumnToggleMenu();
+  cols.forEach(([key, label], index) => {
     const th = document.createElement("th");
+    th.style.width = `${widths[index].toFixed(3)}%`;
     th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " ▼" : " ▲") : "");
     th.onclick = () => {
       if (detailSortState.column === key) detailSortState.reverse = !detailSortState.reverse;
@@ -4648,7 +4894,14 @@ function renderDetailTable() {
           event.stopPropagation();
           if (checkbox.checked) graphExcludeState[graphExcludeKey(d)] = true;
           else delete graphExcludeState[graphExcludeKey(d)];
+          // 그래프에서 뺀 샘플이 하이라이트 중이면 하이라이트도 같이 푼다 — 안 그러면
+          // 점과 Shift 화살표만 남아 좁혀진 축 밖으로 뻗는다. (R-016 후속)
+          if (checkbox.checked && String(highlightSample) === String(d.sample)) {
+            highlightSample = null;
+            highlightMode = null;
+          }
           renderGraphExcludeNote();
+          renderDetailTable();
           drawCharts();
         });
         td.appendChild(checkbox);
@@ -4667,17 +4920,23 @@ function renderDetailTable() {
       }
       td.textContent = fmtCell(detailCellValue(d, key));
       if (key === "sample") {
-        td.classList.add("sigma-action");
-        td.title = "Show this sample on CDF Distribution and Scattered Plot";
-        td.onclick = event => {
-          event.stopPropagation();
-          highlightSample = d.sample;
-          highlightMode = "sample";
-          renderDetailTable();
-          drawCharts();
-        };
-        if (String(d.sample) === String(highlightSample) && highlightMode === "sample") {
-          td.classList.add("active-cell");
+        if (isGraphExcluded(d)) {
+          // 그래프에서 뺀 샘플은 하이라이트 대상이 아니다 — 눌러도 안 된다는 걸 눈으로 알린다.
+          td.classList.add("sample-excluded");
+          td.title = "그래프에서 제외된 샘플입니다 (Exclude 를 풀면 클릭할 수 있습니다)";
+        } else {
+          td.classList.add("sigma-action");
+          td.title = "Show this sample on CDF Distribution and Scattered Plot";
+          td.onclick = event => {
+            event.stopPropagation();
+            highlightSample = d.sample;
+            highlightMode = "sample";
+            renderDetailTable();
+            drawCharts();
+          };
+          if (String(d.sample) === String(highlightSample) && highlightMode === "sample") {
+            td.classList.add("active-cell");
+          }
         }
       }
       if (key === "mea_s" || key === "diff_s") {
@@ -5460,13 +5719,14 @@ function drawDiffCdfChart() {
       readoutSeries.forEach(series => {
         const point = series.points.find(entry => String(entry.sample) === String(highlightSample));
         if (!point || point.diff === null) return;
+        if (isGraphExcluded(point)) return;   // R-016 후속
         const cdf = cdfFraction(series.diff_values, point.diff);
         drawHighlightPoint(ctx, x(point.diff), y(cdf), series.color, `#${highlightSample} ${series.label || series.key} Diff ${fmt(point.diff)}`);
       });
     } else if (fallbackPostSelected) {
       const row = data.details.find(detail => String(detail.sample) === String(highlightSample));
       const diffValue = row ? finiteNumber(row.diff) : null;
-      if (diffValue !== null && sigmaOver3(row, "diff_s")) {
+      if (diffValue !== null && !isGraphExcluded(row) && sigmaOver3(row, "diff_s")) {   // R-016 후속
         const cdf = mode === "fail" ? failDirectionCdf(row) : cdfFraction(values, diffValue);
         drawHighlightPoint(ctx, x(diffValue), y(cdf), "#b00020", `#${highlightSample} Diff ${fmt(diffValue)}`);
       }
@@ -5666,6 +5926,9 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
   if (!highlightSample) return;
   const d = data.details.find(row => String(row.sample) === String(highlightSample));
   if (!d) return;
+  // 그래프에서 뺀 샘플은 하이라이트도 그리지 않는다 — 체크박스 쪽에서 하이라이트를
+  // 풀어주지만, 다른 경로로 들어와도 어긋나지 않도록 여기서도 막는다. (R-016 후속)
+  if (isGraphExcluded(d)) return;
   const forceSampleHighlight = highlightMode === "sample";
   if (readoutSeries && readoutSeries.length) {
     readoutSeries.forEach((series, index) => {
