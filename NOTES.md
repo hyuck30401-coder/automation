@@ -367,3 +367,11 @@ regression_check PASS (판정 결과 불변 확인, 순수 성능 수정).
 summary_counts / sample_counts / item_counts / excluded_items 는 비교 대상이 아니다.
 → 요약 스트립 숫자와 시험항목 탭 배지가 깨져도 regression_check 는 PASS 한다.
    해당 값은 화면 확인 또는 별도 스냅샷 항목 추가로 검증해야 한다. (P3 백로그)
+
+### selected_summary 의 avg/stdev/min/max 는 리드아웃을 합친 표본이다 (R-024 작업 중 발견, 미해결)
+`cache_summary_values()` 는 `post_readout_values` 의 모든 회차 값을 하나로 이어 붙여
+반환한다. 그래서 `enrich_payload_summary_stats()` 가 채우는 avg/stdev/min/max 는
+리드아웃이 여러 개일 때 t1+t2+t3 를 합친 집단의 통계이고, 판정에 쓰는 sigma(마지막
+리드아웃 표본)와는 모집단 자체가 다르다. R-024 로 ddof 는 맞췄으므로 단일 리드아웃
+조건에서는 판정값과 정확히 일치하지만, 다중 리드아웃 조건에서는 여전히 어긋난다.
+어느 쪽이 맞는 정의인지는 사용자 확인이 필요하다. (P2)

@@ -8193,13 +8193,21 @@ def cache_stats(values):
 
 
 def cache_summary_values(item_payload):
-    readout_series = item_payload.get("post_readout_values") or []
-    values = []
-    for series in readout_series:
-        values.extend(series.get("values") or [])
+    # 회차(t1/t2/t3)를 하나로 합쳐서 통계를 내면 안 된다 — 회차마다 모집단이 다르므로
+    # 합친 표본의 평균·표준편차는 어느 회차도 설명하지 못하고, 판정 sigma 와도 어긋난다.
+    # 항목 요약 행은 항목당 한 줄이므로 "분석 대상 리드아웃"(판정에 쓰는 바로 그 표본
+    # = post_values, n_post/post_sigma 의 모집단) 하나만 쓴다. 회차별 통계가 필요하면
+    # post_readout_values[].stats 에 회차별로 이미 들어 있고, Item 더블클릭 시 뜨는
+    # Pre / Post 비교 창(R-021)이 그것을 회차별로 보여준다. (R-025)
+    values = item_payload.get("post_values") or item_payload.get("pass_post_values") or []
     if values:
         return values
-    return item_payload.get("post_values") or item_payload.get("pass_post_values") or []
+    # post_values 가 없는 payload(구 캐시 등)면 마지막 회차 하나로 대체한다 — 합치지 않는다.
+    for series in reversed(item_payload.get("post_readout_values") or []):
+        series_values = series.get("values") or []
+        if series_values:
+            return series_values
+    return []
 
 
 def enrich_payload_summary_stats(payload):
