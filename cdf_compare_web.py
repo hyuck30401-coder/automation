@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.028"
+APP_REVISION = "Rev.0.029"
 CURRENT_APP = None
 # 모드별 항목 캐시: {"pass": {항목명: payload}, "fail": {...}}. 같은 항목이라도 pass 는
 # 양품 표본, fail 은 불량 표본을 보므로 모집단이 다르다 — 이름만으로 캐시를 공유하면
