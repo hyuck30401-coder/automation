@@ -8183,7 +8183,10 @@ def cache_stats(values):
     avg = sum(nums) / len(nums)
     return {
         "avg": avg,
-        "stdev": math.sqrt(sum((value - avg) ** 2 for value in nums) / len(nums)),
+        # 판정에 쓰는 sigma 와 같은 표본표준편차(ddof=1, §11-4)로 통일한다. 이전에는
+        # n 으로 나눈 모표준편차(ddof=0)라, 화면의 stdev 로 옆 칸 Z-Score 를 손으로
+        # 검산하면 답이 맞지 않았다 (R-024). n 이 작을수록 차이가 커진다.
+        "stdev": std_of(nums, ddof=1),
         "min": min(nums),
         "max": max(nums),
     }
