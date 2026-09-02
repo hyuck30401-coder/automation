@@ -42,6 +42,9 @@ PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
 APP_REVISION = "Rev.0.028"
 CURRENT_APP = None
+# 모드별 항목 캐시: {"pass": {항목명: payload}, "fail": {...}}. 같은 항목이라도 pass 는
+# 양품 표본, fail 은 불량 표본을 보므로 모집단이 다르다 — 이름만으로 캐시를 공유하면
+# 다른 모드의 결과가 그대로 나간다 (R-017).
 CURRENT_ITEMS = {}
 CURRENT_PAYLOADS = {}
 CURRENT_CACHE_KEYS = {}
@@ -8829,7 +8832,7 @@ def run_analyze_job(job_id, pre_path, post_path, bin1_only, cleanup_files=True, 
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
                 CURRENT_APP = app
-                CURRENT_ITEMS = payload.get("items", {})
+                CURRENT_ITEMS[mode] = payload.get("items", {})
                 CURRENT_PAYLOADS[mode] = payload
                 if cache_key:
                     CURRENT_CACHE_KEYS[mode] = cache_key
@@ -8876,7 +8879,7 @@ def run_fail_analyze_job(job_id, pre_path, post_files, cache_key=None, include_p
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
                 CURRENT_APP = None
-                CURRENT_ITEMS = payload.get("items", {})
+                CURRENT_ITEMS["fail"] = payload.get("items", {})
                 CURRENT_PAYLOADS["fail"] = payload
                 if cache_key:
                     CURRENT_CACHE_KEYS["fail"] = cache_key
@@ -8980,7 +8983,7 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
         with APP_LOCK:
             if not run_id or run_id == CURRENT_ANALYSIS_RUN_ID:
                 CURRENT_APP = None
-                CURRENT_ITEMS = payload.get("items", {})
+                CURRENT_ITEMS[mode] = payload.get("items", {})
                 CURRENT_PAYLOADS[mode] = payload
                 if cache_key:
                     CURRENT_CACHE_KEYS[mode] = cache_key
@@ -9285,7 +9288,10 @@ class Handler(BaseHTTPRequestHandler):
                 with APP_LOCK:
                     app = CURRENT_APP
                     payload = CURRENT_PAYLOADS.get(mode) if mode else None
-                    cached_item = (payload.get("items", {}) if payload else {}).get(item) or CURRENT_ITEMS.get(item)
+                    # 모드가 다르면 캐시를 쓰지 않는다 — pass/fail 은 모집단이 다른
+                    # 별개의 결과다 (R-017).
+                    mode_items = CURRENT_ITEMS.get(mode, {}) if mode else {}
+                    cached_item = (payload.get("items", {}) if payload else {}).get(item) or mode_items.get(item)
                     cache_key = (payload or {}).get("cache_key") or (CURRENT_CACHE_KEYS.get(mode) if mode else "")
                 if cached_item:
                     self.send_json(cached_item)
@@ -9296,7 +9302,8 @@ class Handler(BaseHTTPRequestHandler):
                         target_payload = CURRENT_PAYLOADS.get(mode) if mode else None
                         if target_payload is not None:
                             target_payload.setdefault("items", {})[item] = split_item
-                        CURRENT_ITEMS[item] = split_item
+                        if mode:
+                            CURRENT_ITEMS.setdefault(mode, {})[item] = split_item
                     self.send_json(split_item)
                     return
                 if app is None:
@@ -9400,7 +9407,7 @@ class Handler(BaseHTTPRequestHandler):
                         cached_payload["analysis_run_id"] = run_id
                         with APP_LOCK:
                             CURRENT_APP = None
-                            CURRENT_ITEMS = cached_payload.get("items", {})
+                            CURRENT_ITEMS[mode] = cached_payload.get("items", {})
                             CURRENT_PAYLOADS[mode] = cached_payload
                             CURRENT_CACHE_KEYS[mode] = cache_key
                             set_current_analysis_status(mode, "done", "Loaded saved result")
@@ -9444,7 +9451,7 @@ class Handler(BaseHTTPRequestHandler):
                     cached_payload["analysis_run_id"] = run_id
                     with APP_LOCK:
                         CURRENT_APP = None
-                        CURRENT_ITEMS = cached_payload.get("items", {})
+                        CURRENT_ITEMS[mode] = cached_payload.get("items", {})
                         CURRENT_PAYLOADS[mode] = cached_payload
                         CURRENT_CACHE_KEYS[mode] = cache_key
                         set_current_analysis_status(mode, "done", "Loaded saved result")
