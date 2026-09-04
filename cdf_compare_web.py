@@ -41,6 +41,15 @@ PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
 APP_REVISION = "Rev.0.029"
+# R-026 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
+# 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 산포가 극히 작은 항목에서는
+# 스펙폭의 0.01% 밖에 안 움직인 샘플도 z-score 가 커져 SELECT 가 된다. 이 상수는 그런
+# 건들을 "스펙 대비 이동이 미미하다"는 이유로 화면에서만 접기 위한 임계다 — result 필드도
+# 골든 스냅샷도 바뀌지 않는다(§5-1). 스펙폭 대비 이동량 비율이며 기본 1%.
+try:
+    SHIFT_GATE_K = float(os.environ.get("CDFTOOL_SHIFT_GATE_K", "0.01"))
+except (TypeError, ValueError):
+    SHIFT_GATE_K = 0.01
 CURRENT_APP = None
 # 모드별 항목 캐시: {"pass": {항목명: payload}, "fail": {...}}. 같은 항목이라도 pass 는
 # 양품 표본, fail 은 불량 표본을 보므로 모집단이 다르다 — 이름만으로 캐시를 공유하면
@@ -2224,6 +2233,12 @@ HTML = r"""<!doctype html>
       border-bottom:1px solid var(--line2); background:none }
     .chead h2,.chead h3{ margin:0; font-size:12.5px; font-weight:800; color:var(--ink); white-space:nowrap }
     .chead .s{ font-size:11px; color:var(--ink3) }
+    /* R-027: 이상 카드에 샘플 수를 작게 병기한다 (항목 수가 주, 샘플 수가 보조). */
+    .summary-card-sub{ font-size:11px; font-weight:600; color:var(--ink3) }
+    /* R-026: 기준 탭은 화면 전체의 필터 스위치다. 노트는 이동량 기준에서 몇 건이 빠졌는지. */
+    #detailBasisBar{ flex:0 0 auto }
+    #shiftGateNote{ color:var(--ink3); white-space:nowrap }
+    #shiftGateNote.is-on{ color:var(--acc-d) }
     .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
       background:#fff; font-size:11.5px; font-weight:700; color:var(--ink2) }
     .gbtn:hover{ border-color:var(--acc-b); color:var(--acc-d); background:var(--acc-s) }
@@ -2391,7 +2406,7 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 이동량 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
@@ -3225,6 +3240,101 @@ function tempMatchesFilters(temp) {
 function graphTempMatches(temp) {
   return tempMatchesFilters(temp);
 }
+/* ── R-026: 실용적 유의성 게이트 ─────────────────────────────────────────
+   판정(Grubbs)은 "통계적으로 튀는가"만 본다. 산포가 극히 작은 항목에서는 스펙폭의
+   0.01% 밖에 안 움직인 샘플도 z-score 가 커져 SELECT 가 된다. 여기서는 그런 건들을
+   화면에서만 접는다 — 서버의 result 필드도 골든 스냅샷도 바뀌지 않는다.
+
+   행 단위 비율은 여기서 계산하고(상세 표), 항목 단위 집계는 서버가 payload.shift_gate 로
+   내려준다(항목 표·요약). 항목 표는 첫 화면에 전 항목을 그려야 하는데 상세는 /item 으로
+   지연 로딩돼서, 프런트가 항목 판정을 하려면 항목 수만큼 왕복해야 하기 때문이다.
+   상세 행의 pre/post 와 항목의 LL/UL 은 반올림 없이 float64 원본이 오므로 서버 집계와
+   여기 계산이 비트 단위로 일치한다. */
+let detailBasis = "shift";   // "shift" = 스펙 대비 이동량(기본) | "sigma" = 산포(기존 Grubbs)
+function shiftGateInfo(payload = analysis) {
+  const info = payload?.shift_gate;
+  return (info && info.items) ? info : null;
+}
+function shiftGateK(payload = analysis) {
+  const k = Number(shiftGateInfo(payload)?.k);
+  return Number.isFinite(k) && k > 0 ? k : 0.01;
+}
+// Fail 탭에는 적용하지 않는다 — 이미 규격을 벗어난 유닛이라 "스펙 대비 미미"가 성립 안 함.
+// 게이트 정보가 없는 payload(구 캐시 등)도 비활성 = 아무것도 접지 않는다.
+function shiftGateOn(payload = analysis) {
+  if (detailBasis !== "shift") return false;
+  if ((payload?.analysis_mode || analysisMode) === "fail") return false;
+  return !!shiftGateInfo(payload);
+}
+function shiftSpecRatio(row, itemData) {
+  const ll = Number(itemData?.lower_limit);
+  const ul = Number(itemData?.upper_limit);
+  if (!Number.isFinite(ll) || !Number.isFinite(ul)) return null;
+  const width = Math.abs(ul - ll);
+  if (!width) return null;
+  const pre = Number(row?.pre_value);
+  const post = Number(row?.post_value);
+  if (!Number.isFinite(pre) || !Number.isFinite(post)) return null;
+  return Math.abs(post - pre) / width;
+}
+function detailRowFolded(row, itemData) {
+  const ratio = shiftSpecRatio(row, itemData);
+  return ratio !== null && ratio < shiftGateK();
+}
+function itemGateCounts(key, payload = analysis) {
+  return shiftGateInfo(payload)?.items?.[key] || null;
+}
+function itemFoldedByGate(key, payload = analysis) {
+  const counts = itemGateCounts(key, payload);
+  return !!counts && !counts.kept;
+}
+function gateTotals(payload = analysis) {
+  // 현재 필터·기준 상태에서 화면이 말해야 할 "항목 / 샘플" 수 (R-027 요약 병기용).
+  const rows = (payload?.selected_summary || []).filter(row => rowMatchesPayloadFilters(row, payload));
+  const on = shiftGateOn(payload);
+  let items = 0, samples = 0, foldedItems = 0, foldedSamples = 0;
+  rows.forEach(row => {
+    const key = itemKey(row);
+    const counts = itemGateCounts(key, payload);
+    const total = Number(row.qty) || 0;
+    if (on && counts) {
+      if (counts.kept) { items += 1; samples += counts.kept; }
+      else foldedItems += 1;
+      foldedSamples += counts.folded || 0;
+    } else {
+      items += 1;
+      samples += total;
+    }
+  });
+  return { items, samples, foldedItems, foldedSamples };
+}
+function renderShiftGateNote() {
+  const node = document.getElementById("shiftGateNote");
+  if (!node) return;
+  if (!shiftGateOn()) {
+    node.textContent = "";
+    node.classList.remove("is-on");
+    return;
+  }
+  const { foldedItems, foldedSamples } = gateTotals();
+  node.classList.add("is-on");
+  node.textContent = foldedSamples
+    ? `스펙 대비 미미 ${foldedSamples}건 제외 (항목 ${foldedItems}개 · 이동 ${(shiftGateK() * 100).toFixed(2)}% 미만)`
+    : `스펙 대비 미미 제외 없음 (기준 ${(shiftGateK() * 100).toFixed(2)}%)`;
+}
+function setDetailBasis(basis) {
+  const next = basis === "sigma" ? "sigma" : "shift";
+  if (next === detailBasis) return;
+  detailBasis = next;
+  document.querySelectorAll("#detailBasisBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.basis === detailBasis);
+  });
+  // 기준이 바뀌면 지금 보던 항목이 사라질 수 있다 — 목록에 남는 항목으로 옮긴다.
+  ensureSelectedItemVisibleForActiveTab();
+  renderSummary();
+  renderDetailTable();
+  drawCharts();
+}
 function rowMatchesAnalysisFilters(row) {
   if (!analysis?.total_analysis) return true;
   if (analysisFilters.reliability_item && row.reliability_item !== analysisFilters.reliability_item) return false;
@@ -3253,7 +3363,10 @@ function activatePayloadMode(mode, item = "") {
   return true;
 }
 function filteredResultRows() {
-  return (analysis?.results || []).filter(rowMatchesAnalysisFilters);
+  return (analysis?.results || [])
+    .filter(rowMatchesAnalysisFilters)
+    // R-026: 목록에서 뺀 항목이 자동 선택되지 않도록 같은 기준을 적용한다.
+    .filter(row => !(shiftGateOn() && itemFoldedByGate(itemKey(row))));
 }
 function ensureSelectedItemVisible() {
   const rows = filteredResultRows();
@@ -3978,6 +4091,9 @@ function bindResultControls() {
   document.querySelectorAll("#resultViewBar button").forEach(button => {
     button.addEventListener("click", () => setResultViewMode(button.dataset.view));
   });
+  document.querySelectorAll("#detailBasisBar button").forEach(button => {
+    button.addEventListener("click", () => setDetailBasis(button.dataset.basis));   // R-026
+  });
   document.querySelectorAll(".copy-chart-btn").forEach(button => {
     button.addEventListener("click", () => copyCanvasToClipboard(button.dataset.canvas, button));
   });
@@ -4111,9 +4227,22 @@ function failSelectCount() {
   };
 }
 function passSelectCount() {
+  // R-027: 지금까지 항목 수만 셌다. 이상 샘플이 몇 건인지가 화면 어디에도 없어서 함께 낸다.
+  // 샘플 수는 sum(selected_summary[].qty) 로 구한다 — 서버 payload 변경 없이 SELECT 상세
+  // 쌍 수와 정확히 일치함을 실측 확인(138항목 / 158샘플). R-026 기준 탭 상태도 함께 반영된다.
   const payload = modePayloads.pass;
-  const value = payload?.summary_counts?.select;
-  return Number.isFinite(value) ? value : null;
+  if (!payload) return null;
+  const totals = gateTotals(payload);
+  const fallback = payload?.summary_counts?.select;
+  if (!(payload.selected_summary || []).length && Number.isFinite(fallback)) {
+    return { items: fallback, samples: null };
+  }
+  return { items: totals.items, samples: totals.samples };
+}
+function formatItemsSamples(counts) {
+  if (!counts) return null;
+  if (!Number.isFinite(counts.samples)) return `${counts.items}`;
+  return `${counts.items} 항목 / ${counts.samples} 샘플`;
 }
 function overSampleItemCount(payload = modePayloads.pass) {
   if (!payload) return null;
@@ -4159,7 +4288,12 @@ function renderSummaryStrip() {
     }
   }
   const passCount = passSelectCount();
-  setTabBadge(document.getElementById("passModeBtn"), passCount, passCount != null ? `이상 데이터 식별 ${passCount}개` : "");
+  // 배지는 좁아서 항목 수만 띄우고, 샘플 수는 마우스오버로 병기한다 (R-027).
+  setTabBadge(
+    document.getElementById("passModeBtn"),
+    passCount ? passCount.items : null,
+    passCount ? `이상 데이터 식별 ${formatItemsSamples(passCount)}` : "",
+  );
   if (!strip) return;
   strip.innerHTML = "";
   // Pass 는 항목 기준(분석 항목 수 중 몇 개가 이상인지), Fail 은 유닛 기준(전체 Sample 중
@@ -4176,14 +4310,29 @@ function renderSummaryStrip() {
     { key: "fail", label: "Fail", cls: "flag" },
     { key: "pass", label: "Pass", cls: "ok" }
   ];
+  const passTotals = analysisMode === "pass" ? gateTotals(analysis) : null;
   cards.forEach(card => {
-    const value = counts[card.key] ?? 0;
+    let value = counts[card.key] ?? 0;
+    let sub = "";
+    if (passTotals && card.key === "select") {
+      // R-026/R-027: 이 카드만 기준 탭의 영향을 받는다 — 접힌 항목은 여기서 빠진다.
+      value = passTotals.items;
+      sub = `샘플 ${passTotals.samples}`;
+    }
     if (card.hideIfZero && !value) return;
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
     const valueEl = document.createElement("div");
     valueEl.className = "summary-card-value";
     valueEl.textContent = card.icon ? `${value} ${card.icon}` : `${value}`;
+    if (sub) {
+      // 구분자를 "/" 로 두면 "10분의 14" 처럼 분수로 읽힌다 — 가운뎃점을 쓰고 툴팁으로 못박는다.
+      const subEl = document.createElement("span");
+      subEl.className = "summary-card-sub";
+      subEl.textContent = ` · ${sub}`;
+      valueEl.appendChild(subEl);
+      div.title = `이상 항목 ${value}개 · 이상 샘플 ${passTotals.samples}건`;
+    }
     const labelEl = document.createElement("div");
     labelEl.className = "summary-card-label";
     labelEl.textContent = card.label;
@@ -4414,7 +4563,10 @@ function sortedResults() {
   return rows;
 }
 function sortedPayloadSummaryRows(payload) {
-  const rows = [...(payload?.selected_summary || [])].filter(row => rowMatchesPayloadFilters(row, payload));
+  const rows = [...(payload?.selected_summary || [])]
+    .filter(row => rowMatchesPayloadFilters(row, payload))
+    // R-026: SELECT 샘플이 모두 게이트에 걸린 항목만 뺀다. 하나라도 남으면 목록에 둔다.
+    .filter(row => !(shiftGateOn(payload) && itemFoldedByGate(itemKey(row), payload)));
   if (sortState.column) {
     rows.sort((a, b) => compareSummaryValues(a, b, sortState.column, payload) * (sortState.reverse ? -1 : 1));
   }
@@ -4422,7 +4574,12 @@ function sortedPayloadSummaryRows(payload) {
 }
 function sortedDetails(details) {
   const mode = analysis?.analysis_mode || analysisMode;
-  const rows = mode === "fail" ? details.filter(d => d.fail_type) : details.filter(d => d.result === "SELECT");
+  let rows = mode === "fail" ? details.filter(d => d.fail_type) : details.filter(d => d.result === "SELECT");
+  if (shiftGateOn()) {
+    // LL/UL 은 항목 payload 에 있다 (pass 모드 상세 행에는 없다).
+    const itemData = itemCache[selectedItem];
+    rows = rows.filter(row => !detailRowFolded(row, itemData));
+  }
   if (detailSortState.column) {
     rows.sort((a, b) => compareValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
   }
@@ -4851,6 +5008,7 @@ function setDetailLoading(on) {
   if (on) meta.textContent = `${selectedItemTitleName()} · 불러오는 중…`;
 }
 function renderDetailTable() {
+  renderShiftGateNote();   // R-026
   const metaNode = document.getElementById("detailPanelMeta");
   if (metaNode) {
     const item = itemCache[selectedItem];
@@ -7200,6 +7358,15 @@ def merge_combo_payloads(combo_payloads, mode):
         merged["over_sigma"].extend(payload.get("over_sigma", []))
         merged["select_count"] += payload.get("select_count", 0) or 0
         merged["items"].update(payload.get("items", {}))
+        # R-026: 조합별 게이트 집계를 항목 단위로 합친다. 같은 항목이 여러 조합에 나오면
+        # 각 조합의 kept/folded 를 더한다 — 한 조합에서라도 남으면 목록에 남아야 한다.
+        combo_gate = payload.get("shift_gate") or {}
+        if combo_gate.get("items"):
+            merged.setdefault("shift_gate", {"k": combo_gate.get("k", SHIFT_GATE_K), "items": {}})
+            for item_key, counts in combo_gate["items"].items():
+                agg = merged["shift_gate"]["items"].setdefault(item_key, {"kept": 0, "folded": 0})
+                agg["kept"] += counts.get("kept", 0) or 0
+                agg["folded"] += counts.get("folded", 0) or 0
         for row in payload.get("results", []):
             rel = row.get("reliability_item", "")
             temp = row.get("ft_temp", "")
@@ -7474,6 +7641,66 @@ def worst_fail_type(details):
     return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
 
 
+def shift_spec_ratio(pre_value, post_value, lower_limit, upper_limit):
+    """|Post - Pre| / 스펙폭.  구할 수 없으면 None (= 게이트 판정 불가 → 접지 않는다).
+
+    프런트엔드도 상세 표 행마다 같은 식을 그대로 계산한다. 상세 행의 pre_value/post_value 와
+    항목 payload 의 lower_limit/upper_limit 는 round_for_wire 를 타지 않고 float64 원본이
+    그대로 나가므로, 서버 집계와 프런트 계산이 비트 단위로 일치한다 — 경계값(정확히 k)에서
+    양쪽이 엇갈리지 않는다. (R-026)
+    """
+    if lower_limit is None or upper_limit is None or pre_value is None or post_value is None:
+        return None
+    try:
+        width = abs(float(upper_limit) - float(lower_limit))
+        shift = abs(float(post_value) - float(pre_value))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(width) or width == 0 or not math.isfinite(shift):
+        return None
+    return shift / width
+
+
+def shift_gate_summary(app):
+    """항목별 SELECT 샘플 중 게이트 통과(kept)/차단(folded) 개수. payload 최상위 키로 나간다.
+
+    왜 서버가 미리 세는가: 항목 기준 표와 요약 카드는 첫 화면에 전 항목을 그려야 하는데
+    상세는 /item 으로 지연 로딩된다. 프런트가 항목 단위 판정을 하려면 항목 수만큼 왕복해야
+    하므로 여기서 한 번에 집계한다.
+
+    왜 최상위 키인가: 골든 스냅샷 비교 대상(results / selected_summary / over_sigma /
+    items[].details)에 필드를 하나라도 늘리면 회귀 게이트가 깨진다 —
+    tools/_regression_lib.py 의 _compare_dict 가 키의 **합집합**을 돌며 한쪽에만 있는 키를
+    <missing> 불일치로 잡는다. 최상위 새 키는 비교 대상이 아니라 골든이 그대로 유지된다.
+
+    LL/UL 은 item_metadata() 를 쓴다 — item_to_json() 이 항목 payload 의 lower_limit/
+    upper_limit 를 채울 때 쓰는 것과 같은 출처라, 프런트가 읽는 값과 동일하다.
+    (pass 모드 상세 행 자체에는 LL/UL 이 없다.)
+    """
+    items = {}
+    for row in app.results:
+        if row.get("result") != "SELECT":
+            continue
+        item = row.get("item")
+        if not item or item in items:
+            continue
+        metadata = item_metadata(app, item)
+        kept = folded = 0
+        for detail in item_analysis(app, item)["details"]:
+            if detail.get("result") != "SELECT":
+                continue
+            ratio = shift_spec_ratio(
+                detail.get("pre_value"), detail.get("post_value"),
+                metadata["lower_limit"], metadata["upper_limit"],
+            )
+            if ratio is not None and ratio < SHIFT_GATE_K:
+                folded += 1
+            else:
+                kept += 1
+        items[item] = {"kept": kept, "folded": folded}
+    return {"k": SHIFT_GATE_K, "items": items}
+
+
 def selected_summary_rows(app):
     rows = []
     for row in app.results:
@@ -7608,6 +7835,7 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
+        "shift_gate": shift_gate_summary(app),  # R-026 (표시 전용)
     }
     if include_pre:
         match_summary = match_summary_for_files(
@@ -9010,7 +9238,12 @@ def run_total_analyze_job(job_id, selection, mode="pass", cache_key=None, includ
 EXPORT_RAW_COLUMNS = [
     "Mode", "Reliability", "FT Temp.", "Read-out", "Test No.", "Item",
     "Sample No.", "Detail Type", "Sample Result", "Spec.-Out Type", "Unit", "LL", "UL",
-    "Pre", "Post", "T1", "T2", "T3", "Mea_S", "Delta", "Diff_S", "Need Bench", "Analysis Date",
+    "Pre", "Post", "T1", "T2", "T3", "Mea_S", "Delta", "Diff_S", "Need Bench",
+    # R-026: 화면은 기준 탭에 따라 접히지만 내보낸 데이터에서는 아무것도 빠지지 않는다.
+    # 대신 판단 근거 두 열을 붙여 엑셀에서 각자 기준으로 다시 거를 수 있게 한다
+    # (데이터를 빼버리면 되돌릴 방법이 없다).
+    "Shift/Spec %", "Practically Insignificant",
+    "Analysis Date",
 ]
 
 
@@ -9155,6 +9388,24 @@ def detail_type_for_export(mode, detail_key, detail):
     return "Abnormal Pass" if result == "SELECT" else "Normal Data"
 
 
+def export_shift_gate_cells(mode, detail, item_payload, context):
+    """Raw Data Export 의 R-026 두 열: Shift/Spec % 와 실용적 무의미(Y/N).
+
+    Fail 모드에는 게이트를 적용하지 않으므로(이미 규격을 벗어난 유닛이라 "스펙 대비 미미"가
+    성립하지 않는다) 비율만 참고로 채우고 판정 칸은 비운다. 비율을 구할 수 없으면(스펙폭
+    없음/0, pre·post 결측) 두 칸 모두 빈칸이며, 이는 화면에서 접지 않는 것과 같은 뜻이다.
+    """
+    lower = detail.get("lower_limit", item_payload.get("lower_limit", context.get("lower_limit")))
+    upper = detail.get("upper_limit", item_payload.get("upper_limit", context.get("upper_limit")))
+    ratio = shift_spec_ratio(detail.get("pre_value"), detail.get("post_value"), lower, upper)
+    if ratio is None:
+        return ["", ""]
+    percent = round(ratio * 100, 4)
+    if mode == "fail":
+        return [percent, ""]
+    return [percent, "Y" if ratio < SHIFT_GATE_K else "N"]
+
+
 def export_detail_rows(mode, payload, items):
     rows = []
     context_lookup = payload_item_lookup(payload)
@@ -9195,6 +9446,7 @@ def export_detail_rows(mode, payload, items):
                     detail.get("diff"),
                     detail.get("diff_s"),
                     detail.get("need_bench", ""),
+                    *export_shift_gate_cells(mode, detail, item_payload, context),   # R-026
                     analysis_date,
                 ])
     return rows
