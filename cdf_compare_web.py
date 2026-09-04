@@ -5011,9 +5011,14 @@ function renderDetailTable() {
   renderShiftGateNote();   // R-026
   const metaNode = document.getElementById("detailPanelMeta");
   if (metaNode) {
+    // R-028: 지금까지 이 자리의 "N건" 은 표에 보이는 행 수가 아니라 항목의 전체 샘플 수였다.
+    // 표에는 SELECT 된 행만 나오므로 둘이 크게 어긋난다(표 1행인데 "287건"). 보이는 행 수를
+    // 앞에 두고 판정 모집단은 괄호로 병기한다.
     const item = itemCache[selectedItem];
-    const count = item?.details?.length || 0;
-    metaNode.textContent = selectedItem ? `${selectedItemTitleName()} · ${count}건` : "";
+    const allRows = item?.details || [];
+    const shown = item ? sortedDetails(allRows).length : 0;
+    const suffix = (allRows.length && allRows.length !== shown) ? ` (전체 ${allRows.length})` : "";
+    metaNode.textContent = selectedItem ? `${selectedItemTitleName()} · ${shown}건${suffix}` : "";
   }
   const table = document.getElementById("detailTable");
   table.innerHTML = "";
