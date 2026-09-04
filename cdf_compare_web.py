@@ -41,15 +41,22 @@ PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
 APP_REVISION = "Rev.0.029"
-# R-026 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
-# 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 산포가 극히 작은 항목에서는
-# 스펙폭의 0.01% 밖에 안 움직인 샘플도 z-score 가 커져 SELECT 가 된다. 이 상수는 그런
-# 건들을 "스펙 대비 이동이 미미하다"는 이유로 화면에서만 접기 위한 임계다 — result 필드도
-# 골든 스냅샷도 바뀌지 않는다(§5-1). 스펙폭 대비 이동량 비율이며 기본 1%.
+# R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
+# 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
+# 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
+# 건들을 화면에서만 접기 위한 임계다 — result 필드도 골든 스냅샷도 바뀌지 않는다(§5-1).
+#
+# 판정을 만든 축의 "스펙 대비 크기" 가 tau 미만이면 접는다 (R-029):
+#     Mea 축(값이 집단에서 튐) → |값 - 표본평균| / 스펙폭
+#     Delta 축(변화가 튐)      → |Post - Pre|   / 스펙폭
+# Mea 축을 풀어쓰면 |값-평균|/스펙폭 = z·sigma/(UL-LL) = z/(6·Cp) 이므로,
+# "크기 > tau" 는 곧 "z > tau·6·Cp" 다 — 즉 이 한 값이 Cp 에 정비례하는 가중 임계를
+# 그대로 구현한다. 능력이 과한 항목일수록 자동으로 더 큰 z 를 요구한다.
+# R-026 은 Delta 축에만 1% 를 적용한 특수 케이스였고 R-029 가 두 축으로 일반화했다.
 try:
-    SHIFT_GATE_K = float(os.environ.get("CDFTOOL_SHIFT_GATE_K", "0.01"))
+    SPEC_GATE_TAU = float(os.environ.get("CDFTOOL_SPEC_GATE_TAU", "0.05"))
 except (TypeError, ValueError):
-    SHIFT_GATE_K = 0.01
+    SPEC_GATE_TAU = 0.05
 CURRENT_APP = None
 # 모드별 항목 캐시: {"pass": {항목명: payload}, "fail": {...}}. 같은 항목이라도 pass 는
 # 양품 표본, fail 은 불량 표본을 보므로 모집단이 다르다 — 이름만으로 캐시를 공유하면
@@ -2406,7 +2413,7 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 이동량 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
@@ -3255,9 +3262,9 @@ function shiftGateInfo(payload = analysis) {
   const info = payload?.shift_gate;
   return (info && info.items) ? info : null;
 }
-function shiftGateK(payload = analysis) {
-  const k = Number(shiftGateInfo(payload)?.k);
-  return Number.isFinite(k) && k > 0 ? k : 0.01;
+function shiftGateTau(payload = analysis) {
+  const tau = Number(shiftGateInfo(payload)?.tau);
+  return Number.isFinite(tau) && tau > 0 ? tau : 0.05;
 }
 // Fail 탭에는 적용하지 않는다 — 이미 규격을 벗어난 유닛이라 "스펙 대비 미미"가 성립 안 함.
 // 게이트 정보가 없는 payload(구 캐시 등)도 비활성 = 아무것도 접지 않는다.
@@ -3266,20 +3273,48 @@ function shiftGateOn(payload = analysis) {
   if ((payload?.analysis_mode || analysisMode) === "fail") return false;
   return !!shiftGateInfo(payload);
 }
-function shiftSpecRatio(row, itemData) {
+function specWidthOf(itemData) {
   const ll = Number(itemData?.lower_limit);
   const ul = Number(itemData?.upper_limit);
   if (!Number.isFinite(ll) || !Number.isFinite(ul)) return null;
   const width = Math.abs(ul - ll);
-  if (!width) return null;
+  return width || null;
+}
+function shiftSpecRatio(row, itemData) {
+  const width = specWidthOf(itemData);
+  if (width === null) return null;
   const pre = Number(row?.pre_value);
   const post = Number(row?.post_value);
   if (!Number.isFinite(pre) || !Number.isFinite(post)) return null;
   return Math.abs(post - pre) / width;
 }
-function detailRowFolded(row, itemData) {
-  const ratio = shiftSpecRatio(row, itemData);
-  return ratio !== null && ratio < shiftGateK();
+/* R-029: SELECT 를 만든 축의 "스펙 대비 크기". 서버 spec_relative_size() 와 같은 식이다.
+   Mea 축 → |값-평균|/스펙폭,  Delta 축 → |Post-Pre|/스펙폭, 둘 다면 큰 쪽.
+   Mea 축은 |값-평균|/스펙폭 = z/(6·Cp) 이므로 tau 하나가 Cp 비례 가중 임계가 된다. */
+function specRelativeSize(row, itemData, resultRow) {
+  const width = specWidthOf(itemData);
+  if (width === null) return null;
+  const sizes = [];
+  const meaS = Number(row?.mea_s);
+  const meaTh = Number(resultRow?.mea_threshold ?? itemData?.mea_threshold);
+  const mean = Number(resultRow?.post_mean);
+  const post = Number(row?.post_value);
+  if (Number.isFinite(meaS) && Number.isFinite(meaTh) && meaTh > 0 && Math.abs(meaS) > meaTh
+      && Number.isFinite(mean) && Number.isFinite(post)) {
+    sizes.push(Math.abs(post - mean) / width);
+  }
+  const diffS = Number(row?.diff_s);
+  const diffTh = Number(resultRow?.diff_threshold ?? itemData?.diff_threshold);
+  if (Number.isFinite(diffS) && Number.isFinite(diffTh) && diffTh > 0 && Math.abs(diffS) > diffTh) {
+    const ratio = shiftSpecRatio(row, itemData);
+    if (ratio !== null) sizes.push(ratio);
+  }
+  const finite = sizes.filter(Number.isFinite);
+  return finite.length ? Math.max(...finite) : null;
+}
+function detailRowFolded(row, itemData, resultRow) {
+  const size = specRelativeSize(row, itemData, resultRow);
+  return size !== null && size < shiftGateTau();
 }
 function itemGateCounts(key, payload = analysis) {
   return shiftGateInfo(payload)?.items?.[key] || null;
@@ -3318,9 +3353,10 @@ function renderShiftGateNote() {
   }
   const { foldedItems, foldedSamples } = gateTotals();
   node.classList.add("is-on");
+  const pct = (shiftGateTau() * 100).toFixed(shiftGateTau() < 0.01 ? 2 : 0);
   node.textContent = foldedSamples
-    ? `스펙 대비 미미 ${foldedSamples}건 제외 (항목 ${foldedItems}개 · 이동 ${(shiftGateK() * 100).toFixed(2)}% 미만)`
-    : `스펙 대비 미미 제외 없음 (기준 ${(shiftGateK() * 100).toFixed(2)}%)`;
+    ? `스펙 대비 미미 ${foldedSamples}건 제외 (항목 ${foldedItems}개 · 스펙폭의 ${pct}% 미만)`
+    : `스펙 대비 미미 제외 없음 (기준 ${pct}%)`;
 }
 function setDetailBasis(basis) {
   const next = basis === "sigma" ? "sigma" : "shift";
@@ -4576,9 +4612,10 @@ function sortedDetails(details) {
   const mode = analysis?.analysis_mode || analysisMode;
   let rows = mode === "fail" ? details.filter(d => d.fail_type) : details.filter(d => d.result === "SELECT");
   if (shiftGateOn()) {
-    // LL/UL 은 항목 payload 에 있다 (pass 모드 상세 행에는 없다).
+    // LL/UL 은 항목 payload 에, 평균·임계값은 결과 행에 있다 (pass 모드 상세 행에는 없다).
     const itemData = itemCache[selectedItem];
-    rows = rows.filter(row => !detailRowFolded(row, itemData));
+    const resultRow = selectedResultRow() || {};
+    rows = rows.filter(row => !detailRowFolded(row, itemData, resultRow));
   }
   if (detailSortState.column) {
     rows.sort((a, b) => compareValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
@@ -7367,7 +7404,7 @@ def merge_combo_payloads(combo_payloads, mode):
         # 각 조합의 kept/folded 를 더한다 — 한 조합에서라도 남으면 목록에 남아야 한다.
         combo_gate = payload.get("shift_gate") or {}
         if combo_gate.get("items"):
-            merged.setdefault("shift_gate", {"k": combo_gate.get("k", SHIFT_GATE_K), "items": {}})
+            merged.setdefault("shift_gate", {"tau": combo_gate.get("tau", SPEC_GATE_TAU), "items": {}})
             for item_key, counts in combo_gate["items"].items():
                 agg = merged["shift_gate"]["items"].setdefault(item_key, {"kept": 0, "folded": 0})
                 agg["kept"] += counts.get("kept", 0) or 0
@@ -7646,24 +7683,60 @@ def worst_fail_type(details):
     return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
 
 
-def shift_spec_ratio(pre_value, post_value, lower_limit, upper_limit):
-    """|Post - Pre| / 스펙폭.  구할 수 없으면 None (= 게이트 판정 불가 → 접지 않는다).
-
-    프런트엔드도 상세 표 행마다 같은 식을 그대로 계산한다. 상세 행의 pre_value/post_value 와
-    항목 payload 의 lower_limit/upper_limit 는 round_for_wire 를 타지 않고 float64 원본이
-    그대로 나가므로, 서버 집계와 프런트 계산이 비트 단위로 일치한다 — 경계값(정확히 k)에서
-    양쪽이 엇갈리지 않는다. (R-026)
-    """
-    if lower_limit is None or upper_limit is None or pre_value is None or post_value is None:
+def spec_width(lower_limit, upper_limit):
+    if lower_limit is None or upper_limit is None:
         return None
     try:
         width = abs(float(upper_limit) - float(lower_limit))
+    except (TypeError, ValueError):
+        return None
+    return width if (math.isfinite(width) and width) else None
+
+
+def shift_spec_ratio(pre_value, post_value, lower_limit, upper_limit):
+    """|Post - Pre| / 스펙폭.  구할 수 없으면 None. Delta 축의 스펙 대비 크기이자
+    Raw Data Export 의 "Shift/Spec %" 열 값이다. (R-026)"""
+    width = spec_width(lower_limit, upper_limit)
+    if width is None or pre_value is None or post_value is None:
+        return None
+    try:
         shift = abs(float(post_value) - float(pre_value))
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(width) or width == 0 or not math.isfinite(shift):
+    return (shift / width) if math.isfinite(shift) else None
+
+
+def spec_relative_size(detail, result_row, lower_limit, upper_limit):
+    """SELECT 를 만든 축의 "스펙 대비 크기". 구할 수 없으면 None(= 접지 않는다). (R-029)
+
+    두 축이 모두 걸렸으면 큰 쪽을 쓴다 — 어느 한 축에서라도 스펙 대비 유의미하면 남긴다.
+    프런트엔드가 상세 표 행마다 같은 식을 그대로 계산한다. 여기 쓰는 값(pre_value/
+    post_value/mea_s/diff_s/post_mean/임계값/LL/UL)은 전부 round_for_wire 를 타지 않고
+    float64 원본이 그대로 나가므로 서버 집계와 프런트 계산이 비트 단위로 일치한다 —
+    경계값(정확히 tau)에서 양쪽이 엇갈리지 않는다.
+    """
+    width = spec_width(lower_limit, upper_limit)
+    if width is None:
         return None
-    return shift / width
+    sizes = []
+    mea_s = detail.get("mea_s")
+    mea_threshold = (result_row or {}).get("mea_threshold")
+    post_mean = (result_row or {}).get("post_mean")
+    post_value = detail.get("post_value")
+    if (mea_s is not None and mea_threshold and abs(mea_s) > mea_threshold
+            and post_mean is not None and post_value is not None):
+        try:
+            sizes.append(abs(float(post_value) - float(post_mean)) / width)
+        except (TypeError, ValueError):
+            pass
+    diff_s = detail.get("diff_s")
+    diff_threshold = (result_row or {}).get("diff_threshold")
+    if diff_s is not None and diff_threshold and abs(diff_s) > diff_threshold:
+        ratio = shift_spec_ratio(detail.get("pre_value"), post_value, lower_limit, upper_limit)
+        if ratio is not None:
+            sizes.append(ratio)
+    sizes = [x for x in sizes if math.isfinite(x)]
+    return max(sizes) if sizes else None
 
 
 def shift_gate_summary(app):
@@ -7690,20 +7763,21 @@ def shift_gate_summary(app):
         if not item or item in items:
             continue
         metadata = item_metadata(app, item)
+        entry = item_analysis(app, item)
+        result_row = entry.get("result_row") or {}
         kept = folded = 0
-        for detail in item_analysis(app, item)["details"]:
+        for detail in entry["details"]:
             if detail.get("result") != "SELECT":
                 continue
-            ratio = shift_spec_ratio(
-                detail.get("pre_value"), detail.get("post_value"),
-                metadata["lower_limit"], metadata["upper_limit"],
+            size = spec_relative_size(
+                detail, result_row, metadata["lower_limit"], metadata["upper_limit"],
             )
-            if ratio is not None and ratio < SHIFT_GATE_K:
+            if size is not None and size < SPEC_GATE_TAU:
                 folded += 1
             else:
                 kept += 1
         items[item] = {"kept": kept, "folded": folded}
-    return {"k": SHIFT_GATE_K, "items": items}
+    return {"tau": SPEC_GATE_TAU, "items": items}
 
 
 def selected_summary_rows(app):
@@ -9408,7 +9482,7 @@ def export_shift_gate_cells(mode, detail, item_payload, context):
     percent = round(ratio * 100, 4)
     if mode == "fail":
         return [percent, ""]
-    return [percent, "Y" if ratio < SHIFT_GATE_K else "N"]
+    return [percent, "Y" if ratio < SPEC_GATE_TAU else "N"]
 
 
 def export_detail_rows(mode, payload, items):
