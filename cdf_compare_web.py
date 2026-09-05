@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.033"
+APP_REVISION = "Rev.0.034"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -7177,12 +7177,12 @@ def read_post_stage_rows(path, sort_by_sample=False):
 def post_history_files_by_readout(base_path, reliability_item, ft_temp, limit=3):
     post_dir = child_dir_containing(base_path, "post")
     groups = {}
-    item_key = reliability_item.casefold()
     for path in data_files(post_dir):
         parsed = parse_post_file_name(path)
         if not parsed:
             continue
-        if parsed["item"].casefold() != item_key:
+        # R-037: 대소문자·별칭(HTS=HTSL)을 흡수해야 HTSL 을 골랐을 때 HTS 파일이 잡힌다.
+        if not reliability_item_equal(parsed["item"], reliability_item):
             continue
         if ft_temp and not (ft_temp_from_code(parsed["temp_code"]) == ft_temp or file_matches_ft_temp(path, ft_temp)):
             continue
@@ -7437,7 +7437,9 @@ def total_analysis_combinations(selection):
             temp = ft_temp_from_code(parsed["temp_code"])
             temps = [temp] if temp else []
         for temp in temps:
-            key = (parsed["item"], temp)
+            # R-037: 조합 키를 화면 표기로 맞춘다. 이 이름이 그대로 row["reliability_item"]
+            # 과 item_counts 의 키가 되므로, 여기서 어긋나면 필터 바가 그 항목을 못 찾는다.
+            key = (canonical_reliability_item(parsed["item"]), temp)
             groups.setdefault(key, {}).setdefault(parsed["readout"], []).append(path)
     combos = []
     for (item, ft_temp), readout_files in groups.items():
@@ -7454,6 +7456,12 @@ def total_analysis_combinations(selection):
             "post_files": sorted(readout_files[judged_readout], key=stage_sort_key),
         })
     combos.sort(key=lambda row: (reliability_sort_key(row["item"]), temp_sort_key(row["ft_temp"])))
+    # R-037: 화면 목록(RELIABILITY_ITEMS)에 없는 이름은 필터 바에 칩이 안 생겨서
+    # 그 데이터가 화면에서 사라진다. 조용히 넘어가지 말고 경고로 띄운다.
+    known = {name.upper() for name in RELIABILITY_ITEMS}
+    for name in sorted({combo["item"] for combo in combos}):
+        if name.upper() not in known:
+            filename_warnings.append({"file": "", "reason": "unknown_reliability_item", "used": name})
     return base_path, combos, filename_warnings
 
 
@@ -8467,7 +8475,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 22  # 21->22: 전체 분석 게이트 키를 item_key 로 재발급 + fail_gate 병합 (R-036).
+CACHE_SCHEMA = 23  # 22->23: 신뢰성 항목 이름 정규화로 reliability_item·item_key 가 바뀜 (R-037).
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
 # 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
 # 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
@@ -8965,6 +8973,33 @@ def payload_with_items(app, payload, mode, cache_status):
 LOOKUP_FIELDS = ["device", "ver", "purpose", "lot", "item", "readout", "ft_temp"]
 RELIABILITY_ITEMS = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"]
 
+# R-037: 파일명 표기와 화면 표기가 다른 신뢰성 항목의 별칭 (키·값 모두 대문자 기준).
+# 실데이터에서 UHAST(대소문자만 다름)와 HTS(약어가 다름)가 화면 목록과 어긋나
+# 두 항목 2,264건이 필터 바에서 통째로 사라지고, 항목별 합이 전체와 안 맞았다.
+# 새 표기가 나오면 여기 한 줄만 추가한다.
+RELIABILITY_ITEM_ALIASES = {"HTS": "HTSL"}
+
+
+def canonical_reliability_item(name):
+    """파일명에서 읽은 신뢰성 항목 이름을 화면 표기로 맞춘다.
+
+    별칭 -> 대소문자 -> 그대로. 마지막이 "그대로"인 이유는, 모르는 약어를 버리면
+    그 데이터가 화면에서 조용히 사라지기 때문이다 (R-037 이 정확히 그 사고였다).
+    """
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    upper = RELIABILITY_ITEM_ALIASES.get(text.upper(), text.upper())
+    for canonical in RELIABILITY_ITEMS:
+        if canonical.upper() == upper:
+            return canonical
+    return text
+
+
+def reliability_item_equal(left, right):
+    """신뢰성 항목 이름 비교. 대소문자와 별칭을 흡수한다 (R-037)."""
+    return canonical_reliability_item(left).upper() == canonical_reliability_item(right).upper()
+
 
 def safe_child(parent, name):
     if not name:
@@ -9130,7 +9165,7 @@ def post_file_contains_item(path, item):
     if not item:
         return False
     parsed = parse_post_file_name(path)
-    return bool(parsed and parsed["item"].casefold() == item.casefold())
+    return bool(parsed and reliability_item_equal(parsed["item"], item))   # R-037
 
 
 def post_file_matches(path, item, readout):
@@ -9205,7 +9240,7 @@ def post_file_ft_temps(path, item, readout):
         parsed = parse_post_file_name(file_path)
         if not parsed:
             continue
-        if parsed["item"].casefold() == item.casefold() and parsed["readout"].casefold() == readout.casefold():
+        if reliability_item_equal(parsed["item"], item) and parsed["readout"].casefold() == readout.casefold():   # R-037
             for temp in file_ft_temps(file_path):
                 available_temps.add(temp)
     order = {"Room": 0, "Hot": 1, "Cold": 2}
