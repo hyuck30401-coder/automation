@@ -2243,7 +2243,7 @@ HTML = r"""<!doctype html>
     /* R-027: 이상 카드에 샘플 수를 작게 병기한다 (항목 수가 주, 샘플 수가 보조). */
     .summary-card-sub{ font-size:11px; font-weight:600; color:var(--ink3) }
     /* R-026: 기준 탭은 화면 전체의 필터 스위치다. 노트는 이동량 기준에서 몇 건이 빠졌는지. */
-    #detailBasisBar{ flex:0 0 auto }
+    #detailBasisBar, #failBasisBar{ flex:0 0 auto }
     #shiftGateNote{ color:var(--ink3); white-space:nowrap }
     #shiftGateNote.is-on{ color:var(--acc-d) }
     .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
@@ -2416,7 +2416,7 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
@@ -3260,7 +3260,32 @@ function graphTempMatches(temp) {
    지연 로딩돼서, 프런트가 항목 판정을 하려면 항목 수만큼 왕복해야 하기 때문이다.
    상세 행의 pre/post 와 항목의 LL/UL 은 반올림 없이 float64 원본이 오므로 서버 집계와
    여기 계산이 비트 단위로 일치한다. */
-let detailBasis = "shift";   // "shift" = 스펙 대비 이동량(기본) | "sigma" = 산포(기존 Grubbs)
+let detailBasis = "shift";   // pass 모드: "shift" = 스펙 대비(기본) | "sigma" = 산포(기존 Grubbs)
+/* R-032: fail 모드 기준. "no-tail" = Marginal(Tail) 제외(기본) | "all" = 전체.
+   Tail 은 규격은 벗어났지만 이탈량이 1% 미만이고 Mea·Diff 가 함께 임계를 넘지도 않은 건 —
+   신뢰성 시험 후 모집단이 열화로 통째로 밀리면서 원래 경계에 있던 유닛이 딸려 넘어간 경우가
+   여기 모인다. 혼자 유독 많이 움직여서 넘어간 것(Excessive/Slight)과 구분해 접는다. */
+let failBasis = "no-tail";
+function failGateInfo(payload = analysis) {
+  const info = payload?.fail_gate;
+  return (info && info.items) ? info : null;
+}
+function failGateOn(payload = analysis) {
+  if (failBasis !== "no-tail") return false;
+  if ((payload?.analysis_mode || analysisMode) !== "fail") return false;
+  return !!failGateInfo(payload);
+}
+function failKeptSamples(key, payload = analysis) {
+  const entry = failGateInfo(payload)?.items?.[key];
+  return entry ? (entry.kept || []).map(String) : null;
+}
+function failItemFolded(key, payload = analysis) {
+  const kept = failKeptSamples(key, payload);
+  return kept !== null && kept.length === 0;
+}
+function failMarginalType(payload = analysis) {
+  return failGateInfo(payload)?.excluded_type || "Tail";
+}
 function shiftGateInfo(payload = analysis) {
   const info = payload?.shift_gate;
   return (info && info.items) ? info : null;
@@ -3349,6 +3374,17 @@ function gateTotals(payload = analysis) {
 function renderShiftGateNote() {
   const node = document.getElementById("shiftGateNote");
   if (!node) return;
+  updateBasisBars();
+  if (failGateOn()) {
+    // R-032: fail 모드에서는 접힌 Marginal 건수를 표시한다.
+    const info = failGateInfo();
+    const folded = Object.values(info?.items || {}).reduce((sum, x) => sum + (x.folded || 0), 0);
+    node.classList.toggle("is-on", !!folded);
+    node.textContent = folded
+      ? `Marginal ${folded}건 제외 (${failMarginalType()} — 이동량이 집단 범위 안)`
+      : `Marginal 제외 없음`;
+    return;
+  }
   if (!shiftGateOn()) {
     node.textContent = "";
     node.classList.remove("is-on");
@@ -3360,6 +3396,27 @@ function renderShiftGateNote() {
   node.textContent = foldedSamples
     ? `스펙 대비 미미 ${foldedSamples}건 제외 (항목 ${foldedItems}개 · 스펙폭의 ${pct}% 미만)`
     : `스펙 대비 미미 제외 없음 (기준 ${pct}%)`;
+}
+function updateBasisBars() {
+  // R-032: pass 모드는 "스펙 대비/산포", fail 모드는 "Marginal 제외/전체" — 성격이 달라 바를 나눈다.
+  const isFail = (analysis?.analysis_mode || analysisMode) === "fail";
+  const passBar = document.getElementById("detailBasisBar");
+  const failBar = document.getElementById("failBasisBar");
+  if (passBar) passBar.hidden = isFail;
+  if (failBar) failBar.hidden = !isFail;
+  document.querySelectorAll("#failBasisBar button").forEach(button => {
+    button.classList.toggle("active", button.dataset.failBasis === failBasis);
+  });
+}
+function setFailBasis(basis) {
+  const next = basis === "all" ? "all" : "no-tail";
+  if (next === failBasis) return;
+  failBasis = next;
+  updateBasisBars();
+  ensureSelectedItemVisibleForActiveTab();
+  renderSummary();
+  renderDetailTable();
+  drawCharts();
 }
 function setDetailBasis(basis) {
   const next = basis === "sigma" ? "sigma" : "shift";
@@ -3404,8 +3461,9 @@ function activatePayloadMode(mode, item = "") {
 function filteredResultRows() {
   return (analysis?.results || [])
     .filter(rowMatchesAnalysisFilters)
-    // R-026: 목록에서 뺀 항목이 자동 선택되지 않도록 같은 기준을 적용한다.
-    .filter(row => !(shiftGateOn() && itemFoldedByGate(itemKey(row))));
+    // R-026 / R-032: 목록에서 뺀 항목이 자동 선택되지 않도록 같은 기준을 적용한다.
+    .filter(row => !(shiftGateOn() && itemFoldedByGate(itemKey(row))))
+    .filter(row => !(failGateOn() && failItemFolded(itemKey(row))));
 }
 function ensureSelectedItemVisible() {
   const rows = filteredResultRows();
@@ -3431,7 +3489,7 @@ function compareSamples(a, b) {
   if (ka[1] > kb[1]) return 1;
   return 0;
 }
-function overSigmaRows() {
+function overSigmaRowsRaw() {
   // R-030: Fail 모드는 서버가 sample 정렬을 하지 않는다 — analyze_fail_to_json 의 over_rows 가
   // over.items() 를 그대로 순회해서 항목 순회 순서가 그대로 나온다(pass 모드는 sample_sort_key
   // 로 정렬한다). over_sigma 는 골든 스냅샷 비교 대상이라 서버 순서를 바꾸면 회귀가 깨지므로
@@ -3440,6 +3498,18 @@ function overSigmaRows() {
   return (analysis?.over_sigma || [])
     .filter(rowMatchesAnalysisFilters)
     .sort((a, b) => compareSamples(a.sample, b.sample));
+}
+function overSigmaRows() {
+  const rows = overSigmaRowsRaw();
+  if (!failGateOn()) return rows;
+  // R-032: 샘플별로 Marginal 이 아닌 항목만 남기고, 남는 항목이 없는 샘플 행은 뺀다.
+  // 항목별 kept 샘플 목록(payload.fail_gate)으로 판정한다 — 상세를 다 받지 않아도 된다.
+  return rows
+    .map(row => ({
+      ...row,
+      items: (row.items || []).filter(item => (failKeptSamples(item) || []).includes(String(row.sample))),
+    }))
+    .filter(row => row.items.length);
 }
 function ensureSelectedOverItemVisible() {
   const keys = [];
@@ -4154,6 +4224,9 @@ function bindResultControls() {
   document.querySelectorAll("#detailBasisBar button").forEach(button => {
     button.addEventListener("click", () => setDetailBasis(button.dataset.basis));   // R-026
   });
+  document.querySelectorAll("#failBasisBar button").forEach(button => {
+    button.addEventListener("click", () => setFailBasis(button.dataset.failBasis));  // R-032
+  });
   document.querySelectorAll(".copy-chart-btn").forEach(button => {
     button.addEventListener("click", () => copyCanvasToClipboard(button.dataset.canvas, button));
   });
@@ -4279,8 +4352,14 @@ function failSelectCount() {
   // "이상 데이터 식별" 카드와 동일 단위). 상세(샘플) 건수는 참고용으로 병기한다.
   const payload = modePayloads.fail;
   if (!payload) return null;
-  const itemCount = Array.isArray(payload.selected_summary) ? payload.selected_summary.length : null;
-  const detailCount = payload.select_count;
+  let itemCount = Array.isArray(payload.selected_summary) ? payload.selected_summary.length : null;
+  let detailCount = payload.select_count;
+  if (failGateOn(payload)) {
+    // R-032: 화면이 접은 만큼 배지도 같이 줄인다(R-027 과 같은 원칙 — 화면은 한 기준으로 말한다).
+    const entries = Object.values(failGateInfo(payload)?.items || {});
+    itemCount = entries.filter(x => (x.kept || []).length).length;
+    detailCount = entries.reduce((sum, x) => sum + (x.kept || []).length, 0);
+  }
   return {
     items: Number.isFinite(itemCount) ? itemCount : null,
     details: Number.isFinite(detailCount) ? detailCount : null,
@@ -4626,7 +4705,9 @@ function sortedPayloadSummaryRows(payload) {
   const rows = [...(payload?.selected_summary || [])]
     .filter(row => rowMatchesPayloadFilters(row, payload))
     // R-026: SELECT 샘플이 모두 게이트에 걸린 항목만 뺀다. 하나라도 남으면 목록에 둔다.
-    .filter(row => !(shiftGateOn(payload) && itemFoldedByGate(itemKey(row), payload)));
+    .filter(row => !(shiftGateOn(payload) && itemFoldedByGate(itemKey(row), payload)))
+    // R-032: fail 상세가 전부 Marginal 인 항목을 뺀다. 같은 규칙(하나라도 남으면 유지).
+    .filter(row => !(failGateOn(payload) && failItemFolded(itemKey(row), payload)));
   if (sortState.column) {
     rows.sort((a, b) => compareSummaryValues(a, b, sortState.column, payload) * (sortState.reverse ? -1 : 1));
   }
@@ -4635,6 +4716,11 @@ function sortedPayloadSummaryRows(payload) {
 function sortedDetails(details) {
   const mode = analysis?.analysis_mode || analysisMode;
   let rows = mode === "fail" ? details.filter(d => d.fail_type) : details.filter(d => d.result === "SELECT");
+  if (failGateOn()) {
+    // 행마다 fail_type 이 있으므로 서버 집계 없이 바로 거른다. (R-032)
+    const marginal = failMarginalType();
+    rows = rows.filter(row => row.fail_type !== marginal);
+  }
   if (shiftGateOn()) {
     // LL/UL 은 항목 payload 에, 평균·임계값은 결과 행에 있다 (pass 모드 상세 행에는 없다).
     const itemData = itemCache[selectedItem];
@@ -7703,6 +7789,39 @@ def fail_type_for_detail(
 
 FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2, "Slight": 3, "Tail": 4}
 
+# R-032: Fail 목록에서 접을 "Marginal" 의 정의 — fail_type 이 Tail 인 건.
+# Tail 은 fail_type_for_detail() 의 마지막 분기, 즉 규격은 벗어났지만 이탈량이 1% 미만
+# (Excessive 아님)이고 Mea_S·Diff_S 가 함께 임계를 넘지도 않은(Slight 아님) 건이다.
+# 신뢰성 시험 후에는 열화로 모집단 전체가 이동하는데, 그때 원래 규격 경계에 있던 유닛이
+# 딸려 넘어간 경우가 여기 모인다 — 혼자 유독 많이 움직여서 넘어간 것과 구분해야 한다.
+# 실측(Test Data, 상세 24건): Tail 17건의 이탈/스펙폭 중앙 0.500%, Diff_S 임계 초과는 1건뿐.
+# (Excessive 32.667% · Slight 13.000% 와 자릿수가 다르다.)
+FAIL_MARGINAL_TYPE = "Tail"
+
+
+def fail_marginal_gate(item_payloads):
+    """항목별로 Marginal 이 아닌 fail 샘플 목록과 접히는 건수. payload 최상위 키로 나간다.
+
+    kept 를 샘플 번호 목록으로 주는 이유: 프런트가 이 하나로 세 곳을 다 처리한다 —
+    항목 기준 표(kept 가 비면 항목을 접는다), 샘플 기준 표(각 샘플에서 어떤 항목이 남는지),
+    요약 숫자(kept 합계). 상세 표는 행마다 fail_type 이 있어 프런트가 직접 거른다.
+
+    최상위 키인 이유는 shift_gate 와 같다 — 골든 스냅샷 비교 대상(results /
+    selected_summary / over_sigma / items[].details)에 필드를 늘리면 회귀가 깨진다.
+    """
+    items = {}
+    for item, item_payload in item_payloads.items():
+        kept, folded = [], 0
+        for detail in item_payload.get("details") or []:
+            if not detail.get("fail_type"):
+                continue
+            if detail.get("fail_type") == FAIL_MARGINAL_TYPE:
+                folded += 1
+            else:
+                kept.append(detail.get("sample"))
+        items[item] = {"kept": kept, "folded": folded}
+    return {"excluded_type": FAIL_MARGINAL_TYPE, "items": items}
+
 
 def worst_fail_type(details):
     """항목의 detail 행들 중 가장 심각한 fail_type 을 고른다.
@@ -8178,6 +8297,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         {"sample": sample, "items": sorted(items, key=lambda item: item_sort_key_for_records(sample_states, item))}
         for sample, items in over.items()
     ]
+    marginal_gate = fail_marginal_gate(item_payloads)   # R-032 (표시 전용)
     over_rows.sort(key=lambda row: (-len(row["items"]), natural_key(row["sample"])))
     message = f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}"
     match_summary = (
@@ -8189,6 +8309,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "over_sigma": over_rows,
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
+        "fail_gate": marginal_gate,  # R-032 (표시 전용)
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
