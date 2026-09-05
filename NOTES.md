@@ -375,3 +375,11 @@ summary_counts / sample_counts / item_counts / excluded_items 는 비교 대상�
 리드아웃 표본)와는 모집단 자체가 다르다. R-024 로 ddof 는 맞췄으므로 단일 리드아웃
 조건에서는 판정값과 정확히 일치하지만, 다중 리드아웃 조건에서는 여전히 어긋난다.
 어느 쪽이 맞는 정의인지는 사용자 확인이 필요하다. (P2)
+
+- **P1 — 골든 스냅샷에 Total 조합이 없다** (R-036 에서 드러남, 2026-09-05)
+  `tests/golden/index.json` 의 combos 2건은 전부 단일 조건이다. 그래서 전체(Total)
+  분석 전용 경로(`decorate_combo_payload` 의 item_key 재발급, `merge_combo_payloads`)
+  에서 생긴 버그가 회귀 게이트를 그대로 통과했다 — R-026/R-029/R-032 를 전부
+  단일 조건으로만 검증해서, 전체 분석에서는 게이트가 통째로 무효인 채로 3번
+  릴리즈를 넘겼다. Total 조합 1건을 골든에 추가하면 같은 유형이 자동으로 잡힌다.
+  (payload 가 커서 스냅샷 용량·시간을 먼저 재봐야 한다.)
