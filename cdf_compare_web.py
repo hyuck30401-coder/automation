@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.031"
+APP_REVISION = "Rev.0.032"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
