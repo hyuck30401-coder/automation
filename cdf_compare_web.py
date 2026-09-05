@@ -3379,6 +3379,12 @@ function renderShiftGateNote() {
   const node = document.getElementById("shiftGateNote");
   if (!node) return;
   updateBasisBars();
+  if ((analysis?.analysis_mode || analysisMode) === "fail" && failBasis === "no-tail"
+      && (analysis?.selected_summary || []).length && !failGateInfo()) {
+    node.classList.remove("is-on");                       // R-034 안전망 (fail 쪽)
+    node.textContent = "이 결과에는 기준 정보가 없습니다 — 다시 분석하세요 (옛 캐시)";
+    return;
+  }
   if (failGateOn()) {
     // R-032: fail 모드에서는 접힌 Marginal 건수를 표시한다.
     const info = failGateInfo();
@@ -3390,8 +3396,14 @@ function renderShiftGateNote() {
     return;
   }
   if (!shiftGateOn()) {
-    node.textContent = "";
+    // R-034 안전망: 게이트 정보가 없는 payload(옛 캐시 등)면 탭이 조용히 안 먹는다.
+    // 왜 안 되는지 화면에 말해준다 — 이게 없어서 진단이 오래 걸렸다.
+    const stale = detailBasis === "shift"
+      && (analysis?.analysis_mode || analysisMode) !== "fail"
+      && (analysis?.selected_summary || []).length
+      && !shiftGateInfo();
     node.classList.remove("is-on");
+    node.textContent = stale ? "이 결과에는 기준 정보가 없습니다 — 다시 분석하세요 (옛 캐시)" : "";
     return;
   }
   const { foldedItems, foldedSamples } = gateTotals();
@@ -8421,7 +8433,11 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 20  # 19->20: cache_key_for 에 pre_stamp/post_stamps 추가 (§2)
+CACHE_SCHEMA = 21  # 20->21: payload 에 shift_gate(R-026/R-029)·fail_gate(R-032) 추가 (R-034).
+# 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
+# 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
+# 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
+# payload 구조를 늘릴 때는 반드시 이 값을 함께 올린다.
 CACHE_DIR = os.path.join(app_base_dir(), ".analysis_cache")
 
 PARSE_CACHE_VERSION = 2  # 1->2: record 에 row_index 추가 (§S6, 파일 내 재시험 이력)
