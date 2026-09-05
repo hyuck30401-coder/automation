@@ -2244,6 +2244,10 @@ HTML = r"""<!doctype html>
     .summary-card-sub{ font-size:11px; font-weight:600; color:var(--ink3) }
     /* R-026: 기준 탭은 화면 전체의 필터 스위치다. 노트는 이동량 기준에서 몇 건이 빠졌는지. */
     #detailBasisBar, #failBasisBar{ flex:0 0 auto }
+    /* R-033: .pill 의 display:inline-flex 가 브라우저 기본 [hidden]{display:none} 을 이겨서
+       두 바가 동시에 보였다(우선순위가 같으면 작성자 스타일이 이긴다). ID+속성 선택자로
+       확실히 눌러준다 — 안 그러면 현재 탭과 무관한 바가 떠서 눌러도 안 먹는 것처럼 보인다. */
+    #detailBasisBar[hidden], #failBasisBar[hidden]{ display:none !important }
     #shiftGateNote{ color:var(--ink3); white-space:nowrap }
     #shiftGateNote.is-on{ color:var(--acc-d) }
     .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
