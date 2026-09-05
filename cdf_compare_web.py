@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.032"
+APP_REVISION = "Rev.0.033"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -7509,6 +7509,21 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_
         enriched["readout_history"] = history
         decorated_items[key] = enriched
     payload["items"] = decorated_items
+    # R-036: 게이트 집계(shift_gate / fail_gate)는 조합 단위에서 "항목 이름" 으로 키가 잡혀
+    # 있다. 전체 분석에서는 위에서 행의 item_key 를 "{item}__{sha1[:10]}" 로 다시 발급하므로,
+    # 게이트만 옛 키로 남으면 프런트가 itemKey(row) 로 찾을 때 전부 빗나가 기준 탭
+    # (스펙 대비 / Marginal 제외)이 아무것도 안 접는다. 같은 key_by_item 표로 맞춰준다.
+    for gate_name in ("shift_gate", "fail_gate"):
+        gate = payload.get(gate_name)
+        if not isinstance(gate, dict) or not gate.get("items"):
+            continue
+        rekeyed = {}
+        for original_item, counts in gate["items"].items():
+            key = key_by_item.get(original_item) or total_item_key(
+                reliability_item, ft_temp, readout, original_item
+            )
+            rekeyed[key] = counts
+        gate["items"] = rekeyed
     for row in payload.get("over_sigma", []):
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
@@ -7548,6 +7563,19 @@ def merge_combo_payloads(combo_payloads, mode):
             for item_key, counts in combo_gate["items"].items():
                 agg = merged["shift_gate"]["items"].setdefault(item_key, {"kept": 0, "folded": 0})
                 agg["kept"] += counts.get("kept", 0) or 0
+                agg["folded"] += counts.get("folded", 0) or 0
+        # R-036: fail_gate 는 합치는 코드가 아예 없어서 전체 분석 fail 결과에는
+        # 키 자체가 실리지 않았다 -> failGateOn() 이 항상 false. kept 는 샘플 번호
+        # 목록이므로 더하지 말고 이어붙인다.
+        combo_fail_gate = payload.get("fail_gate") or {}
+        if combo_fail_gate.get("items"):
+            merged.setdefault("fail_gate", {
+                "excluded_type": combo_fail_gate.get("excluded_type", FAIL_MARGINAL_TYPE),
+                "items": {},
+            })
+            for item_key, counts in combo_fail_gate["items"].items():
+                agg = merged["fail_gate"]["items"].setdefault(item_key, {"kept": [], "folded": 0})
+                agg["kept"].extend(counts.get("kept") or [])
                 agg["folded"] += counts.get("folded", 0) or 0
         for row in payload.get("results", []):
             rel = row.get("reliability_item", "")
@@ -8439,7 +8467,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 21  # 20->21: payload 에 shift_gate(R-026/R-029)·fail_gate(R-032) 추가 (R-034).
+CACHE_SCHEMA = 22  # 21->22: 전체 분석 게이트 키를 item_key 로 재발급 + fail_gate 병합 (R-036).
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
 # 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
 # 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
