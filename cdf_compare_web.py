@@ -2248,7 +2248,11 @@ HTML = r"""<!doctype html>
        두 바가 동시에 보였다(우선순위가 같으면 작성자 스타일이 이긴다). ID+속성 선택자로
        확실히 눌러준다 — 안 그러면 현재 탭과 무관한 바가 떠서 눌러도 안 먹는 것처럼 보인다. */
     #detailBasisBar[hidden], #failBasisBar[hidden]{ display:none !important }
-    #shiftGateNote{ color:var(--ink3); white-space:nowrap }
+    /* R-035: 기준 바가 .chead(선택 항목 상세) 를 떠나 결과 패널 툴바로 올라갔다.
+       .chead .s 후손 선택자를 더는 못 타므로 글자 크기를 여기서 직접 준다.
+       툴바 폭이 모자라면 노트만 줄어들게 한다 — 버튼은 절대 줄지 않는다. */
+    #shiftGateNote{ font-size:11px; color:var(--ink3); white-space:nowrap;
+      flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
     #shiftGateNote.is-on{ color:var(--acc-d) }
     .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
       background:#fff; font-size:11.5px; font-weight:700; color:var(--ink2) }
@@ -2409,6 +2413,7 @@ HTML = r"""<!doctype html>
             <button id="itemViewBtn" class="active" type="button" data-view="item">항목 기준</button>
             <button id="sampleViewBtn" type="button" data-view="sample">샘플 기준</button>
           </div>
+          <div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button></div><span id="shiftGateNote"></span>
           <span id="flagAlphaLabel" class="flag-alpha-label"></span>
           <div class="r"><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></div>
         </div>
@@ -2420,7 +2425,7 @@ HTML = r"""<!doctype html>
         <div class="table-wrap"><table id="overTable"></table></div>
       </section>
       <section class="panel detail-panel">
-        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button></div><span class="s" id="shiftGateNote"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
+        <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
       </div>
@@ -4353,6 +4358,7 @@ if (isResultsWindow) {
 }
 
 function renderSummary() {
+  renderShiftGateNote();   // R-035: 기준 바·노트가 결과 패널로 올라왔다 — 요약을 그릴 때도 갱신한다.
   renderAnalysisFilterBar();
   renderGraphFilterBar();
   updateGraphPanels();
