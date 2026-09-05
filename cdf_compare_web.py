@@ -2308,6 +2308,9 @@ HTML = r"""<!doctype html>
     #overSampleTable th, #overSampleTable td{
       width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
     #overSampleTable th:first-child, #overSampleTable td:first-child{ width:88px }
+    /* R-031: 항목 수 열. 숫자라 좁게 두고 오른쪽 정렬한다. */
+    #overSampleTable th:nth-child(2), #overSampleTable td:nth-child(2){ width:84px }
+    #overSampleTable td.over-count{ text-align:right; padding-right:14px; color:var(--ink2) }
   </style>
 </head>
 <body>
@@ -3414,8 +3417,29 @@ function ensureSelectedItemVisible() {
     selectedItem = itemKey(rows[0]);
   }
 }
+/* R-030: 서버 CdfCompareApp.sample_sort_key 와 같은 규칙 — 숫자로 읽히면 숫자 우선,
+   아니면 문자열. 두 탭이 같은 순서를 쓰게 하려고 프런트에서 맞춘다. */
+function sampleSortKey(sample) {
+  const text = String(sample ?? "").trim();
+  const number = Number(text);
+  return (text !== "" && Number.isFinite(number)) ? [0, number] : [1, text.toLowerCase()];
+}
+function compareSamples(a, b) {
+  const ka = sampleSortKey(a), kb = sampleSortKey(b);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] < kb[1]) return -1;
+  if (ka[1] > kb[1]) return 1;
+  return 0;
+}
 function overSigmaRows() {
-  return (analysis?.over_sigma || []).filter(rowMatchesAnalysisFilters);
+  // R-030: Fail 모드는 서버가 sample 정렬을 하지 않는다 — analyze_fail_to_json 의 over_rows 가
+  // over.items() 를 그대로 순회해서 항목 순회 순서가 그대로 나온다(pass 모드는 sample_sort_key
+  // 로 정렬한다). over_sigma 는 골든 스냅샷 비교 대상이라 서버 순서를 바꾸면 회귀가 깨지므로
+  // 표시 계층에서 정렬한다. pass 모드는 이미 같은 규칙이라 이 정렬이 멱등이다.
+  // filter() 가 새 배열을 주므로 sort() 가 analysis.over_sigma 를 건드리지 않는다.
+  return (analysis?.over_sigma || [])
+    .filter(rowMatchesAnalysisFilters)
+    .sort((a, b) => compareSamples(a.sample, b.sample));
 }
 function ensureSelectedOverItemVisible() {
   const keys = [];
@@ -4932,8 +4956,13 @@ function renderOverSampleTable(table) {
   const maxItems = Math.max(1, ...overRows.map(r => r.items.length));
   const head = table.createTHead().insertRow();
   // 탭에 따라 목록의 성격이 다르다 — Fail 탭은 규격 이탈 항목, Abnormal Pass 탭은 통계 판정 항목.
-  const sampleItemsLabel = (analysis?.analysis_mode || analysisMode) === "fail" ? "Fail Items" : "Abnormal Shift Items";
-  ["Sample #", ...Array.from({ length: maxItems }, (_, i) => i === 0 ? sampleItemsLabel : "")].forEach(label => {
+  const isFailMode = (analysis?.analysis_mode || analysisMode) === "fail";
+  const sampleItemsLabel = isFailMode ? "Fail Items" : "Abnormal Shift Items";
+  // R-031: 그 샘플이 몇 개 항목에서 걸렸는지. 두 탭 모두에 둔다 — R-014 에서 열 폭을 두 탭에
+  // 맞춰놨으므로 한쪽에만 열을 더하면 그 정렬이 깨진다.
+  const countLabel = isFailMode ? "Fail 항목 수" : "이상 항목 수";
+  ["Sample #", countLabel,
+   ...Array.from({ length: maxItems }, (_, i) => i === 0 ? sampleItemsLabel : "")].forEach(label => {
     const th = document.createElement("th");
     th.textContent = label;
     head.appendChild(th);
@@ -4942,6 +4971,9 @@ function renderOverSampleTable(table) {
   overRows.forEach(row => {
     const tr = body.insertRow();
     tr.insertCell().textContent = row.sample;
+    const countCell = tr.insertCell();          // R-031
+    countCell.textContent = (row.items || []).filter(Boolean).length;
+    countCell.className = "over-count";
     for (let i = 0; i < maxItems; i++) {
       const td = tr.insertCell();
       const item = row.items[i] || "";
