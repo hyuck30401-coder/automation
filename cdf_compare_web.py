@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.035"
+APP_REVISION = "Rev.0.036"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -3663,11 +3663,12 @@ function renderAnalysisFilterBar() {
   reliabilityGroup.className = "item-tabs";
   reliabilityGroup.setAttribute("role", "tablist");
   reliabilityGroup.setAttribute("aria-label", "시험 항목");
-  /* R-038: 칩은 "Fail Select 수 (Abnormal Pass Select 수) / 총 수량" 이다.
-     세 숫자 모두 유닛(샘플) 기준이고, 앞의 둘은 기준 탭(게이트)을 따른다.
-     지금 보는 탭이 아닌 쪽 숫자도 그려야 하므로 두 payload 를 각각 집계한다. */
-  const failUnits = selectUnitCountByReliability(modePayloads.fail);
-  const passUnits = selectUnitCountByReliability(modePayloads.pass);
+  /* R-039: 칩은 "Select 수 / 총 수량" 이다. 두 숫자 모두 유닛(샘플) 기준이고,
+     Select 는 기준 탭(게이트)을 따른다. 배지와 같은 규칙으로 탭마다 값이 바뀐다 —
+     Fail 항목 탭이면 Fail Select 수 / 시험 투입 총 수량,
+     Abnormal Pass 탭이면 Abnormal Pass Select 수 / Total Pass 샘플 수.
+     (칩 합계가 배지 숫자와 맞아야 하므로 분모도 탭을 따른다.) */
+  const selectUnits = selectUnitCountByReliability(analysis);
   const unitTotals = (analysis?.unit_counts?.by_reliability) || {};
   const hasUnitInfo = !!analysis?.unit_counts?.by_reliability;
   const itemCounts = {};
@@ -3677,7 +3678,9 @@ function renderAnalysisFilterBar() {
     button.type = "button";
     button.className = "item-tab";
     button.dataset.item = value;
-    const isEmpty = hasUnitInfo ? !(unitTotals[value]?.total) : (count && count.total === 0);
+    const isEmpty = hasUnitInfo
+      ? !((analysisMode === "fail" ? unitTotals[value]?.total : unitTotals[value]?.pass) || 0)
+      : (count && count.total === 0);
     button.classList.toggle("item-tab-empty", !!isEmpty);
     if (isEmpty) button.disabled = true;
     button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
@@ -3686,15 +3689,16 @@ function renderAnalysisFilterBar() {
     labelSpan.textContent = label;
     button.appendChild(labelSpan);
     if (hasUnitInfo) {
-      // 데이터가 없는 항목도 같은 모양(0 (0) / 0)으로 그린다 — 표기가 섞이면 읽기 어렵다.
+      // 데이터가 없는 항목도 같은 모양(0 / 0)으로 그린다 — 표기가 섞이면 읽기 어렵다.
       const unitTotal = unitTotals[value] || { total: 0, pass: 0 };
-      const failN = failUnits[value] || 0;
-      const passN = passUnits[value] || 0;
+      const denom = (analysisMode === "fail" ? unitTotal.total : unitTotal.pass) || 0;
+      const selectN = selectUnits[value] || 0;
       const badge = document.createElement("span");
       badge.className = "item-tab-badge";
-      badge.textContent = `${failN} (${passN}) / ${unitTotal.total || 0}`;
-      badge.title = `Fail Select ${failN}대 (Abnormal Pass Select ${passN}대) / 시험 투입 ${unitTotal.total || 0}대`
-        + ` · 양품 ${unitTotal.pass || 0}대`;
+      badge.textContent = `${selectN} / ${denom}`;
+      badge.title = analysisMode === "fail"
+        ? `Fail Select ${selectN}대 / 총 샘플 ${denom}대`
+        : `Abnormal Pass Select ${selectN}대 / 총 샘플(양품) ${denom}대`;
       button.appendChild(badge);
     } else if (count) {
       const badge = document.createElement("span");
@@ -3714,7 +3718,9 @@ function renderAnalysisFilterBar() {
   };
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
   // 「전체」 탭을 없앴으므로, 선택이 비었거나 0건 항목이면 건수가 있는 첫 항목으로 이동
-  const hasData = it => ((unitTotals[it]?.total) ?? (itemCounts[it]?.total || 0)) > 0;
+  const hasData = it => (hasUnitInfo
+    ? ((analysisMode === "fail" ? unitTotals[it]?.total : unitTotals[it]?.pass) || 0)
+    : (itemCounts[it]?.total || 0)) > 0;
   const firstWithData = reliabilityOptions.find(hasData);
   const cur = analysisFilters.reliability_item || "";
   if (!cur || !hasData(cur)) {
