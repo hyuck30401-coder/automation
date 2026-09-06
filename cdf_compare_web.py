@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.034"
+APP_REVISION = "Rev.0.035"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -3510,6 +3510,62 @@ function compareSamples(a, b) {
   if (ka[1] > kb[1]) return 1;
   return 0;
 }
+/* R-038: 배지·칩·Q'ty 가 모두 "게이트 적용 후 고유 유닛 수" 를 쓴다.
+   over_sigma 는 샘플당 한 행이라 행 수가 곧 유닛 수다 — Q'ty 합(항목x샘플 쌍)과 다르고,
+   "총 - Select = No Select" 가 성립하려면 반드시 유닛 기준이어야 한다.
+   payload 를 인자로 받는 이유: 칩이 지금 보는 탭이 아닌 쪽 숫자도 함께 그린다. */
+function gateKeptSamples(itemKeyValue, payload = analysis) {
+  const mode = payload?.analysis_mode || analysisMode;
+  if (mode === "fail") return failKeptSamples(itemKeyValue, payload);
+  const entry = shiftGateInfo(payload)?.items?.[itemKeyValue];
+  return entry ? (entry.kept_samples || []).map(String) : null;
+}
+function gateOnFor(payload = analysis) {
+  return ((payload?.analysis_mode || analysisMode) === "fail")
+    ? failGateOn(payload) : shiftGateOn(payload);
+}
+function selectUnitRows(payload = analysis) {
+  const rows = (payload?.over_sigma || []).filter(row => rowMatchesPayloadFilters(row, payload));
+  if (!gateOnFor(payload)) return rows;
+  return rows
+    .map(row => ({
+      ...row,
+      items: (row.items || []).filter(item => {
+        const kept = gateKeptSamples(item, payload);
+        return kept === null || kept.includes(String(row.sample));
+      }),
+    }))
+    .filter(row => row.items.length);
+}
+/* 온도가 여러 개 선택되면 같은 유닛이 Room·Hot 두 행으로 온다. Serial # 은 파일마다
+   다시 매겨지므로(§3-3) join_key(DEVICE_ID)로 묶어야 유닛 수가 맞는다 (R-038). */
+function unitIdOf(row, payload = analysis) {
+  const map = payload?.unit_join_map || {};
+  const key = `${row.reliability_item || ""}||${row.ft_temp || ""}||${row.sample}`;
+  return map[key] || `${row.reliability_item || ""}||${row.ft_temp || ""}||${row.sample}`;
+}
+function selectUnitCount(payload = analysis) {
+  const seen = new Set();
+  selectUnitRows(payload).forEach(row => seen.add(unitIdOf(row, payload)));
+  return seen.size;
+}
+function selectUnitCountByReliability(payload) {
+  const seen = {};
+  selectUnitRows(payload).forEach(row => {
+    const key = row.reliability_item || "";
+    (seen[key] = seen[key] || new Set()).add(unitIdOf(row, payload));
+  });
+  const counts = {};
+  Object.keys(seen).forEach(key => { counts[key] = seen[key].size; });
+  return counts;
+}
+function unitTotalsFor(reliabilityItem, payload = analysis) {
+  // 분모. 총 샘플 수는 "시험이 된 총 수량" 이라 온도·리드아웃과 무관하다 (서버가 합집합으로 센다).
+  const info = payload?.unit_counts;
+  if (!info) return null;
+  if (reliabilityItem) return (info.by_reliability || {})[reliabilityItem] || null;
+  return info;
+}
 function overSigmaRowsRaw() {
   // R-030: Fail 모드는 서버가 sample 정렬을 하지 않는다 — analyze_fail_to_json 의 over_rows 가
   // over.items() 를 그대로 순회해서 항목 순회 순서가 그대로 나온다(pass 모드는 sample_sort_key
@@ -3521,16 +3577,11 @@ function overSigmaRowsRaw() {
     .sort((a, b) => compareSamples(a.sample, b.sample));
 }
 function overSigmaRows() {
-  const rows = overSigmaRowsRaw();
-  if (!failGateOn()) return rows;
-  // R-032: 샘플별로 Marginal 이 아닌 항목만 남기고, 남는 항목이 없는 샘플 행은 뺀다.
-  // 항목별 kept 샘플 목록(payload.fail_gate)으로 판정한다 — 상세를 다 받지 않아도 된다.
-  return rows
-    .map(row => ({
-      ...row,
-      items: (row.items || []).filter(item => (failKeptSamples(item) || []).includes(String(row.sample))),
-    }))
-    .filter(row => row.items.length);
+  // R-038: 두 모드를 같은 규칙으로 거른다. 예전에는 fail 만 걸러서, pass 에서 기준 탭을
+  // 바꿔도 샘플 기준 표가 그대로였다 (shift_gate 에 kept 개수만 있어 어떤 샘플이 접혔는지
+  // 알 수 없었기 때문 — 이제 kept_samples 가 온다).
+  if (!gateOnFor()) return overSigmaRowsRaw();
+  return selectUnitRows().sort((a, b) => compareSamples(a.sample, b.sample));
 }
 function ensureSelectedOverItemVisible() {
   const keys = [];
@@ -3612,6 +3663,13 @@ function renderAnalysisFilterBar() {
   reliabilityGroup.className = "item-tabs";
   reliabilityGroup.setAttribute("role", "tablist");
   reliabilityGroup.setAttribute("aria-label", "시험 항목");
+  /* R-038: 칩은 "Fail Select 수 (Abnormal Pass Select 수) / 총 수량" 이다.
+     세 숫자 모두 유닛(샘플) 기준이고, 앞의 둘은 기준 탭(게이트)을 따른다.
+     지금 보는 탭이 아닌 쪽 숫자도 그려야 하므로 두 payload 를 각각 집계한다. */
+  const failUnits = selectUnitCountByReliability(modePayloads.fail);
+  const passUnits = selectUnitCountByReliability(modePayloads.pass);
+  const unitTotals = (analysis?.unit_counts?.by_reliability) || {};
+  const hasUnitInfo = !!analysis?.unit_counts?.by_reliability;
   const itemCounts = {};
   (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
   const makeItemTab = (value, label, count) => {
@@ -3619,7 +3677,7 @@ function renderAnalysisFilterBar() {
     button.type = "button";
     button.className = "item-tab";
     button.dataset.item = value;
-    const isEmpty = count && count.total === 0;
+    const isEmpty = hasUnitInfo ? !(unitTotals[value]?.total) : (count && count.total === 0);
     button.classList.toggle("item-tab-empty", !!isEmpty);
     if (isEmpty) button.disabled = true;
     button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
@@ -3627,13 +3685,22 @@ function renderAnalysisFilterBar() {
     labelSpan.className = "item-tab-label";
     labelSpan.textContent = label;
     button.appendChild(labelSpan);
-    if (count) {
+    if (hasUnitInfo) {
+      // 데이터가 없는 항목도 같은 모양(0 (0) / 0)으로 그린다 — 표기가 섞이면 읽기 어렵다.
+      const unitTotal = unitTotals[value] || { total: 0, pass: 0 };
+      const failN = failUnits[value] || 0;
+      const passN = passUnits[value] || 0;
+      const badge = document.createElement("span");
+      badge.className = "item-tab-badge";
+      badge.textContent = `${failN} (${passN}) / ${unitTotal.total || 0}`;
+      badge.title = `Fail Select ${failN}대 (Abnormal Pass Select ${passN}대) / 시험 투입 ${unitTotal.total || 0}대`
+        + ` · 양품 ${unitTotal.pass || 0}대`;
+      button.appendChild(badge);
+    } else if (count) {
       const badge = document.createElement("span");
       badge.className = "item-tab-badge";
       badge.textContent = `${count.select}/${count.total}`;
-      badge.title = analysisMode === "fail"
-        ? `Fail ${count.select}대 / 전체 Sample ${count.total}대`
-        : `이상 데이터 식별 ${count.select}건 / 분석 항목 ${count.total}건`;
+      badge.title = "이 결과에는 샘플 수 정보가 없습니다 — 다시 분석하세요 (옛 캐시)";
       button.appendChild(badge);
     }
     button.addEventListener("click", async () => {
@@ -3647,9 +3714,10 @@ function renderAnalysisFilterBar() {
   };
   const reliabilityOptions = analysis?.total_analysis ? reliabilityItems : (analysis.total_reliability_items?.length ? analysis.total_reliability_items : reliabilityItems);
   // 「전체」 탭을 없앴으므로, 선택이 비었거나 0건 항목이면 건수가 있는 첫 항목으로 이동
-  const firstWithData = reliabilityOptions.find(it => (itemCounts[it]?.total || 0) > 0);
+  const hasData = it => ((unitTotals[it]?.total) ?? (itemCounts[it]?.total || 0)) > 0;
+  const firstWithData = reliabilityOptions.find(hasData);
   const cur = analysisFilters.reliability_item || "";
-  if (!cur || (itemCounts[cur]?.total || 0) === 0) {
+  if (!cur || !hasData(cur)) {
     analysisFilters.reliability_item = firstWithData || reliabilityOptions[0] || "";
   }
   reliabilityOptions.forEach(item => reliabilityGroup.appendChild(makeItemTab(item, item, itemCounts[item] || null)));
@@ -4457,48 +4525,47 @@ function renderSummaryStrip() {
   );
   if (!strip) return;
   strip.innerHTML = "";
-  // Pass 는 항목 기준(분석 항목 수 중 몇 개가 이상인지), Fail 은 유닛 기준(전체 Sample 중
-  // 몇 대가 Fail/Pass 인지) -- 서로 다른 질문이라 카드 구성 자체를 모드별로 나눈다.
-  const counts = analysisMode === "pass" ? analysis?.summary_counts : analysis?.sample_counts;
-  if (!counts) return;
-  const cards = analysisMode === "pass" ? [
-    { key: "total_items", label: "분석 항목" },
-    { key: "select", label: "이상 데이터 식별", cls: "flag" },
-    { key: "ok", label: "정상", cls: "ok" },
-    { key: "not_evaluated", label: "판정 불가", cls: "warn", icon: "⚠", hideIfZero: true }
-  ] : [
-    { key: "total", label: "전체 Sample" },
-    { key: "fail", label: "Fail", cls: "flag" },
-    { key: "pass", label: "Pass", cls: "ok" }
+  /* R-038: 배지를 유닛(샘플) 기준 3장으로 통일한다 — 총 / Select / No Select.
+     라벨이 위, 숫자가 아래다. 분모가 탭마다 다른 이유:
+       Fail 탭        총 샘플 수      = 그 시험에 투입된 총 수량
+       Abnormal Pass  총 샘플 수      = 그중 양품 수 (이상 이동 판정은 양품만 본다)
+     Eden 님 확인 2026-09-05. Select 는 기준 탭(게이트) 적용 후 고유 유닛 수라,
+     "총 - Select = No Select" 가 항상 맞아떨어진다. */
+  const isFailMode = analysisMode === "fail";
+  const totals = unitTotalsFor(analysisFilters.reliability_item || "");
+  if (!totals) {
+    // 옛 캐시 등 unit_counts 가 없는 payload — 조용히 0을 그리지 말고 이유를 말한다.
+    const warn = document.createElement("div");
+    warn.className = "summary-card summary-card-warn";
+    warn.textContent = "이 결과에는 샘플 수 정보가 없습니다 — 다시 분석하세요 (옛 캐시)";
+    strip.appendChild(warn);
+    const footnoteEl = document.createElement("div");
+    footnoteEl.id = "judgmentFootnote";
+    footnoteEl.className = "judgment-footnote";
+    strip.appendChild(footnoteEl);
+    renderJudgmentFootnote();
+    return;
+  }
+  const totalUnits = isFailMode ? (totals.total || 0) : (totals.pass || 0);
+  const selectUnits = selectUnitCount();
+  const cards = [
+    { label: "총 샘플 수", value: totalUnits },
+    { label: isFailMode ? "Fail Select 샘플 수" : "Abnormal Pass Select 샘플 수",
+      value: selectUnits, cls: "flag" },
+    { label: isFailMode ? "No Fail Select 샘플 수" : "No Abnormal Pass Select 샘플 수",
+      value: Math.max(totalUnits - selectUnits, 0), cls: "ok" },
   ];
-  const passTotals = analysisMode === "pass" ? gateTotals(analysis) : null;
   cards.forEach(card => {
-    let value = counts[card.key] ?? 0;
-    let sub = "";
-    if (passTotals && card.key === "select") {
-      // R-026/R-027: 이 카드만 기준 탭의 영향을 받는다 — 접힌 항목은 여기서 빠진다.
-      value = passTotals.items;
-      sub = `샘플 ${passTotals.samples}`;
-    }
-    if (card.hideIfZero && !value) return;
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
-    const valueEl = document.createElement("div");
-    valueEl.className = "summary-card-value";
-    valueEl.textContent = card.icon ? `${value} ${card.icon}` : `${value}`;
-    if (sub) {
-      // 구분자를 "/" 로 두면 "10분의 14" 처럼 분수로 읽힌다 — 가운뎃점을 쓰고 툴팁으로 못박는다.
-      const subEl = document.createElement("span");
-      subEl.className = "summary-card-sub";
-      subEl.textContent = ` · ${sub}`;
-      valueEl.appendChild(subEl);
-      div.title = `이상 항목 ${value}개 · 이상 샘플 ${passTotals.samples}건`;
-    }
     const labelEl = document.createElement("div");
     labelEl.className = "summary-card-label";
     labelEl.textContent = card.label;
-    div.appendChild(valueEl);
+    const valueEl = document.createElement("div");
+    valueEl.className = "summary-card-value";
+    valueEl.textContent = `${card.value}`;
     div.appendChild(labelEl);
+    div.appendChild(valueEl);
     strip.appendChild(div);
   });
   const footnote = document.createElement("div");
@@ -4692,13 +4759,27 @@ function numericValues(values) {
   // 넣으면 유효한 0 처럼 필터를 통과해버린다.
   return (values || []).map(finiteNumber).filter(value => value !== null);
 }
+function gateQty(row, payload = analysis) {
+  // R-038: Q'ty 도 기준 탭을 따른다. 게이트가 꺼져 있거나 이 항목의 게이트 정보가
+  // 없으면 서버 값(row.qty)을 그대로 쓴다.
+  if (!gateOnFor(payload)) return null;
+  const kept = gateKeptSamples(itemKey(row), payload);
+  return kept === null ? null : kept.length;
+}
 function summaryCellValue(row, key, payload = analysis) {
   const data = (payload?.items || itemCache)[itemKey(row)] || {};
+  if (key === "qty") {
+    const kept = gateQty(row, payload);
+    return kept === null ? row.qty : kept;
+  }
   if (key === "qty_ratio") {
     // §S5: null(정의 불가, n_pass=0)을 Number()로 강제 변환하면 0 이 되어 "0.0%"로
     // 새어나간다 -- null 은 계산 전에 걸러 N/A(fmtCell)로 떨어지게 한다.
     if (row.qty_ratio === null || row.qty_ratio === undefined) return null;
-    const ratio = Number(row.qty_ratio);
+    let ratio = Number(row.qty_ratio);
+    // R-038: Q'ty 가 게이트로 줄면 비율도 같은 분모(n_pass)로 다시 낸다.
+    const kept = gateQty(row, payload);
+    if (kept !== null && Number(row.qty) > 0) ratio = ratio * (kept / Number(row.qty));
     return Number.isFinite(ratio) ? `${(ratio * 100).toFixed(1)}%` : "";
   }
   if (key === "diff_mean") {
@@ -7061,6 +7142,79 @@ def records_have_bin_data(records):
     )
 
 
+def sample_join_map_from_records(records, wanted=None):
+    """화면 sample(Serial #) -> join_key(DEVICE_ID) 표 (R-038).
+
+    over_sigma 행은 Serial # 로 샘플을 가리키는데, Serial # 은 파일마다 새로 매겨진다
+    (§3-3). 전체 분석에서 Room/Hot 은 같은 유닛을 다시 측정한 것이라, 유닛 수를 셀 때
+    Serial # 로 묶으면 다른 유닛이 합쳐지거나 같은 유닛이 두 번 세어진다.
+    over_sigma 자체는 골든 비교 대상이라 행에 필드를 못 늘리므로 표를 따로 싣는다.
+    """
+    mapping = {}
+    for item_records in (records or {}).values():
+        for record in item_records:
+            sample = record.get("sample")
+            if sample is None:
+                continue
+            key = str(sample)
+            if wanted is not None and key not in wanted:
+                continue
+            join_key = record_sample_id(record)
+            if join_key and key not in mapping:
+                mapping[key] = str(join_key)
+    return mapping
+
+
+def merge_records_for_units(paths):
+    """여러 post 파일의 레코드를 하나로 합친다 — 유닛 인구조사 전용 (R-038)."""
+    merged = {}
+    for path in (paths or []):
+        try:
+            records = cached_item_records(path, last_sample=False)
+        except Exception:
+            continue
+        for item, item_records in records.items():
+            merged.setdefault(item, []).extend(item_records)
+    return merged
+
+
+def unit_join_key(sample_states, sample):
+    """fail 경로의 Serial # 를 join_key(DEVICE_ID 우선)로 바꾼다 (R-038)."""
+    state = (sample_states or {}).get(sample) or {}
+    return str(state.get("join_key") or sample)
+
+
+def unit_id_sets_from_records(records):
+    """유닛 id 집합을 total / pass / fail 로 나눈다 (R-038).
+
+    id 는 record_sample_id — CLAUDE.md §3-3 에 따라 DEVICE_ID 우선이다.
+    개수가 아니라 집합을 만드는 이유: 온도(Room/Hot/Cold)는 같은 유닛을 다시 측정한
+    것이라, 전체 분석에서 조합별 개수를 더하면 같은 유닛을 2~3번 센다. 실측으로도
+    HTOL 은 Room 80 / Hot 80 / Cold 82 인데 합집합은 85 다 (교집합 77).
+    """
+    total = set()
+    for item_records in (records or {}).values():
+        for record in item_records:
+            sample = record_sample_id(record)
+            if sample:
+                total.add(str(sample))
+    pass_ids = pass_sample_ids_from_records(records)
+    if pass_ids is None:
+        # Bin 정보가 없는 데이터 — 전부 양품으로 본다 (pass_sample_ids_from_records 규약).
+        pass_set = set(total)
+    else:
+        pass_set = {str(sample) for sample in pass_ids} & total
+    return total, pass_set, (total - pass_set)
+
+
+def unit_id_payload(records):
+    total, pass_set, fail_set = unit_id_sets_from_records(records)
+    return (
+        {"total": sorted(total), "pass": sorted(pass_set), "fail": sorted(fail_set)},
+        {"total": len(total), "pass": len(pass_set), "fail": len(fail_set)},
+    )
+
+
 def pass_sample_ids_from_records(records):
     if not records:
         return None
@@ -7483,6 +7637,7 @@ def total_item_key(reliability_item, ft_temp, readout, item):
 
 def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_history=None):
     history = readout_history or [readout]
+    payload["reliability_item"] = reliability_item   # R-038: merge_unit_counts 가 이 키로 묶는다
     key_by_item = {}
     for row in payload.get("results", []):
         original_item = row.get("item", "")
@@ -7539,6 +7694,11 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_
         row["judged_readout"] = readout
         row["readout_history"] = history
         row["items"] = [key_by_item.get(item, item) for item in row.get("items", [])]
+    # R-038: Serial # 은 조합마다 1번부터 다시 매겨지므로 조합을 키에 포함해야 충돌하지 않는다.
+    payload["unit_join_map"] = {
+        f"{reliability_item}||{ft_temp}||{sample}": join_key
+        for sample, join_key in (payload.get("unit_join_map") or {}).items()
+    }
     return payload
 
 
@@ -7569,9 +7729,12 @@ def merge_combo_payloads(combo_payloads, mode):
         if combo_gate.get("items"):
             merged.setdefault("shift_gate", {"tau": combo_gate.get("tau", SPEC_GATE_TAU), "items": {}})
             for item_key, counts in combo_gate["items"].items():
-                agg = merged["shift_gate"]["items"].setdefault(item_key, {"kept": 0, "folded": 0})
+                agg = merged["shift_gate"]["items"].setdefault(
+                    item_key, {"kept": 0, "folded": 0, "kept_samples": []}
+                )
                 agg["kept"] += counts.get("kept", 0) or 0
                 agg["folded"] += counts.get("folded", 0) or 0
+                agg["kept_samples"].extend(counts.get("kept_samples") or [])   # R-038
         # R-036: fail_gate 는 합치는 코드가 아예 없어서 전체 분석 fail 결과에는
         # 키 자체가 실리지 않았다 -> failGateOn() 이 항상 false. kept 는 샘플 번호
         # 목록이므로 더하지 말고 이어붙인다.
@@ -7652,7 +7815,43 @@ def merge_combo_payloads(combo_payloads, mode):
             item_counts_by_item.values(),
             key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
         )
+    merge_unit_counts(merged, combo_payloads)
+    join_map = {}
+    for payload in combo_payloads:
+        join_map.update(payload.get("unit_join_map") or {})
+    merged["unit_join_map"] = join_map   # R-038
     return merged
+
+
+def merge_unit_counts(merged, combo_payloads):
+    """조합별 유닛 id 집합을 신뢰성 항목 단위로 합집합해 개수로 바꾼다 (R-038).
+
+    개수를 더하면 안 되는 이유는 unit_id_sets_from_records() 주석 참조 — 온도는 같은
+    유닛의 재측정이다. fail 이 우선이다: 어느 온도에서든 한 번 fail 이면 그 유닛은 fail.
+    id 목록 자체는 화면에서 쓰지 않으므로 병합 결과에는 개수만 남긴다(payload 비대화 방지).
+    """
+    by_item = {}
+    for payload in combo_payloads:
+        ids = payload.get("unit_ids") or {}
+        item = payload.get("reliability_item") or ""
+        entry = by_item.setdefault(item, {"total": set(), "fail": set()})
+        entry["total"] |= {str(value) for value in (ids.get("total") or [])}
+        entry["fail"] |= {str(value) for value in (ids.get("fail") or [])}
+        payload.pop("unit_ids", None)
+    all_total, all_fail = set(), set()
+    by_reliability = {}
+    for item, entry in by_item.items():
+        total, fail = entry["total"], entry["fail"] & entry["total"]
+        all_total |= total
+        all_fail |= fail
+        by_reliability[item] = {"total": len(total), "fail": len(fail), "pass": len(total - fail)}
+    merged["unit_counts"] = {
+        "total": len(all_total),
+        "fail": len(all_fail),
+        "pass": len(all_total - all_fail),
+        "by_reliability": by_reliability,
+    }
+    merged.pop("unit_ids", None)
 
 
 def stage_sort_key(path):
@@ -7974,7 +8173,7 @@ def shift_gate_summary(app):
         metadata = item_metadata(app, item)
         entry = item_analysis(app, item)
         result_row = entry.get("result_row") or {}
-        kept = folded = 0
+        kept_samples, folded = [], 0
         for detail in entry["details"]:
             if detail.get("result") != "SELECT":
                 continue
@@ -7984,8 +8183,11 @@ def shift_gate_summary(app):
             if size is not None and size < SPEC_GATE_TAU:
                 folded += 1
             else:
-                kept += 1
-        items[item] = {"kept": kept, "folded": folded}
+                kept_samples.append(str(detail.get("sample")))
+        # R-038: kept 는 개수 그대로 두고(기존 호출부 유지) 샘플 목록을 따로 싣는다.
+        # 개수만으로는 "이 샘플이 접혔는지"를 알 수 없어 샘플 기준 표와 유닛 수 집계에서
+        # 게이트를 정확히 적용할 수 없었다. fail_gate 의 kept 와 같은 모양이다.
+        items[item] = {"kept": len(kept_samples), "folded": folded, "kept_samples": kept_samples}
     return {"tau": SPEC_GATE_TAU, "items": items}
 
 
@@ -8125,6 +8327,14 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "flag_alpha": FLAG_ALPHA,
         "shift_gate": shift_gate_summary(app),  # R-026 (표시 전용)
     }
+    # R-038: 배지가 유닛(샘플) 기준으로 바뀐다. pass payload 에는 지금까지 항목 수만
+    # 있어서 "총 샘플 수"를 낼 수 없었다. 최상위 키라 골든 비교 대상이 아니다.
+    unit_ids, unit_counts = unit_id_payload(cached_item_records(post_path, last_sample=False))
+    payload["unit_ids"] = unit_ids
+    payload["unit_counts"] = unit_counts
+    payload["unit_join_map"] = sample_join_map_from_records(
+        app.post_records, {str(row["sample"]) for row in over_rows}
+    )
     if include_pre:
         match_summary = match_summary_for_files(
             cached_item_records(pre_path),
@@ -8356,6 +8566,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         for sample, items in over.items()
     ]
     marginal_gate = fail_marginal_gate(item_payloads)   # R-032 (표시 전용)
+    fail_unit_ids, fail_unit_counts = unit_id_payload(merge_records_for_units(post_files))  # R-038
     over_rows.sort(key=lambda row: (-len(row["items"]), natural_key(row["sample"])))
     message = f"Fail Items {len(summary_rows)}, Fail Samples {len(fail_samples)}, Files {len(merged_files)}"
     match_summary = (
@@ -8378,6 +8589,17 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             "total": len(sample_states),
             "fail": len(fail_samples),
             "pass": len(pass_samples),
+        },
+        # R-038: 전체 분석에서 온도별로 같은 유닛을 다시 세지 않도록 id 집합도 싣는다.
+        # sample_counts 와 달리 합집합을 취할 수 있다.
+        # R-038: 유닛 인구조사는 두 탭이 같은 숫자를 내야 한다("시험이 된 총 수량"은
+        # 어느 탭에서 보든 같은 값이다). 그래서 fail 판정 경로(sample_states)가 아니라
+        # pass 쪽과 똑같이 post 파일 레코드에서 센다. 키도 join_key(DEVICE_ID 우선) —
+        # Serial # 은 파일마다 새로 매겨져(§3-3) 온도 간 합집합이 성립하지 않는다.
+        "unit_ids": fail_unit_ids,
+        "unit_counts": fail_unit_counts,
+        "unit_join_map": {
+            str(row["sample"]): unit_join_key(sample_states, row["sample"]) for row in over_rows
         },
     }
     if match_summary:
@@ -8475,7 +8697,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 23  # 22->23: 신뢰성 항목 이름 정규화로 reliability_item·item_key 가 바뀜 (R-037).
+CACHE_SCHEMA = 24  # 23->24: unit_counts·shift_gate.kept_samples 추가 (R-038).
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
 # 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
 # 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
@@ -9356,6 +9578,16 @@ def decorate_selected_summary_condition(payload, reliability_item, ft_temp, read
     않는다 (§U1에서 없앤 화면 열의 값만 복구하면 되고, items 키 구조를 바꾸면
     프런트엔드 단일 조건 표시 로직에 영향을 줄 수 있어 범위를 넘어선다).
     """
+    # R-038: 단일 조건에서도 전체 분석과 같은 모양의 unit_counts 를 만든다 —
+    # 프런트가 by_reliability 하나만 보고 두 경로를 똑같이 처리하게 하려는 것.
+    counts = payload.get("unit_counts") or {}
+    if counts and "by_reliability" not in counts:
+        payload["unit_counts"] = dict(counts, by_reliability={reliability_item or "": dict(counts)})
+    payload.pop("unit_ids", None)
+    payload["unit_join_map"] = {
+        f"{reliability_item}||{ft_temp}||{sample}": join_key
+        for sample, join_key in (payload.get("unit_join_map") or {}).items()
+    }
     if not reliability_item and not ft_temp and not readout:
         return payload
     for row in payload.get("selected_summary", []):
