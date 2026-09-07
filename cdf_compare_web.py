@@ -40,7 +40,40 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.038"
+APP_REVISION = "Rev.0.031"
+# R-042: 리비전은 "릴리즈 번호"다 — 릴리즈할 때만 올린다. 변경마다 올렸더니 마지막
+# 릴리즈(v0.0.30) 이후 배포한 적도 없는 Rev.0.031~0.038 이 생겼다.
+# 같은 리비전 안에서 빌드를 구분하는 것은 아래 BUILD_ID 가 맡는다 — R-033 진단이
+# 오래 걸린 이유가 "화면만 보고는 어느 빌드인지 알 수 없다" 였다.
+
+
+def build_id():
+    """개발 실행이면 git 짧은 해시, exe(PyInstaller)면 빌드 시각.
+
+    사내 오프라인 환경이라 git 이 없을 수 있고 exe 에는 .git 자체가 없다.
+    실패하면 소스/실행 파일의 수정 시각으로 떨어진다 — 어떤 경우에도 예외를 내지 않는다.
+    """
+    if not getattr(sys, "frozen", False):
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                capture_output=True, text=True, timeout=2,
+            )
+            text = (out.stdout or "").strip()
+            if out.returncode == 0 and text:
+                return text
+        except Exception:
+            pass
+    try:
+        target = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+        return datetime.fromtimestamp(os.path.getmtime(target)).strftime("%m-%d %H:%M")
+    except Exception:
+        return ""
+
+
+BUILD_ID = build_id()
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -6599,7 +6632,11 @@ if (typeof ResizeObserver !== "undefined") {
 </script>
 </body>
 </html>"""
-HTML = HTML.replace("__APP_REVISION__", APP_REVISION)
+# R-042: 리비전 옆에 빌드 식별자를 붙인다. 같은 리비전으로 여러 번 고쳐도 화면에서
+# 빌드가 구분되어 "반영이 안 됐다" 를 바로 판별할 수 있다.
+HTML = HTML.replace(
+    "__APP_REVISION__", f"{APP_REVISION} · {BUILD_ID}" if BUILD_ID else APP_REVISION
+)
 
 
 class MultipartPart:
