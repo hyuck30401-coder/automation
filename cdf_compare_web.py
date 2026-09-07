@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.037"
+APP_REVISION = "Rev.0.038"
 # R-026/R-029 실용적 유의성 게이트 — **표시 전용이며 판정에 관여하지 않는다.**
 # 판정(Grubbs, §11)은 "통계적으로 튀는가"만 본다. 그래서 능력이 과한 항목(Cp 가 큰 항목)
 # 에서는 스펙폭의 1% 도 안 움직인 샘플이 z-score 만 커져 SELECT 가 된다. 이 상수는 그런
@@ -3524,9 +3524,10 @@ function gateOnFor(payload = analysis) {
   return ((payload?.analysis_mode || analysisMode) === "fail")
     ? failGateOn(payload) : shiftGateOn(payload);
 }
-function selectUnitRows(payload = analysis) {
-  const rows = (payload?.over_sigma || []).filter(row => rowMatchesPayloadFilters(row, payload));
-  if (!gateOnFor(payload)) return rows;
+function selectUnitRowsRaw(payload = analysis) {
+  return (payload?.over_sigma || []).filter(row => rowMatchesPayloadFilters(row, payload));
+}
+function applyGateToUnitRows(rows, payload = analysis) {
   return rows
     .map(row => ({
       ...row,
@@ -3537,6 +3538,32 @@ function selectUnitRows(payload = analysis) {
     }))
     .filter(row => row.items.length);
 }
+function selectUnitRows(payload = analysis) {
+  // 현재 기준 탭 상태를 반영한다 (표·Q'ty·칩용).
+  const rows = selectUnitRowsRaw(payload);
+  return gateOnFor(payload) ? applyGateToUnitRows(rows, payload) : rows;
+}
+/* R-041: 배지는 기준 탭과 무관하게 "볼 것 / 접은 것"을 함께 보여준다. 그래서 게이트를
+   켠 수와 안 켠 수를 둘 다 구한다 — 켠 수 = 벤치 검토 필요, 차이 = Marginal. */
+function selectUnitCountsByCondition(payload, applyGate) {
+  const rows = applyGate
+    ? applyGateToUnitRows(selectUnitRowsRaw(payload), payload)
+    : selectUnitRowsRaw(payload);
+  const sets = {};
+  rows.forEach(row => {
+    const key = conditionKey(row.reliability_item, row.ft_temp);
+    (sets[key] = sets[key] || new Set()).add(String(row.sample));
+  });
+  const out = {};
+  Object.keys(sets).forEach(key => { out[key] = sets[key].size; });
+  return out;
+}
+function selectUnitCountWithGate(payload, applyGate) {
+  const item = analysisFilters.reliability_item || "";
+  const byCondition = selectUnitCountsByCondition(payload, applyGate);
+  if (!item) return Object.values(byCondition).reduce((sum, n) => sum + n, 0);
+  return byCondition[conditionKey(item, representativeTemp(item, payload))] || 0;
+}
 /* R-040: 유닛 수는 조합(신뢰성 항목 x 온도) 단위로 센다.
    온도는 같은 유닛의 재측정이라 더할 수 없고, 이 데이터는 DEVICE_ID 가 비거나 중복인
    레코드가 있어 합집합도 못 쓴다(서버 unit_census_from_records 주석 참조).
@@ -3544,16 +3571,6 @@ function selectUnitRows(payload = analysis) {
    Multi 로 여러 온도를 켜면 유닛이 가장 많은 온도 하나를 대표로 쓴다(섞으면 산수가 깨진다). */
 function conditionKey(reliabilityItem, temp) {
   return `${reliabilityItem || ""}||${temp || ""}`;
-}
-function selectUnitCountByCondition(payload) {
-  const counts = {};
-  selectUnitRows(payload).forEach(row => {
-    const key = conditionKey(row.reliability_item, row.ft_temp);
-    (counts[key] = counts[key] || new Set()).add(String(row.sample));
-  });
-  const out = {};
-  Object.keys(counts).forEach(key => { out[key] = counts[key].size; });
-  return out;
 }
 function representativeTemp(reliabilityItem, payload = analysis) {
   const byCondition = payload?.unit_counts?.by_condition || {};
@@ -3580,13 +3597,11 @@ function unitTotalsFor(reliabilityItem, payload = analysis) {
   return (info.by_reliability || {})[reliabilityItem] || null;
 }
 function selectUnitCount(payload = analysis) {
-  const item = analysisFilters.reliability_item || "";
-  const byCondition = selectUnitCountByCondition(payload);
-  if (!item) return Object.values(byCondition).reduce((sum, n) => sum + n, 0);
-  return byCondition[conditionKey(item, representativeTemp(item, payload))] || 0;
+  return selectUnitCountWithGate(payload, gateOnFor(payload));
 }
 function selectUnitCountByReliability(payload) {
-  const byCondition = selectUnitCountByCondition(payload);
+  // 칩은 두 탭 모두 기준 탭을 따른다 (R-041).
+  const byCondition = selectUnitCountsByCondition(payload, gateOnFor(payload));
   const out = {};
   Object.keys(payload?.unit_counts?.by_reliability || {}).forEach(item => {
     out[item] = byCondition[conditionKey(item, representativeTemp(item, payload))] || 0;
@@ -3719,15 +3734,15 @@ function renderAnalysisFilterBar() {
     if (hasUnitInfo) {
       // 데이터가 없는 항목도 같은 모양(0 / 0)으로 그린다 — 표기가 섞이면 읽기 어렵다.
       const unitTotal = unitTotals[value] || { total: 0, pass: 0, fail: 0 };
-      // R-040: 분모는 배지 2번째 카드(모집단)와 같은 축이라 칩 합계가 배지와 맞는다.
-      const denom = (analysisMode === "fail" ? unitTotal.fail : unitTotal.pass) || 0;
-      const selectN = selectUnits[value] || 0;
+      // R-041: 분모는 배지 첫 카드와 같은 숫자 — Fail 탭은 시험 진행 총수, Pass 탭은 양품 수.
+      const denom = (analysisMode === "fail" ? unitTotal.total : unitTotal.pass) || 0;
+      const selectN = selectUnits[value] || 0;   // 기준 탭을 따라 바뀐다
       const badge = document.createElement("span");
       badge.className = "item-tab-badge";
       badge.textContent = `${selectN} / ${denom}`;
       badge.title = analysisMode === "fail"
-        ? `Fail Select ${selectN}대 / Fail ${denom}대 (총 샘플 ${unitTotal.total || 0}대)`
-        : `Abnormal Pass Select ${selectN}대 / Pass ${denom}대 (총 샘플 ${unitTotal.total || 0}대)`;
+        ? `${failBasis === "no-tail" ? "Marginal 제외 " : ""}Fail ${selectN}대 / 총 진행 ${denom}대`
+        : `${detailBasis === "shift" ? "Marginal 제외 " : ""}이상 산포 ${selectN}대 / Pass ${denom}대`;
       button.appendChild(badge);
     } else if (count) {
       const badge = document.createElement("span");
@@ -4579,25 +4594,32 @@ function renderSummaryStrip() {
     renderJudgmentFootnote();
     return;
   }
-  /* R-040: 카드 4장 — 총 / 모집단 / Select / No Select.
-     "총 - Fail = Pass" 가 화면에서 보이지 않아 Eden 님이 산수가 안 맞는다고 하셨다.
-     Fail Select 는 Fail 유닛 전체가 아니라 그중 벤치로 올릴 부분집합이라(Marginal 접힘,
-     fail_type 미부여) 총에서 바로 빼면 안 된다. 그래서 모집단 카드를 사이에 넣고,
-     No Select 는 "모집단 - Select" 로 둔다 — 모집단 = Select + No Select 가 항상 맞는다. */
-  const totalUnits = totals.total || 0;
-  const groupUnits = isFailMode ? (totals.fail || 0) : (totals.pass || 0);
-  const selectUnits = selectUnitCount();
+  /* R-041: 카드 3장 — 모집단 / 벤치 검토 필요 / Marginal.
+     모집단은 Fail 탭이면 시험 진행 총수, Abnormal Pass 탭이면 그중 양품 수(Eden 님 확인) —
+     칩 분모와 같은 숫자라 "칩 합계 = 배지" 가 성립한다.
+     배지는 기준 탭에 반응하지 않는다. Marginal 수 자체가 알고 싶은 값이라, 기준 탭을 따라
+     움직이면 그 수가 화면에서 사라진다. 대신 칩이 기준 탭을 따라간다. */
+  const baseUnits = isFailMode ? (totals.total || 0) : (totals.pass || 0);
+  const keptUnits = selectUnitCountWithGate(analysis, true);
+  const allUnits = selectUnitCountWithGate(analysis, false);
   const cards = [
-    { label: "총 샘플 수", value: totalUnits },
-    { label: isFailMode ? "Fail 샘플 수" : "Pass 샘플 수", value: groupUnits },
-    { label: isFailMode ? "Fail Select 샘플 수" : "Abnormal Pass Select 샘플 수",
-      value: selectUnits, cls: "flag" },
-    { label: isFailMode ? "No Fail Select 샘플 수" : "No Abnormal Pass Select 샘플 수",
-      value: Math.max(groupUnits - selectUnits, 0), cls: "ok" },
+    { label: isFailMode ? "총 진행" : "Pass 진행", value: baseUnits,
+      title: isFailMode
+        ? "이 시험에 투입된 샘플 수 (선택한 FT Temp 파일 기준)"
+        : "그중 양품 샘플 수 — 이상 산포 판정의 모집단" },
+    { label: "벤치 검토 필요", value: keptUnits, cls: "flag",
+      title: isFailMode
+        ? "Fail 샘플 중 Marginal(Tail)을 뺀 수 — 벤치(FA) 대상"
+        : "이상 산포 샘플 중 스펙 대비 이동이 미미한 건을 뺀 수" },
+    { label: "Marginal", value: Math.max(allUnits - keptUnits, 0),
+      title: isFailMode
+        ? "규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 샘플 (fail_type = Tail)"
+        : "통계로는 걸렸지만 이동량이 스펙폭 대비 미미한 샘플" },
   ];
   cards.forEach(card => {
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
+    if (card.title) div.title = card.title;
     const labelEl = document.createElement("div");
     labelEl.className = "summary-card-label";
     labelEl.textContent = card.label;
