@@ -569,26 +569,6 @@ HTML = r"""<!doctype html>
       font-weight: 600;
       color: var(--muted);
     }
-    .summary-strip.dense .summary-card { min-width: 0; padding: 8px 10px; }   /* R-053 */
-    .summary-strip.dense .summary-card-value { font-size: 17px; }
-    .summary-strip.dense .summary-card-label { font-size: 11px; white-space: nowrap; }
-    .judgment-footnote {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-left: auto;
-      font-size: 12px;
-      color: var(--muted);
-      white-space: nowrap;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .footnote-info {
-      cursor: help;
-      color: #7c93b3;
-      font-size: 13px;
-    }
     .fail-count-badge {
       margin-left: 6px;
       padding: 1px 7px;
@@ -2271,15 +2251,16 @@ HTML = r"""<!doctype html>
        구분선 간격이 들쭉날쭉했다(102/138/77/105px). */
     .summary-card{ display:flex; align-items:baseline; gap:6px; padding:0 0 0 16px; margin:0;
       border:0; border-right:1px solid var(--line2); border-radius:0; background:none;
-      min-width:140px; flex:0 0 auto; }
+      min-width:130px; flex:0 0 auto; }
     .summary-card:first-of-type{ padding-left:0 }
-    /* R-053: 유형별 카드가 붙어 장수가 늘었다. 6장부터는 폭을 줄이고, 그래도 넘치면
-       가로로 민다(스크롤바는 숨긴다 — 세로 높이가 62px 고정이라 튀어 보인다). */
+    /* R-053: 유형별 카드가 붙어 장수가 늘었다. 넘치면 가로로 민다
+       (스크롤바는 숨긴다 — 세로 높이가 62px 고정이라 튀어 보인다).
+       R-059: 카드 폭은 두 탭 모두 같은 고정값 하나로 간다. 글자 길이대로 폭이
+       정해지면 구분선 간격이 들쭉날쭉하고, Fail 탭과 Abnormal Pass 탭의
+       칸 크기도 달라 보인다. */
     .summary-strip{ overflow-x:auto; scrollbar-width:none }
     .summary-strip::-webkit-scrollbar{ display:none }
-    .summary-strip.dense .summary-card{ min-width:0; padding-left:12px }
-    .summary-strip.dense .summary-card-value{ font-size:17px }
-    .summary-strip.dense .summary-card-label{ font-size:10.5px; white-space:nowrap }
+    .summary-card-label{ white-space:nowrap }
     .summary-card:last-of-type{ border-right:0 }
     .summary-card-value{ font-size:20px; font-weight:800; letter-spacing:-.02em;
       font-variant-numeric:tabular-nums; line-height:1 }
@@ -2288,8 +2269,6 @@ HTML = r"""<!doctype html>
     .summary-card-ok   .summary-card-value{ color:var(--pos) }
     .summary-card-warn{ background:none; border-color:var(--line2) }
     .summary-card-warn .summary-card-value{ color:var(--warn) }
-    .judgment-footnote{ margin-left:auto; text-align:right; font-size:10.5px; color:var(--ink3);
-      line-height:1.55; flex:0 0 auto; white-space:normal }
 
     .tabwrap{ position:relative; flex:1 1 auto; min-width:0; display:flex; height:100% }
     .tabwrap::after{ content:""; position:absolute; right:0; top:0; bottom:0; width:24px;
@@ -2302,7 +2281,10 @@ HTML = r"""<!doctype html>
       flex:0 0 auto; position:relative; height:100%; min-height:0; min-width:0;
       border:0; border-radius:0; background:none; box-shadow:none;
       font-size:12.5px; font-weight:700; color:var(--ink2); white-space:nowrap }
-    .item-tab.active,.graph-tabs button.active{ color:var(--acc-d); background:none }
+    /* R-058: 밑줄만으로는 어느 탭이 켜져 있는지 눈에 잘 안 들어와 음영을 더한다.
+       색은 표에서 선택된 행에 쓰는 것과 같다. */
+    .item-tab.active,.graph-tabs button.active{ color:var(--acc-d); background:var(--acc-s);
+      border-radius:6px 6px 0 0 }
     .item-tab.active::after,.graph-tabs button.active::after{ content:""; position:absolute;
       left:10px; right:10px; bottom:0; height:2.5px; background:var(--acc); border-radius:2px 2px 0 0 }
     .item-tab-badge{ font-size:10.5px; font-weight:700; color:var(--ink3);
@@ -2570,7 +2552,7 @@ HTML = r"""<!doctype html>
             </div>
             <span id="itemSearchCount" class="gsearch-count"></span>
           </div>
-          <div class="gname"><span id="graphItemMeta"></span><span id="graphExcludeNote" class="graph-exclude-note"></span></div>
+          <div class="gname"><span id="graphExcludeNote" class="graph-exclude-note"></span></div>
           <div class="tail2"><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
         </div>
         <section id="graphFilterBar" class="graph-filter-bar"></section>
@@ -3351,7 +3333,7 @@ function updateChartTitles() {
   const itemName = selectedItemTitleName();
   const nameNode = document.getElementById("graphItemName");
   if (nameNode) nameNode.textContent = itemName || "—";
-  renderItemThresholdLabel();
+  renderGraphExcludeNote();
 }
 function updateGraphPanels() {
   const panelMap = {
@@ -3624,9 +3606,14 @@ function rowMatchesAnalysisFilters(row) {
   if (!tempMatchesFilters(row.ft_temp)) return false;
   return true;
 }
-function rowMatchesPayloadFilters(row, payload) {
+/* ignoreItem: 신뢰성 항목 필터만 건너뛴다 (온도 필터는 그대로).
+   R-058 — 항목 칩의 왼쪽 수는 "그 항목의 Select 유닛 수" 여야 하는데, 이 필터를
+   그대로 타는 바람에 HAST 를 고르면 HTOL·TC… 의 행이 전부 걸러져 0 이 됐다.
+   분모는 unit_counts 에서 오므로 멀쩡했고, 그래서 "0 / 80" 처럼 어긋나 보였다. */
+function rowMatchesPayloadFilters(row, payload, ignoreItem = false) {
   if (!payload?.total_analysis) return true;
-  if (analysisFilters.reliability_item && row.reliability_item !== analysisFilters.reliability_item) return false;
+  if (!ignoreItem && analysisFilters.reliability_item
+      && row.reliability_item !== analysisFilters.reliability_item) return false;
   if (!tempMatchesFilters(row.ft_temp)) return false;
   return true;
 }
@@ -3735,8 +3722,8 @@ function gateOnFor(payload = analysis) {
   return ((payload?.analysis_mode || analysisMode) === "fail")
     ? failGateOn(payload) : shiftGateOn(payload);
 }
-function selectUnitRowsRaw(payload = analysis) {
-  return (payload?.over_sigma || []).filter(row => rowMatchesPayloadFilters(row, payload));
+function selectUnitRowsRaw(payload = analysis, ignoreItem = false) {
+  return (payload?.over_sigma || []).filter(row => rowMatchesPayloadFilters(row, payload, ignoreItem));
 }
 function applyGateToUnitRows(rows, payload = analysis) {
   return rows
@@ -3756,10 +3743,10 @@ function selectUnitRows(payload = analysis) {
 }
 /* R-041: 배지는 기준 탭과 무관하게 "볼 것 / 접은 것"을 함께 보여준다. 그래서 게이트를
    켠 수와 안 켠 수를 둘 다 구한다 — 켠 수 = 벤치 검토 필요, 차이 = Marginal. */
-function selectUnitCountsByCondition(payload, applyGate) {
+function selectUnitCountsByCondition(payload, applyGate, ignoreItem = false) {
   const rows = applyGate
-    ? applyGateToUnitRows(selectUnitRowsRaw(payload), payload)
-    : selectUnitRowsRaw(payload);
+    ? applyGateToUnitRows(selectUnitRowsRaw(payload, ignoreItem), payload)
+    : selectUnitRowsRaw(payload, ignoreItem);
   const sets = {};
   rows.forEach(row => {
     const key = conditionKey(row.reliability_item, row.ft_temp);
@@ -3842,7 +3829,8 @@ function selectUnitCount(payload = analysis) {
 }
 function selectUnitCountByReliability(payload) {
   // 칩은 두 탭 모두 기준 탭을 따른다 (R-041).
-  const byCondition = selectUnitCountsByCondition(payload, gateOnFor(payload));
+  // R-058: 항목 필터는 건너뛴다 — 지금 고른 항목뿐 아니라 모든 항목의 수를 그려야 한다.
+  const byCondition = selectUnitCountsByCondition(payload, gateOnFor(payload), true);
   const out = {};
   Object.keys(payload?.unit_counts?.by_reliability || {}).forEach(item => {
     out[item] = byCondition[conditionKey(item, representativeTemp(item, payload))] || 0;
@@ -4984,11 +4972,6 @@ function renderSummaryStrip() {
     warn.className = "summary-card summary-card-warn";
     warn.textContent = "이 결과에는 샘플 수 정보가 없습니다 — 다시 분석하세요 (옛 캐시)";
     strip.appendChild(warn);
-    const footnoteEl = document.createElement("div");
-    footnoteEl.id = "judgmentFootnote";
-    footnoteEl.className = "judgment-footnote";
-    strip.appendChild(footnoteEl);
-    renderJudgmentFootnote();
     return;
   }
   /* R-041: 카드 3장 — 모집단 / 벤치 검토 필요 / Marginal.
@@ -5030,8 +5013,7 @@ function renderSummaryStrip() {
     title: isFailMode
       ? `Fail 샘플 중 Marginal(${marginalType})을 뺀 수 — 벤치(FA) 대상`
       : "이상 산포 샘플 중 스펙 대비 이동이 미미한 건을 뺀 수" });
-  // 카드가 늘면 한 줄에 안 들어간다 — 5장을 넘으면 폭을 줄인다 (넘치면 가로 스크롤).
-  strip.classList.toggle("dense", cards.length > 5);
+
   cards.forEach(card => {
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
@@ -5046,61 +5028,7 @@ function renderSummaryStrip() {
     div.appendChild(valueEl);
     strip.appendChild(div);
   });
-  const footnote = document.createElement("div");
-  footnote.id = "judgmentFootnote";
-  footnote.className = "judgment-footnote";
-  strip.appendChild(footnote);
-  renderJudgmentFootnote();
-}
-function renderJudgmentFootnote() {
-  const el = document.getElementById("judgmentFootnote");
-  if (!el) return;
-  if (!analysis) { el.innerHTML = ""; return; }
-  if (analysisMode === "fail") { renderFailJudgmentFootnote(el); return; }
-  const parts = ["판정 기준 Grubbs"];
-  if (analysis.flag_mode === "fixed") {
-    parts.push(`고정 임계=${analysis.flag_limit ?? 3}`);
-  } else {
-    const alpha = Number(analysis.flag_alpha);
-    if (Number.isFinite(alpha)) parts.push(`α ${alpha}`);
-  }
-  const row = selectedResultRow() || {};
-  const n = Number(row.n_post);
-  const mea = Number(row.mea_threshold ?? itemCache[selectedItem]?.mea_threshold);
-  if (Number.isFinite(n)) parts.push(`유닛 ${n}개`);
-  if (Number.isFinite(mea)) parts.push(`임계 ${mea.toFixed(3)}`);
-  let text = parts.join(" · ");
-  const readout = row.judged_readout;
-  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
-  const textSpan = document.createElement("span");
-  textSpan.textContent = text;
-  const infoSpan = document.createElement("span");
-  infoSpan.className = "footnote-info";
-  infoSpan.title = "임계는 유닛 수에 따라 달라집니다 (N=57→3.539, N=145→3.879, N=3000→4.673)";
-  infoSpan.textContent = "ⓘ";
-  el.innerHTML = "";
-  el.appendChild(textSpan);
-  el.appendChild(infoSpan);
-}
-function renderFailJudgmentFootnote(el) {
-  // Fail 목록은 규격(LSL/USL) 이탈이 1차 선별 기준이라 Pass 탭의 "판정 기준 Grubbs·임계"
-  // 문구를 그대로 쓰면 오해를 준다. Grubbs 통계(mea/diff threshold)는 이탈 유형
-  // (Intermittent/Unstable/Excessive/Slight/Tail) 을 보조 분류하는 데만 쓰인다.
-  const parts = ["판정 기준 규격 이탈(Spec Out)"];
-  const failItemCount = (analysis.selected_summary || []).length;
-  if (failItemCount) parts.push(`Fail 항목 ${failItemCount}건`);
-  let text = parts.join(" · ");
-  const readout = (selectedResultRow() || {}).judged_readout;
-  if (readout) text += ` · 판정 Read-out ${readout} (최신) T0~T3 는 추세 비교용`;
-  const textSpan = document.createElement("span");
-  textSpan.textContent = text;
-  const infoSpan = document.createElement("span");
-  infoSpan.className = "footnote-info";
-  infoSpan.title = "Fail 목록은 규격(LSL/USL) 이탈 여부를 1차 기준으로 선별합니다. 이탈 유형(Intermittent/Unstable/Excessive/Slight/Tail)은 정상 표본 분포 기준 Grubbs 통계로 보조 분류한 결과입니다.";
-  infoSpan.textContent = "ⓘ";
-  el.innerHTML = "";
-  el.appendChild(textSpan);
-  el.appendChild(infoSpan);
+  // R-059: 배지 오른쪽의 "판정 기준 …" 문구는 Eden 님 지시로 뺐다 (두 탭 모두).
 }
 function renderFlagAlphaLabel() {
   // §S7: 판정 임계가 항목별 Grubbs(alpha 기반)로 바뀐 뒤, 패널 제목에 박혀 있던
@@ -5115,20 +5043,6 @@ function renderFlagAlphaLabel() {
     const alpha = Number(analysis.flag_alpha);
     el.textContent = Number.isFinite(alpha) ? `(alpha=${alpha}, 항목별 n 기준 Grubbs 임계)` : "";
   }
-}
-function renderItemThresholdLabel() {
-  // 선택된 항목의 실제 판정 임계값(n_post/n_diff 에 따라 항목마다 다름). payload 에
-  // 이미 있는 mea_threshold/diff_threshold(§S3) 를 표시만 한다 — 재계산하지 않는다.
-  const el = document.getElementById("graphItemMeta");
-  if (!el) return;
-  const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
-  const mea = Number(data.mea_threshold);
-  const diff = Number(data.diff_threshold);
-  const parts = [];
-  if (Number.isFinite(mea)) parts.push(`Mea threshold=${mea.toFixed(4)}`);
-  if (Number.isFinite(diff)) parts.push(`Diff threshold=${diff.toFixed(4)}`);
-  el.textContent = parts.join("  /  ");
-  renderGraphExcludeNote();
 }
 function analysisResultsWindowUrl(mode = analysisMode, waitForResults = false, runId = "") {
   const params = new URLSearchParams({ mode: mode === "fail" ? "fail" : "pass" });
@@ -5213,8 +5127,7 @@ async function refreshSelectedItem() {
       setDetailLoading(false);
     }
     renderDetailTable();
-    renderItemThresholdLabel();
-    renderJudgmentFootnote();
+    renderGraphExcludeNote();
     drawCharts();
     if (analysis) setStatus("Done");
   } catch (err) {
