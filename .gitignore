@@ -14,3 +14,9 @@ Perf Data/
 
 # 실행 로그 — 사내 경로·데이터가 찍힐 수 있어 올리지 않는다
 *.log
+
+# 툴 검증용 합성 데이터셋 (tools/make_known_data.py 로 언제든 재생성)
+Known Data/
+
+# 다이 맵 설정 — Device 별 항목명·파일 경로라 사람마다 다르다 (R-056)
+wafer_map_settings.json

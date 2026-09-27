@@ -47,12 +47,29 @@ APP_REVISION = "Rev.0.031"
 # 오래 걸린 이유가 "화면만 보고는 어느 빌드인지 알 수 없다" 였다.
 
 
+def source_fingerprint():
+    """지금 돌고 있는 소스 파일 내용의 짧은 해시 (R-055).
+
+    git 해시만 보여주던 때는 커밋하지 않은 수정이 화면에 전혀 드러나지 않았다.
+    파일을 고쳐도 화면의 빌드 표시가 그대로라, 예전 프로세스가 아직 떠 있는 것인지
+    반영이 안 된 것인지 구분할 수 없었다. 내용 해시는 한 글자만 바뀌어도 달라진다.
+    """
+    try:
+        target = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+        with open(target, "rb") as fh:
+            return hashlib.sha1(fh.read()).hexdigest()[:6]
+    except Exception:
+        return ""
+
+
 def build_id():
-    """개발 실행이면 git 짧은 해시, exe(PyInstaller)면 빌드 시각.
+    """개발 실행이면 "git 짧은해시+소스해시", exe(PyInstaller)면 빌드 시각.
 
     사내 오프라인 환경이라 git 이 없을 수 있고 exe 에는 .git 자체가 없다.
     실패하면 소스/실행 파일의 수정 시각으로 떨어진다 — 어떤 경우에도 예외를 내지 않는다.
+    소스 해시를 함께 보이는 이유는 source_fingerprint() 주석 참조 (R-055).
     """
+    fingerprint = source_fingerprint()
     if not getattr(sys, "frozen", False):
         try:
             import subprocess
@@ -63,14 +80,15 @@ def build_id():
             )
             text = (out.stdout or "").strip()
             if out.returncode == 0 and text:
-                return text
+                return f"{text}+{fingerprint}" if fingerprint else text
         except Exception:
             pass
     try:
         target = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-        return datetime.fromtimestamp(os.path.getmtime(target)).strftime("%m-%d %H:%M")
+        stamp = datetime.fromtimestamp(os.path.getmtime(target)).strftime("%m-%d %H:%M")
+        return f"{stamp}+{fingerprint}" if fingerprint else stamp
     except Exception:
-        return ""
+        return fingerprint
 
 
 BUILD_ID = build_id()
@@ -90,6 +108,40 @@ try:
     SPEC_GATE_TAU = float(os.environ.get("CDFTOOL_SPEC_GATE_TAU", "0.05"))
 except (TypeError, ValueError):
     SPEC_GATE_TAU = 0.05
+
+# ── 분포 형상 기반 Tail 판정 (R-043) ─────────────────────────────────────────
+# 기존 Tail 은 "Excessive 도 Slight 도 아닌 나머지"(유닛 단위 fall-through)였다.
+# 그래서 한쪽 축만 Grubbs 임계를 넘은 건(AND 조건에서 탈락)이 전부 Tail = Marginal 로
+# 접혔다 — 집단에서 값도 이동량도 1위인 유닛이 벤치 검토에서 빠지는 일이 실제로 있었다.
+#
+# 새 방식은 유닛이 아니라 **그 항목의 분포 형상**을 본다:
+#   Core 가 스펙 안에 있고(P95_core < UL), 스펙 근처에 Pass 가 있고,
+#   마지막 Pass 와 첫 이탈 사이 Gap 이 작으면 -> Tail (정상 산포 끝이 넘어간 것)
+#   Core 자체가 밀렸으면 -> Shift,  떨어져 있으면 -> Separated
+#
+# 파라미터 근거 (docs/known_data/TAIL_PARAM_SWEEP.md):
+#   Gap_Limit = 0.5 x sigma_core 는 실데이터에서 "그 항목 꼬리의 자연 간격"(맨 끝 두 Pass
+#   값 사이 간격, 중앙 0.25 sigma_core)의 약 2배다. 정규 분포 이론값(1/(n·phi(z_n)))도
+#   n=60~230 구간에서 0.4 sigma 안팎이라 이 값이 적정하다.
+#   W 는 1.0 이상에서 결과가 포화한다. 0.5 로 두면 N_min 을 1->2 로만 올려도 Tail 이
+#   반토막 나지만 1.0 이상이면 둔감해진다 — 그래서 안정성 때문에 1.0 을 쓴다.
+#
+# 판정이 바뀌는 변경이라(CLAUDE.md §5-1) 기본값은 legacy 다. 환경변수로만 켠다:
+#   CDFTOOL_TAIL_MODE=shape
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+TAIL_SHAPE_MODE = (os.environ.get("CDFTOOL_TAIL_MODE", "legacy") or "legacy").strip().lower()
+TAIL_W_K = _env_float("CDFTOOL_TAIL_W_K", 1.0)        # Near-Spec Zone 폭 = W_K x sigma_core
+TAIL_GAP_K = _env_float("CDFTOOL_TAIL_GAP_K", 0.5)    # Gap_Limit = MAX(GAP_K x sigma_core, RES_K x 분해능)
+TAIL_RES_K = _env_float("CDFTOOL_TAIL_RES_K", 3.0)
+TAIL_N_MIN = int(_env_float("CDFTOOL_TAIL_N_MIN", 1))
+TAIL_MAD_TO_SIGMA = 1.4826
+TAIL_Z95 = 1.6448536269514722
 CURRENT_APP = None
 # 모드별 항목 캐시: {"pass": {항목명: payload}, "fail": {...}}. 같은 항목이라도 pass 는
 # 양품 표본, fail 은 불량 표본을 보므로 모집단이 다르다 — 이름만으로 캐시를 공유하면
@@ -517,6 +569,9 @@ HTML = r"""<!doctype html>
       font-weight: 600;
       color: var(--muted);
     }
+    .summary-strip.dense .summary-card { min-width: 0; padding: 8px 10px; }   /* R-053 */
+    .summary-strip.dense .summary-card-value { font-size: 17px; }
+    .summary-strip.dense .summary-card-label { font-size: 11px; white-space: nowrap; }
     .judgment-footnote {
       display: flex;
       align-items: center;
@@ -815,6 +870,7 @@ HTML = r"""<!doctype html>
     tr.select-row { background: var(--select); }
     tr.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; }
     td.over-item.active { background: #e3f4fb; box-shadow: inset 3px 0 0 #0a7890; font-weight: 700; }
+    td.over-sample.active { background: #e3f4fb; font-weight: 700; }
     td.sigma-fail {
       background: #ffd9d9;
       color: #9b1c1c;
@@ -834,6 +890,7 @@ HTML = r"""<!doctype html>
       box-shadow: inset 0 0 0 2px #111;
     }
     td.over-item { cursor: pointer; color: #064f78; font-weight: 600; }
+    td.over-sample { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
     .chart-tools { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     .graph-item-toolbar { display: none; }
     .graph-tabs {
@@ -2191,7 +2248,21 @@ HTML = r"""<!doctype html>
     .tail2{ margin-left:auto; display:flex; align-items:center; gap:12px; flex:0 0 auto; padding-left:12px }
     .lbl{ font-size:11px; font-weight:700; color:var(--ink3); letter-spacing:.03em; flex:0 0 auto }
     .gsum{ gap:0 }
-    .gname{ display:flex; flex-direction:column; gap:2px; min-width:0 }
+    /* R-054: 드롭박스와 Item 검색을 줄 맨 왼쪽에 둔다. 항목 이름(b#graphItemName)은
+       드롭박스에 같은 이름이 그대로 보이므로 뺐다 (Eden 님 확정). */
+    .gpick{ display:flex; align-items:center; gap:8px; flex:0 0 auto; min-width:0 }
+    .gsearch{ position:relative; display:flex; align-items:center; flex:0 0 auto }
+    .gsearch input{ height:28px; width:150px; padding:0 24px 0 10px; border:1px solid var(--line);
+      border-radius:8px; background:#fff; font-size:12px; color:var(--ink); min-width:0 }
+    .gsearch input:focus{ outline:none; border-color:var(--acc) }
+    .gsearch-clear{ position:absolute; right:5px; width:16px; height:16px; padding:0; border:0;
+      border-radius:50%; background:none; color:var(--ink3); font-size:14px; line-height:1;
+      cursor:pointer; display:none }
+    .gsearch.on .gsearch-clear{ display:block }
+    .gsearch-count{ font-size:11px; color:var(--ink3); font-variant-numeric:tabular-nums;
+      white-space:nowrap; flex:0 0 auto }
+    .gsearch-count.none{ color:var(--neg) }
+    .gname{ display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 1 auto }
     .gname b{ font-size:14px; font-weight:800; letter-spacing:-.01em; line-height:1.2 }
     .gname span{ font-size:11px; color:var(--ink3) }
 
@@ -2202,6 +2273,13 @@ HTML = r"""<!doctype html>
       border:0; border-right:1px solid var(--line2); border-radius:0; background:none;
       min-width:140px; flex:0 0 auto; }
     .summary-card:first-of-type{ padding-left:0 }
+    /* R-053: 유형별 카드가 붙어 장수가 늘었다. 6장부터는 폭을 줄이고, 그래도 넘치면
+       가로로 민다(스크롤바는 숨긴다 — 세로 높이가 62px 고정이라 튀어 보인다). */
+    .summary-strip{ overflow-x:auto; scrollbar-width:none }
+    .summary-strip::-webkit-scrollbar{ display:none }
+    .summary-strip.dense .summary-card{ min-width:0; padding-left:12px }
+    .summary-strip.dense .summary-card-value{ font-size:17px }
+    .summary-strip.dense .summary-card-label{ font-size:10.5px; white-space:nowrap }
     .summary-card:last-of-type{ border-right:0 }
     .summary-card-value{ font-size:20px; font-weight:800; letter-spacing:-.02em;
       font-variant-numeric:tabular-nums; line-height:1 }
@@ -2273,6 +2351,24 @@ HTML = r"""<!doctype html>
       border-bottom:1px solid var(--line2); background:none }
     .chead h2,.chead h3{ margin:0; font-size:12.5px; font-weight:800; color:var(--ink); white-space:nowrap }
     .chead .s{ font-size:11px; color:var(--ink3) }
+    /* R-056: 다이 맵 설정 줄 — 패널 헤더의 "설정" 을 누르면 펼쳐진다. */
+    .wafer-setup-btn{ margin-left:auto; height:24px; padding:0 10px; font-size:11px }
+    .wafer-setup{ flex:0 0 auto; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:flex-end;
+      padding:10px 14px; border-bottom:1px solid var(--line2); background:#fbfdff }
+    /* display:flex 가 UA 의 [hidden]{display:none} 을 이겨서 설정 줄이 항상 보였다. */
+    .wafer-setup[hidden]{ display:none }
+    .wafer-field{ display:flex; flex-direction:column; gap:3px; font-size:10.5px;
+      font-weight:600; color:var(--ink2) }
+    .wafer-field-wide{ flex:1 1 260px; min-width:220px }
+    .wafer-field input,.wafer-field select{ height:26px; padding:0 8px; font-size:11.5px;
+      border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);
+      min-width:0; width:150px }
+    .wafer-field input:focus,.wafer-field select:focus{ outline:none; border-color:var(--acc) }
+    .wafer-file{ display:flex; gap:6px; align-items:center }
+    .wafer-file input{ flex:1 1 auto; width:auto; color:var(--ink2) }
+    .wafer-file .gbtn{ height:26px; padding:0 10px; font-size:11px; flex:0 0 auto }
+    .wafer-setup-note{ flex:1 1 100%; font-size:10.5px; color:var(--ink3); line-height:1.5 }
+    .wafer-setup-note.bad{ color:var(--neg) }
     /* R-027: 이상 카드에 샘플 수를 작게 병기한다 (항목 수가 주, 샘플 수가 보조). */
     .summary-card-sub{ font-size:11px; font-weight:600; color:var(--ink3) }
     /* R-026: 기준 탭은 화면 전체의 필터 스위치다. 노트는 이동량 기준에서 몇 건이 빠졌는지. */
@@ -2304,7 +2400,8 @@ HTML = r"""<!doctype html>
     td.item,td.over-item{ text-align:left; font-weight:600 }
     tbody tr:nth-child(even) td{ background:none }
     tbody tr:hover td{ background:#fafcfe }
-    tr.active td,td.over-item.active{ background:var(--acc-s); box-shadow:none }
+    tr.active td,td.over-item.active,td.over-sample.active{ background:var(--acc-s); box-shadow:none }
+    #overSampleTable td.over-sample{ cursor:pointer; text-decoration:underline; text-underline-offset:2px }
     tr.active td:first-child{ box-shadow:inset 2.5px 0 0 var(--acc) }
     td.sigma-fail{ background:none; color:var(--neg); font-weight:800 }
 
@@ -2465,8 +2562,16 @@ HTML = r"""<!doctype html>
       <div class="result-graph-column">
       <section class="ctl">
         <div class="crow kpi gsum">
-          <div class="gname"><b id="graphItemName">—</b><span id="graphItemMeta"></span><span id="graphExcludeNote" class="graph-exclude-note"></span></div>
-          <div class="tail2"><select id="itemSelect"></select><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
+          <div class="gpick">
+            <select id="itemSelect"></select>
+            <div class="gsearch" id="itemSearchWrap">
+              <input id="itemSearch" type="text" placeholder="Item 검색" autocomplete="off" spellcheck="false">
+              <button id="itemSearchClear" type="button" class="gsearch-clear" title="검색어 지우기" tabindex="-1">×</button>
+            </div>
+            <span id="itemSearchCount" class="gsearch-count"></span>
+          </div>
+          <div class="gname"><span id="graphItemMeta"></span><span id="graphExcludeNote" class="graph-exclude-note"></span></div>
+          <div class="tail2"><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
         </div>
         <section id="graphFilterBar" class="graph-filter-bar"></section>
       </section>
@@ -2483,7 +2588,22 @@ HTML = r"""<!doctype html>
         <div class="scatter-box"><canvas id="scatterCanvas"></canvas></div>
       </section>
       <section class="panel wafer-panel">
-        <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span></div>
+        <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span><button id="waferSetupBtn" class="gbtn wafer-setup-btn" type="button" title="다이 맵 설정">설정</button></div>
+        <div class="wafer-setup" id="waferSetup" hidden>
+          <label class="wafer-field wafer-field-wide">유효다이 Map
+            <span class="wafer-file"><input id="dieMapPath" type="text" readonly placeholder="파일을 선택하세요"><button id="dieMapBrowse" class="gbtn" type="button">찾아보기</button></span>
+          </label>
+          <label class="wafer-field">원점 기준
+            <select id="originBase"><option value="11">11, 11</option><option value="1">01, 01</option></select>
+          </label>
+          <label class="wafer-field">Flat Zone
+            <select id="flatZone"><option value="12">12시</option><option value="3">3시</option><option value="6">6시</option><option value="9">9시</option></select>
+          </label>
+          <label class="wafer-field">Wafer No. 항목<input id="itemWafer" type="text" placeholder="예: OTP_0X19_POST" autocomplete="off" spellcheck="false"></label>
+          <label class="wafer-field">X 좌표 항목<input id="itemX" type="text" placeholder="예: OTP_0X1A_POST" autocomplete="off" spellcheck="false"></label>
+          <label class="wafer-field">Y 좌표 항목<input id="itemY" type="text" placeholder="예: OTP_0X1B_POST" autocomplete="off" spellcheck="false"></label>
+          <div class="wafer-setup-note" id="waferSetupNote"></div>
+        </div>
         <div class="wafer-box"><canvas id="waferCanvas"></canvas></div>
       </section>
       </div>
@@ -2512,6 +2632,15 @@ let sortState = { column: "qty", reverse: true };
 let detailSortState = { column: null, reverse: false };
 let analysisMode = "pass";
 let resultViewMode = "item";
+/* R-049: 샘플 기준 표 정렬 상태. 기본값은 지금까지의 표시 순서(Sample # 오름차순)와 같다. */
+let overSortState = { column: "sample", reverse: false };
+/* R-050: 샘플 기준 표에서 Sample # 을 누르면 선택 항목 상세가 "그 샘플이 걸린 항목 목록"
+   으로 바뀐다. null 이면 지금까지와 같은 "그 항목의 샘플 목록" 이다. */
+let detailSampleFocus = null;
+/* R-048: 위/아래 방향키가 움직일 표와, 그 표에서 마지막으로 고른 행/열 */
+let rowNavTableId = "";
+let rowNavRowKey = "";
+let rowNavCellIndex = -1;
 let modePayloads = {};
 let stopAnalysisRequested = false;
 let activeAnalysisRunId = "";
@@ -2998,6 +3127,7 @@ function postReadoutHeader(index) {
    열 폭은 표시 중인 열의 가중치를 100% 로 정규화해 계산한다. */
 const DETAIL_OPTIONAL_KEYS = ["mea_s", "diff_s"];
 const DETAIL_COLUMN_WEIGHT = {
+  test_number: 9, item: 16,                     // R-050 (샘플 기준 상세 전용)
   sample: 8, spec_out_type: 11, pre_value: 8.5, post_t1: 8.5, post_t2: 8, post_t3: 8,
   unit: 6, mea_s: 9, diff: 8, diff_s: 9, graph_exclude: 7, need_bench: 9
 };
@@ -3205,9 +3335,12 @@ function itemDisplayName(key) {
   // 최후 방어 — 그래도 못 찾으면 해시 접미사만 떼어낸다.
   return String(key || "").replace(/__[0-9a-f]{10}$/, "");
 }
+function summaryRowForItem(key) {
+  return (analysis?.results || []).find(row => itemKey(row) === key)
+    || (analysis?.selected_summary || []).find(row => itemKey(row) === key);
+}
 function selectedResultRow() {
-  return (analysis?.results || []).find(row => itemKey(row) === selectedItem)
-    || (analysis?.selected_summary || []).find(row => itemKey(row) === selectedItem);
+  return summaryRowForItem(selectedItem);
 }
 function selectedItemTitleName() {
   const data = itemCache[selectedItem];
@@ -3512,6 +3645,51 @@ function activatePayloadMode(mode, item = "") {
   if (item) selectedItem = item;
   return true;
 }
+/* ── R-054: 그래프 영역 Item 검색 ──────────────────────────────
+   항목이 수백 개라 드롭박스를 끝까지 훑어 찾기 어렵다. 검색어를 넣으면 드롭박스
+   목록 자체가 줄어, 드롭박스나 방향키로 넘길 때 검색된 것만 순서대로 보게 된다.
+   완전 일치가 아니라 부분 일치(대소문자 무시)이고, 공백으로 나눈 여러 낱말은 AND 다.
+   Test No. 도 대상이다 — 드롭박스에 "9.8 - VSTART" 로 보이므로 그 문자열로 찾는다.
+   표시만 바꾼다 — 판정·집계·표에는 전혀 관여하지 않는다. */
+let graphItemQuery = "";
+function graphItemMatches(row) {
+  const query = graphItemQuery.trim().toLowerCase();
+  if (!query) return true;
+  const text = itemOptionText(row).toLowerCase();
+  return query.split(/\s+/).every(token => text.includes(token));
+}
+function searchedResultRows() {
+  return filteredResultRows().filter(graphItemMatches);
+}
+function renderItemSearchCount() {
+  const wrap = document.getElementById("itemSearchWrap");
+  const countEl = document.getElementById("itemSearchCount");
+  const input = document.getElementById("itemSearch");
+  if (input && input.value !== graphItemQuery) input.value = graphItemQuery;
+  if (wrap) wrap.classList.toggle("on", !!graphItemQuery);
+  if (!countEl) return;
+  if (!graphItemQuery) { countEl.textContent = ""; countEl.classList.remove("none"); return; }
+  const hit = searchedResultRows().length;
+  const total = filteredResultRows().length;
+  countEl.textContent = `${hit} / ${total}`;
+  countEl.classList.toggle("none", hit === 0);
+}
+async function applyGraphItemQuery(value) {
+  graphItemQuery = value || "";
+  const keys = searchedResultRows().map(itemKey);
+  // 보고 있던 항목이 검색어에 안 걸리면 첫 결과로 옮긴다 — 검색하자마자 그래프가
+  // 바뀌는 쪽이, 목록에 없는 항목이 선택된 채 남는 것보다 덜 헷갈린다(Eden 님 확정).
+  // 하나도 안 걸리면 그래프는 그대로 두고 드롭박스만 비운다.
+  if (keys.length && !keys.includes(selectedItem)) {
+    selectedItem = keys[0];
+    highlightSample = null;
+    highlightMode = null;
+    await refreshSelectedItem();
+    return;
+  }
+  renderItemSelect();
+  renderItemSearchCount();
+}
 function filteredResultRows() {
   return (analysis?.results || [])
     .filter(rowMatchesAnalysisFilters)
@@ -3590,6 +3768,36 @@ function selectUnitCountsByCondition(payload, applyGate) {
   const out = {};
   Object.keys(sets).forEach(key => { out[key] = sets[key].size; });
   return out;
+}
+/* R-053: 유형별 유닛 수. 세는 방식은 selectUnitCountsByCondition 과 똑같다 —
+   조합(신뢰성 항목 x 온도)마다 샘플 Set 을 만들고, 화면 필터가 고른 조합만 합친다.
+   온도가 다르면 같은 유닛의 재측정이라 합집합을 쓸 수 없기 때문이다 (R-040).
+   서버가 유닛 하나를 가장 심한 유형 하나에만 넣어 주므로 카드 합이 유닛 수와 맞는다. */
+function unitTypeSetsByCondition(payload = analysis) {
+  const rows = ((payload?.unit_types || {}).rows || [])
+    .filter(row => rowMatchesPayloadFilters(row, payload));
+  const sets = {};
+  rows.forEach(row => {
+    const key = conditionKey(row.reliability_item, row.ft_temp);
+    const byType = sets[key] = sets[key] || {};
+    (byType[row.type] = byType[row.type] || new Set()).add(String(row.sample));
+  });
+  return sets;
+}
+function unitTypeCounts(payload = analysis) {
+  const sets = unitTypeSetsByCondition(payload);
+  const item = analysisFilters.reliability_item || "";
+  const keys = item ? [conditionKey(item, representativeTemp(item, payload))] : Object.keys(sets);
+  const out = {};
+  keys.forEach(key => {
+    Object.keys(sets[key] || {}).forEach(type => {
+      out[type] = (out[type] || 0) + sets[key][type].size;
+    });
+  });
+  return out;
+}
+function unitTypeOrder(payload = analysis) {
+  return (payload?.unit_types || {}).order || [];
 }
 function selectUnitCountWithGate(payload, applyGate) {
   const item = analysisFilters.reliability_item || "";
@@ -3692,6 +3900,9 @@ function updateResultTabVisibility() {
 }
 function setResultViewMode(view) {
   resultViewMode = view === "sample" ? "sample" : "item";
+  /* R-050: 샘플 기준을 벗어나면 상세 표도 항목 기준으로 되돌린다. 항목 목록 아래에
+     "어떤 샘플의 항목들" 표가 남아 있으면 위아래 두 표가 서로 맞지 않는다. */
+  if (resultViewMode !== "sample") detailSampleFocus = null;
   updateResultTabButtons();
   updateResultTabVisibility();
   ensureSelectedItemVisibleForActiveTab();
@@ -3915,6 +4126,9 @@ function clearAnalysisDisplay(message = "") {
   highlightMode = null;
   sortState = { column: "qty", reverse: true };
   detailSortState = { column: null, reverse: false };
+  overSortState = { column: "sample", reverse: false };
+  detailSampleFocus = null;
+  graphItemQuery = "";                       // R-054
   resetAnalysisFilters();
   renderSummary();
   renderDetailTable();
@@ -3929,6 +4143,9 @@ function applyAnalysisPayload(data, remember = true) {
   itemCache = analysis.items || {};
   sortState = { column: "qty", reverse: true };
   detailSortState = { column: null, reverse: false };
+  overSortState = { column: "sample", reverse: false };
+  detailSampleFocus = null;
+  graphItemQuery = "";                       // R-054
   resetAnalysisFilters();
   selectedItem = itemKey(analysis.results?.[0]) || "";
   highlightSample = null;
@@ -4019,7 +4236,11 @@ async function runAnalysis() {
     if (el && el.value) lookupState[key] = el.value;
   });
   const stopBtn = document.getElementById("stopAnalyzeBtn");
-  const displayMode = analysisMode;
+  /* R-047: 분석 직후 제일 먼저 볼 것은 Fail 항목이다. 직전에 Abnormal Pass 탭이나
+     샘플 기준을 보고 있었더라도 Fail 항목 / 항목 기준으로 되돌린 뒤 결과를 그린다. */
+  const displayMode = "fail";
+  resultViewMode = "item";
+  detailSampleFocus = null;
   activeAnalysisRunId = createAnalysisRunId();
   // 결과 새 창은 사용자가 "결과 새 창" 버튼을 눌렀을 때만 띄운다.
   // 예전에는 Analyze 를 누르면 매번 자동으로 팝업이 떠서 방해가 됐다.
@@ -4384,6 +4605,124 @@ function exportRawData() {
   link.remove();
 }
 
+/* ── R-048: 위/아래 방향키로 이웃 행 ─────────────────────────────
+   마우스로 행을 하나씩 눌러 가며 보는 검토가 번거로워, 마지막으로 누른 표를
+   기억해 두고 위/아래 키로 이웃 행을 "누른다". 선택에 딸린 동작(항목 로드·
+   그래프 갱신·하이라이트)이 전부 기존 onclick 에 묶여 있어서, 여기서 선택
+   로직을 다시 짜면 두 벌이 된다 — 그래서 부르는 쪽만 만든다. */
+const ROW_NAV_TABLE_IDS = ["resultTable", "overSampleTable", "detailTable"];
+function rowNavClickableCells(tr) {
+  // 행 자체에 onclick 이 없는 표(샘플 기준·항목 기준 상세)는 셀에 붙어 있다.
+  return Array.from(tr.cells).filter(td => typeof td.onclick === "function");
+}
+function rowNavRows(table) {
+  const body = table?.tBodies?.[0];
+  if (!body) return [];
+  return Array.from(body.rows)
+    .filter(tr => typeof tr.onclick === "function" || rowNavClickableCells(tr).length);
+}
+function rowNavActivate(tr) {
+  if (typeof tr.onclick === "function") { tr.click(); return true; }
+  const cells = rowNavClickableCells(tr);
+  if (!cells.length) return false;
+  // 직전에 누른 것과 같은 열이 있으면 그 열로 — 항목 열을 보던 중이었다면 계속 항목 열.
+  const same = cells.find(td => td.cellIndex === rowNavCellIndex);
+  (same || cells[0]).click();
+  return true;
+}
+function moveRowSelection(step) {
+  const table = document.getElementById(rowNavTableId);
+  if (!table || table.offsetParent === null) return false;   // 숨겨진 표는 움직이지 않는다
+  const rows = rowNavRows(table);
+  if (!rows.length) return false;
+  let index = rows.findIndex(tr => tr.dataset.rowKey !== undefined && tr.dataset.rowKey === rowNavRowKey);
+  if (index < 0) index = rows.findIndex(tr => tr.classList.contains("active"));
+  if (index < 0) index = step > 0 ? -1 : rows.length;         // 고른 행이 없으면 양 끝에서 시작
+  const next = index + step;
+  if (next < 0 || next >= rows.length) return false;          // 끝에서는 멈춘다 (되돌지 않는다)
+  const target = rows[next];
+  rowNavRowKey = target.dataset.rowKey ?? "";
+  if (!rowNavActivate(target)) return false;
+  target.scrollIntoView({ block: "nearest" });
+  return true;
+}
+function bindRowKeyNavigation() {
+  // 캡처 단계에서 듣는다 — 셀 핸들러 중에 stopPropagation 을 쓰는 것이 있다.
+  document.addEventListener("click", event => {
+    const node = event.target;
+    if (!node || typeof node.closest !== "function") return;
+    const tr = node.closest("tbody tr");
+    const table = tr && tr.closest("table");
+    if (!table || !ROW_NAV_TABLE_IDS.includes(table.id)) return;
+    rowNavTableId = table.id;
+    rowNavRowKey = tr.dataset.rowKey ?? "";
+    const cell = node.closest("td");
+    rowNavCellIndex = (cell && typeof cell.onclick === "function") ? cell.cellIndex : -1;
+  }, true);
+  document.addEventListener("keydown", event => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+    const node = event.target;
+    const tag = (node?.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "select" || tag === "textarea" || node?.isContentEditable) return;
+    if (moveRowSelection(event.key === "ArrowDown" ? 1 : -1)) event.preventDefault();
+  });
+}
+function bindWaferSetup() {
+  const toggle = document.getElementById("waferSetupBtn");
+  const panel = document.getElementById("waferSetup");
+  if (toggle && panel) {
+    toggle.addEventListener("click", () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) renderWaferSetup();
+      drawWaferMap();
+    });
+  }
+  const browse = document.getElementById("dieMapBrowse");
+  if (browse) {
+    browse.addEventListener("click", async () => {
+      browse.disabled = true;
+      try {
+        const res = await fetch("/browse-die-map", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || "파일 선택 실패");
+        if (data.changed) {
+          waferSettings.die_map_path = data.path;
+          dieMap = data;
+          dieMapError = "";
+          renderWaferSetup();
+          await saveWaferSettings();
+          drawWaferMap();
+        }
+      } catch (err) {
+        dieMapError = err.message || String(err);
+        renderWaferSetup();
+      } finally {
+        browse.disabled = false;
+      }
+    });
+  }
+  const bindChange = (id, key, onDone) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const apply = async () => {
+      const value = el.tagName === "SELECT" ? Number(el.value) : el.value.trim();
+      if (waferSettings[key] === value) return;
+      waferSettings[key] = value;
+      await saveWaferSettings();
+      if (onDone) await onDone();
+      drawWaferMap();
+    };
+    el.addEventListener("change", apply);
+  };
+  bindChange("originBase", "origin_base", async () => { renderWaferSetup(); });
+  bindChange("flatZone", "flat_zone");
+  // 항목명이 바뀌면 좌표를 다시 읽어야 한다 — 키를 비워 캐시를 무효화한다.
+  const reload = async () => { dieCoordsKey = ""; await ensureDieCoords(); };
+  bindChange("itemWafer", "item_wafer", reload);
+  bindChange("itemX", "item_x", reload);
+  bindChange("itemY", "item_y", reload);
+}
 function bindResultControls() {
   document.querySelectorAll("#resultModeBar button").forEach(button => {
     button.addEventListener("click", () => setAnalysisMode(button.dataset.mode));
@@ -4402,6 +4741,29 @@ function bindResultControls() {
   });
   const rawExportBtn = document.getElementById("rawExportBtn");
   if (rawExportBtn) rawExportBtn.addEventListener("click", exportRawData);
+  // R-054: 입력마다 전체 목록을 다시 그리므로 짧게 눌러 모은다.
+  const itemSearch = document.getElementById("itemSearch");
+  if (itemSearch) {
+    let searchTimer = null;
+    itemSearch.addEventListener("input", () => {
+      const value = itemSearch.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { applyGraphItemQuery(value); }, 150);
+    });
+    // 방향키가 표 행 이동(R-048)으로 새지 않게 검색창 안에서 막는다.
+    itemSearch.addEventListener("keydown", event => {
+      if (event.key === "Escape") { itemSearch.value = ""; applyGraphItemQuery(""); }
+    });
+  }
+  const itemSearchClear = document.getElementById("itemSearchClear");
+  if (itemSearchClear) {
+    itemSearchClear.addEventListener("click", () => {
+      const input = document.getElementById("itemSearch");
+      if (input) input.value = "";
+      applyGraphItemQuery("");
+      if (input) input.focus();
+    });
+  }
   document.getElementById("itemSelect").addEventListener("change", async e => {
     selectedItem = e.target.value;
     highlightSample = null;
@@ -4409,6 +4771,8 @@ function bindResultControls() {
     await refreshSelectedItem();
   });
   wireColumnToggleMenu("detailColumnToggleBtn", "detailColumnToggleMenu");   // R-023
+  bindRowKeyNavigation();                                                   // R-048
+  bindWaferSetup();                                                         // R-056
   const columnToggleBtn = document.getElementById("columnToggleBtn");
   const columnToggleMenu = document.getElementById("columnToggleMenu");
   if (columnToggleBtn && columnToggleMenu) {
@@ -4635,20 +4999,39 @@ function renderSummaryStrip() {
   const baseUnits = isFailMode ? (totals.total || 0) : (totals.pass || 0);
   const keptUnits = selectUnitCountWithGate(analysis, true);
   const allUnits = selectUnitCountWithGate(analysis, false);
+  /* R-053: 카드 구성 (Eden 님 확정 2026-09-13)
+       Fail 탭          총 진행 → 유형별 → Tail (Marginal) → 벤치 검토 필요
+       Abnormal Pass    Pass 진행 → 유형별 → 벤치 검토 필요   (Marginal 카드 없음)
+     유형별 카드는 유닛 수이고, 한 유닛은 가장 심한 유형 하나에만 들어간다(서버 집계).
+     Fail 탭의 Tail 묶음은 정의상 Marginal 과 같은 수라 한 장으로 합쳐 표기한다.
+     R-041 대로 배지는 기준 탭(Marginal 제외 / 전체)에 반응하지 않는다. */
+  const marginalType = failMarginalType();
+  const typeCounts = unitTypeCounts();
   const cards = [
     { label: isFailMode ? "총 진행" : "Pass 진행", value: baseUnits,
       title: isFailMode
         ? "이 시험에 투입된 샘플 수 (선택한 FT Temp 파일 기준)"
         : "그중 양품 샘플 수 — 이상 산포 판정의 모집단" },
-    { label: "벤치 검토 필요", value: keptUnits, cls: "flag",
-      title: isFailMode
-        ? "Fail 샘플 중 Marginal(Tail)을 뺀 수 — 벤치(FA) 대상"
-        : "이상 산포 샘플 중 스펙 대비 이동이 미미한 건을 뺀 수" },
-    { label: "Marginal", value: Math.max(allUnits - keptUnits, 0),
-      title: isFailMode
-        ? "규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 샘플 (fail_type = Tail)"
-        : "통계로는 걸렸지만 이동량이 스펙폭 대비 미미한 샘플" },
   ];
+  unitTypeOrder().forEach(type => {
+    if (isFailMode && type === marginalType) return;   // 아래 Marginal 카드로 합친다
+    cards.push({
+      label: type, value: typeCounts[type] || 0,
+      title: isFailMode
+        ? `Fail Type 이 ${type} 인 샘플 수 (한 샘플은 가장 심한 유형 하나에만 들어갑니다)`
+        : `판정축이 ${type} 인 샘플 수 (한 샘플은 가장 심한 유형 하나에만 들어갑니다)`,
+    });
+  });
+  if (isFailMode) {
+    cards.push({ label: `${marginalType} (Marginal)`, value: Math.max(allUnits - keptUnits, 0),
+      title: "규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 샘플 — 벤치 검토에서 접히는 분" });
+  }
+  cards.push({ label: "벤치 검토 필요", value: keptUnits, cls: "flag",
+    title: isFailMode
+      ? `Fail 샘플 중 Marginal(${marginalType})을 뺀 수 — 벤치(FA) 대상`
+      : "이상 산포 샘플 중 스펙 대비 이동이 미미한 건을 뺀 수" });
+  // 카드가 늘면 한 줄에 안 들어간다 — 5장을 넘으면 폭을 줄인다 (넘치면 가로 스크롤).
+  strip.classList.toggle("dense", cards.length > 5);
   cards.forEach(card => {
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
@@ -4825,6 +5208,7 @@ async function refreshSelectedItem() {
     try {
       await loadItem(selectedItem);
       await loadRelatedGraphItems();
+      await ensureDieCoords();                 // R-056
     } finally {
       setDetailLoading(false);
     }
@@ -4841,13 +5225,25 @@ async function refreshSelectedItem() {
 function renderItemSelect() {
   const sel = document.getElementById("itemSelect");
   sel.innerHTML = "";
-  filteredResultRows().forEach(r => {
+  const rows = searchedResultRows();        // R-054
+  if (!rows.length && graphItemQuery) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "일치하는 항목 없음";
+    opt.disabled = true;
+    sel.appendChild(opt);
+    sel.value = "";
+    renderItemSearchCount();
+    return;
+  }
+  rows.forEach(r => {
     const opt = document.createElement("option");
     opt.value = itemKey(r);
     opt.textContent = itemOptionText(r);
     sel.appendChild(opt);
   });
   sel.value = selectedItem;
+  renderItemSearchCount();
 }
 function numericValues(values) {
   // §S5: finiteNumber() 와 동일한 이유 -- Number(null)===0 이라 null 을 그냥 Number() 에
@@ -4911,6 +5307,24 @@ function sortedPayloadSummaryRows(payload) {
   }
   return rows;
 }
+/* R-049 후속: 상세 표에는 "행에 없는 열" 이 있다 — Fail Type / Reason 은 fail_type 이
+   없을 때 Mea_S·Diff_S 로 그 자리에서 만들고, Exclude / Need Bench? 는 화면 상태다.
+   compareValues 는 row[col] 을 그대로 읽으므로 이런 열은 모든 행이 undefined 로 보여
+   정렬이 아예 안 먹었다(2열 Fail Type 이 대표적). 표에 찍히는 값으로 비교한다.
+   Delta 는 예외 — 표시는 % 지만 정렬은 원값 기준을 유지한다 (R-020). */
+function detailSortValue(row, col, forItem = selectedItem) {
+  if (col === "spec_out_type") return detailSpecOutType(row, forItem);
+  if (col === "result") return detailResultLabel(row);
+  if (col === "unit") return detailCellValue(row, "unit", forItem);
+  if (col === "post_t1" || col === "post_t2" || col === "post_t3") return detailReadoutValue(row, col);
+  if (col === "graph_exclude") return isGraphExcluded(row) ? 1 : 0;
+  if (col === "need_bench") return needBenchState[needBenchKey(row)] ? 1 : 0;
+  return row[col];
+}
+function compareDetailValues(a, b, col, aItem = selectedItem, bItem = selectedItem) {
+  return compareValues({ [col]: detailSortValue(a, col, aItem) },
+                       { [col]: detailSortValue(b, col, bItem) }, col);
+}
 function sortedDetails(details) {
   const mode = analysis?.analysis_mode || analysisMode;
   let rows = mode === "fail" ? details.filter(d => d.fail_type) : details.filter(d => d.result === "SELECT");
@@ -4926,7 +5340,7 @@ function sortedDetails(details) {
     rows = rows.filter(row => !detailRowFolded(row, itemData, resultRow));
   }
   if (detailSortState.column) {
-    rows.sort((a, b) => compareValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
+    rows.sort((a, b) => compareDetailValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
   }
   return rows;
 }
@@ -5205,6 +5619,7 @@ function renderSummaryListTable(table, payload, mode) {
   sortedPayloadSummaryRows(payload).forEach(r => {
     const tr = tbody.insertRow();
     const key = itemKey(r);
+    tr.dataset.rowKey = key;                       // R-048
     if (r.result === "SELECT") tr.classList.add("select-row");
     if (key === selectedItem && analysis?.analysis_mode === payload.analysis_mode) tr.classList.add("active");
     tr.onclick = async () => {
@@ -5212,6 +5627,7 @@ function renderSummaryListTable(table, payload, mode) {
       selectedItem = key;
       highlightSample = null;
       highlightMode = null;
+      detailSampleFocus = null;                    // R-050
       await refreshSelectedItem();
     };
     // 목록에서 뺀 Stdev./Min./Max. 와 Pre 쪽 분포는 여기서 본다. (R-021)
@@ -5230,13 +5646,30 @@ function renderSummaryListTable(table, payload, mode) {
     });
   });
 }
+/* R-049: 표시 순서만 바꾼다 — 판정·집계가 쓰는 overSigmaRows() 자체는 건드리지 않는다.
+   어느 열로 정렬하든 동점이면 Sample # 순서로 떨어져, 표가 매번 같은 모양이 된다. */
+function sortedOverRows() {
+  const rows = [...overSigmaRows()];
+  const dir = overSortState.reverse ? -1 : 1;
+  const itemCount = row => (row.items || []).filter(Boolean).length;
+  const firstItem = row => itemDisplayName((row.items || []).filter(Boolean)[0] || "");
+  if (overSortState.column === "count") {
+    rows.sort((a, b) => (itemCount(a) - itemCount(b)) * dir || compareSamples(a.sample, b.sample));
+  } else if (overSortState.column === "items") {
+    rows.sort((a, b) => String(firstItem(a)).localeCompare(String(firstItem(b))) * dir
+      || compareSamples(a.sample, b.sample));
+  } else {
+    rows.sort((a, b) => compareSamples(a.sample, b.sample) * dir);
+  }
+  return rows;
+}
 function renderOverTable() {
   renderOverSampleTable(document.getElementById("overSampleTable"));
 }
 function renderOverSampleTable(table) {
   if (!table) return;
   table.innerHTML = "";
-  const overRows = overSigmaRows();
+  const overRows = sortedOverRows();           // R-049
   const maxItems = Math.max(1, ...overRows.map(r => r.items.length));
   const head = table.createTHead().insertRow();
   // 탭에 따라 목록의 성격이 다르다 — Fail 탭은 규격 이탈 항목, Abnormal Pass 탭은 통계 판정 항목.
@@ -5245,16 +5678,42 @@ function renderOverSampleTable(table) {
   // R-031: 그 샘플이 몇 개 항목에서 걸렸는지. 두 탭 모두에 둔다 — R-014 에서 열 폭을 두 탭에
   // 맞춰놨으므로 한쪽에만 열을 더하면 그 정렬이 깨진다.
   const countLabel = isFailMode ? "Fail 항목 수" : "이상 항목 수";
-  ["Sample #", countLabel,
-   ...Array.from({ length: maxItems }, (_, i) => i === 0 ? sampleItemsLabel : "")].forEach(label => {
+  // R-049: 앞 세 열은 헤더를 눌러 정렬한다. 이름 없는 나머지 항목 열은 같은 목록이
+  // 옆으로 이어진 것뿐이라 정렬 기준이 되지 않는다.
+  const headSpec = [["sample", "Sample #"], ["count", countLabel], ["items", sampleItemsLabel]]
+    .concat(Array.from({ length: Math.max(0, maxItems - 1) }, () => [null, ""]));
+  headSpec.forEach(([sortKey, label]) => {
     const th = document.createElement("th");
-    th.textContent = label;
+    th.textContent = label + (sortKey && overSortState.column === sortKey
+      ? (overSortState.reverse ? " ▼" : " ▲") : "");
+    if (sortKey) {
+      th.onclick = () => {
+        if (overSortState.column === sortKey) overSortState.reverse = !overSortState.reverse;
+        else overSortState = { column: sortKey, reverse: false };
+        renderOverTable();
+      };
+    }
     head.appendChild(th);
   });
   const body = table.createTBody();
   overRows.forEach(row => {
     const tr = body.insertRow();
-    tr.insertCell().textContent = row.sample;
+    tr.dataset.rowKey = String(row.sample);     // R-048
+    const sampleCell = tr.insertCell();
+    sampleCell.textContent = row.sample;
+    // R-050: Sample # 을 누르면 상세 표가 그 샘플이 걸린 항목 목록으로 바뀐다.
+    sampleCell.className = "over-sample";
+    sampleCell.title = "이 샘플이 걸린 항목을 Test No. / Item 순으로 봅니다";
+    sampleCell.classList.toggle("active", String(detailSampleFocus) === String(row.sample));
+    sampleCell.onclick = async () => {
+      detailSampleFocus = row.sample;
+      highlightSample = row.sample;
+      highlightMode = "sample";
+      const keys = (row.items || []).filter(Boolean);
+      if (keys.length && !keys.includes(selectedItem)) selectedItem = keys[0];
+      await ensureSampleDetailItems(keys);
+      await refreshSelectedItem();
+    };
     const countCell = tr.insertCell();          // R-031
     countCell.textContent = (row.items || []).filter(Boolean).length;
     countCell.className = "over-count";
@@ -5267,11 +5726,15 @@ function renderOverSampleTable(table) {
       if (name) td.title = name;
       if (item) {
         td.className = "over-item";
-        td.classList.toggle("active", item === selectedItem);
+        // R-052: 항목만 비교하면 같은 항목을 가진 다른 샘플 행까지 전부 칠해져서,
+        // 내가 누른 셀이 어느 행이었는지 알 수 없었다. 샘플까지 같을 때만 칠한다.
+        td.classList.toggle("active",
+          item === selectedItem && String(row.sample) === String(highlightSample));
         td.onclick = async () => {
           selectedItem = item;
           highlightSample = row.sample;
           highlightMode = "diff_s";
+          detailSampleFocus = null;              // R-050: 항목을 고르면 항목 기준 상세로
           document.getElementById("itemSelect").value = item;
           await refreshSelectedItem();
         };
@@ -5285,10 +5748,10 @@ function detailResultLabel(row) {
   if (row.result === "SELECT") return "Pass";
   return row.result || "";
 }
-function detailSpecOutType(row) {
+function detailSpecOutType(row, forItem = selectedItem) {
   if (row.fail_type) return row.fail_type;
-  const meaLimit = flagLimit("mea_s");
-  const diffLimit = flagLimit("diff_s");
+  const meaLimit = flagLimit("mea_s", forItem);
+  const diffLimit = flagLimit("diff_s", forItem);
   if (Math.abs(Number(row.mea_s)) > meaLimit && Math.abs(Number(row.diff_s)) > diffLimit) return "Measured + Delta";
   if (Math.abs(Number(row.mea_s)) > meaLimit) return "Measured";
   if (Math.abs(Number(row.diff_s)) > diffLimit) return "Delta";
@@ -5336,11 +5799,11 @@ function renderGraphExcludeNote() {
   btn.addEventListener("click", clearGraphExcludes);
   el.appendChild(btn);
 }
-function detailCellValue(row, key) {
-  const data = itemCache[selectedItem] || {};
-  const summary = selectedResultRow() || {};
+function detailCellValue(row, key, forItem = selectedItem) {
+  const data = itemCache[forItem] || {};
+  const summary = summaryRowForItem(forItem) || {};
   if (key === "result") return detailResultLabel(row);
-  if (key === "spec_out_type") return detailSpecOutType(row);
+  if (key === "spec_out_type") return detailSpecOutType(row, forItem);
   // 항목 기준 표의 Delta Mean 이 % 라 여기도 % 로 맞춘다 — 같은 diff_ratio 인데
   // 한쪽은 비율 원값이라 표기가 어긋나 있었다. 정렬은 원값 기준 그대로다. (R-020)
   if (key === "diff") {
@@ -5360,8 +5823,117 @@ function setDetailLoading(on) {
   meta.classList.toggle("is-loading", !!on);
   if (on) meta.textContent = `${selectedItemTitleName()} · 불러오는 중…`;
 }
+/* ── R-050: 샘플 기준 상세 ──────────────────────────────────────
+   샘플 기준 표에서 Sample # 을 누르면 선택 항목 상세가 뒤집힌다 —
+   지금까지는 "항목 하나 x 샘플들" 이었고, 여기서는 "샘플 하나 x 항목들" 이다.
+   1열 Test No. / 2열 Item 이고 나머지 열은 항목 기준 상세와 같다.
+   행을 누르면 그 항목이 선택돼 그래프가 따라 바뀌므로, 방향키(R-048)와 합치면
+   한 샘플이 걸린 항목들을 순차로 훑을 수 있다. */
+function sampleFocusItemKeys() {
+  const row = sortedOverRows().find(r => String(r.sample) === String(detailSampleFocus));
+  return (row?.items || []).filter(Boolean);
+}
+async function ensureSampleDetailItems(keys) {
+  // 항목 상세는 항목마다 따로 받는다 — 아직 없는 것만 모아 한 번에 받는다.
+  const missing = (keys || []).filter(key => key && !itemCache[key]);
+  if (!missing.length) return;
+  await Promise.all(missing.map(key => loadItem(key).catch(() => null)));
+}
+function sampleDetailEntries() {
+  const focus = detailSampleFocus;
+  return sampleFocusItemKeys().map(key => {
+    const data = itemCache[key] || {};
+    const summary = summaryRowForItem(key) || {};
+    const det = (data.details || []).find(d => String(d.sample) === String(focus)) || {};
+    return Object.assign({}, det, {
+      __key: key,
+      test_number: summary.test_number ?? data.test_number ?? "",
+      item: itemDisplayName(key),
+      unit: det.unit || summary.unit || data.unit || ""
+    });
+  });
+}
+function sampleDetailColumns(entries) {
+  const specOutHeader = (analysis?.analysis_mode || analysisMode) === "fail" ? "Fail Type" : "Reason";
+  const visible = ensureDetailColumnVisibility();
+  const hasReadout = key => entries.some(e => {
+    const v = detailReadoutValue(e, key);
+    return v !== undefined && v !== null && v !== "";
+  });
+  // Exclude / Need Bench? 는 (항목, 샘플) 짝에 붙는 상태라, 항목이 행마다 바뀌는
+  // 이 표에서는 어느 항목의 상태인지가 흐려진다 — 항목 기준 상세에서만 쓴다.
+  const rest = [
+    ["spec_out_type", specOutHeader], ["pre_value", "Pre"],
+    ["post_t1", postReadoutHeader(1)], ["post_t2", postReadoutHeader(2)], ["post_t3", postReadoutHeader(3)],
+    ["unit", "Unit"], ["mea_s", "Z-Score (Value)"], ["diff", "Delta"],
+    ["diff_s", "Z-Score (Delta)"]
+  ].filter(([key]) => visible.has(key))
+   .filter(([key]) => !key.startsWith("post_t") || hasReadout(key));
+  return [["test_number", "Test No."], ["item", "Item"]].concat(rest);
+}
+function renderSampleDetailTable() {
+  const entries = sampleDetailEntries();
+  const metaNode = document.getElementById("detailPanelMeta");
+  if (metaNode) metaNode.textContent = `Sample ${detailSampleFocus} · 항목 ${entries.length}건`;
+  const table = document.getElementById("detailTable");
+  table.innerHTML = "";
+  const cols = sampleDetailColumns(entries);
+  const widths = detailColumnWidths(cols);
+  renderDetailColumnToggleMenu();
+  const head = table.createTHead().insertRow();
+  cols.forEach(([key, label], index) => {
+    const th = document.createElement("th");
+    th.style.width = `${widths[index].toFixed(3)}%`;
+    th.textContent = label + (detailSortState.column === key ? (detailSortState.reverse ? " ▼" : " ▲") : "");
+    th.onclick = () => {                                   // R-049
+      if (detailSortState.column === key) detailSortState.reverse = !detailSortState.reverse;
+      else detailSortState = { column: key, reverse: false };
+      renderDetailTable();
+    };
+    head.appendChild(th);
+  });
+  const body = table.createTBody();
+  const rows = [...entries];
+  if (detailSortState.column) {
+    rows.sort((a, b) => compareDetailValues(a, b, detailSortState.column, a.__key, b.__key)
+      * (detailSortState.reverse ? -1 : 1));
+  }
+  if (!rows.length) {
+    const tr = body.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = cols.length;
+    td.textContent = "이 샘플에 표시할 항목이 없습니다.";
+    return;
+  }
+  rows.forEach(entry => {
+    const tr = body.insertRow();
+    tr.dataset.rowKey = entry.__key;                       // R-048
+    if (entry.__key === selectedItem) tr.classList.add("active");
+    tr.onclick = async () => {
+      selectedItem = entry.__key;
+      highlightSample = detailSampleFocus;
+      highlightMode = "sample";
+      await refreshSelectedItem();
+    };
+    cols.forEach(([key]) => {
+      const td = tr.insertCell();
+      td.textContent = fmtCell(detailCellValue(entry, key, entry.__key));
+      // R-051: Test No. / Item 도 나머지 열과 같은 가운데 정렬·보통 굵기로 둔다.
+      // (td.item 클래스가 왼쪽 정렬 + font-weight 600 이라 이 표만 튀어 보였다)
+      if ((key === "mea_s" || key === "diff_s")
+          && Math.abs(Number(entry[key])) > flagLimit(key, entry.__key)) {
+        td.classList.add("sigma-fail");
+      }
+    });
+  });
+}
 function renderDetailTable() {
   renderShiftGateNote();   // R-026
+  // R-050: 샘플 기준에서 Sample # 을 누른 상태면 "그 샘플의 항목 목록" 을 그린다.
+  if (detailSampleFocus !== null && resultViewMode === "sample") {
+    renderSampleDetailTable();
+    return;
+  }
   const metaNode = document.getElementById("detailPanelMeta");
   if (metaNode) {
     // R-028: 지금까지 이 자리의 "N건" 은 표에 보이는 행 수가 아니라 항목의 전체 샘플 수였다.
@@ -5401,6 +5973,7 @@ function renderDetailTable() {
   }
   sortedDetails(item.details).forEach(d => {
     const tr = body.insertRow();
+    tr.dataset.rowKey = String(d.sample);        // R-048
     if (String(d.sample) === String(highlightSample)) tr.classList.add("active");
     cols.forEach(([key]) => {
       const td = tr.insertCell();
@@ -6051,89 +6624,308 @@ function drawCharts() {
   drawDiffCdfChart();
   drawWaferMap();
 }
-function waferPositionForSample(sample) {
-  const text = String(sample ?? "").trim();
-  const numeric = Number(text.replace(/[^0-9.-]/g, ""));
-  const index = Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) - 1 : 0;
-  return { row: Math.floor(index / 12), col: index % 12 };
+/* ── R-056: 웨이퍼 다이 맵 ─────────────────────────────────────
+   예전 이 자리는 Serial # 를 12 로 나눈 나머지에 점을 찍는 **가짜** 였다. 이제
+   칩 OTP 에 심어둔 (Wafer No., X, Y) 를 읽어 실제 다이 위치를 찍는다.
+
+   좌표 규칙 (Eden 님 정리):
+     · 유효다이 맵 TXT 는 0/1 격자. 1 = 유효다이, 0 = 격자를 채우는 자리.
+     · 1 이 있는 가장 왼쪽 열 -> X = base, 가장 위쪽 행 -> Y = base.
+       두 기준을 각각 독립적으로 찾으므로 원점 칸 자체는 0 일 수 있다.
+     · 오른쪽 +1, 아래 +1. base 는 11 또는 1.
+     · OTP 에는 좌표값이 그대로 2진수로 들어간다 (오프셋 없음).
+   Flat Zone 은 **화면에 그리는 방향에만** 쓴다 — 좌표 계산에는 관여하지 않는다.
+   TXT 격자 그대로가 6시 상태이고, 한 칸 옮길 때마다 시계방향 90도 돌린다. */
+let waferSettings = { die_map_path: "", origin_base: 11, flat_zone: 6,
+                      item_wafer: "", item_x: "", item_y: "" };
+let waferSettingsDevice = null;     // 어느 Device 의 설정을 들고 있는지
+let dieMap = null;                  // 파싱된 격자 요약
+let dieMapError = "";
+let dieCoords = {};                 // sample -> {wafer, x, y}
+let dieCoordsKey = "";              // 어느 조건 + 어느 항목명으로 읽었는지
+let dieCoordsNote = "";
+const FLAT_ZONE_ORDER = [6, 9, 12, 3];
+
+function waferDeviceKey() {
+  return (lookupState.device || "").trim();
+}
+function waferOriginBase() {
+  return Number(waferSettings.origin_base) === 1 ? 1 : 11;
+}
+function flatRotationSteps() {
+  const index = FLAT_ZONE_ORDER.indexOf(Number(waferSettings.flat_zone));
+  return index < 0 ? 0 : index;
+}
+/** 격자를 시계방향으로 steps 번 돌렸을 때 (row, col) 이 가는 자리 */
+function rotateCell(row, col, rows, cols, steps) {
+  let r = row, c = col, R = rows, C = cols;
+  for (let i = 0; i < steps; i++) {
+    const nr = c, nc = R - 1 - r;
+    r = nr; c = nc;
+    const swap = R; R = C; C = swap;
+  }
+  return { row: r, col: c, rows: R, cols: C };
+}
+/** 좌표 (x, y) -> 원본 격자의 (row, col). 맵 밖이면 null */
+function dieCellFor(x, y) {
+  if (!dieMap) return null;
+  const base = waferOriginBase();
+  const row = dieMap.base_row + (Number(y) - base);
+  const col = dieMap.base_col + (Number(x) - base);
+  if (!Number.isFinite(row) || !Number.isFinite(col)) return null;
+  if (row < 0 || col < 0 || row >= dieMap.rows || col >= dieMap.cols) return null;
+  return { row, col };
+}
+function dieCoordRange() {
+  const base = waferOriginBase();
+  return { minX: base, maxX: base + (dieMap ? dieMap.span_x - 1 : 0),
+           minY: base, maxY: base + (dieMap ? dieMap.span_y - 1 : 0) };
+}
+function dieCoordValid(entry) {
+  if (!entry || !dieMap) return false;
+  const { minX, maxX, minY, maxY } = dieCoordRange();
+  const x = Number(entry.x), y = Number(entry.y);
+  // OTP 에 좌표값이 그대로 들어가므로, base 미만이거나 맵을 벗어나면 미기입/판독실패다.
+  return Number.isFinite(x) && Number.isFinite(y)
+    && x >= minX && x <= maxX && y >= minY && y <= maxY;
+}
+async function loadWaferSettings(force = false) {
+  const device = waferDeviceKey();
+  if (!force && waferSettingsDevice === device) return waferSettings;
+  waferSettingsDevice = device;
+  try {
+    const res = await fetch(`/wafer-settings?device=${encodeURIComponent(device)}`);
+    const data = await res.json();
+    if (data.settings) waferSettings = data.settings;
+  } catch (_err) { /* 설정이 없으면 기본값으로 간다 */ }
+  renderWaferSetup();
+  await loadDieMap(waferSettings.die_map_path, true);
+  return waferSettings;
+}
+async function saveWaferSettings() {
+  const device = waferDeviceKey();
+  try {
+    await fetch("/wafer-settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device, settings: waferSettings }),
+    });
+  } catch (_err) { /* 저장 실패는 화면 동작을 막지 않는다 */ }
+}
+async function loadDieMap(path, quiet = false) {
+  dieMap = null;
+  dieMapError = "";
+  if (!path) { if (!quiet) renderWaferSetup(); return; }
+  try {
+    const res = await fetch(`/die-map?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "맵을 읽지 못했습니다.");
+    dieMap = data;
+  } catch (err) {
+    dieMapError = err.message || String(err);
+  }
+  renderWaferSetup();
+}
+function renderWaferSetup() {
+  const pathEl = document.getElementById("dieMapPath");
+  if (pathEl) pathEl.value = waferSettings.die_map_path || "";
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value ?? "";
+  };
+  setValue("originBase", String(waferOriginBase()));
+  setValue("flatZone", String(Number(waferSettings.flat_zone) || 6));
+  setValue("itemWafer", waferSettings.item_wafer);
+  setValue("itemX", waferSettings.item_x);
+  setValue("itemY", waferSettings.item_y);
+  const note = document.getElementById("waferSetupNote");
+  if (!note) return;
+  note.classList.remove("bad");
+  if (dieMapError) {
+    note.textContent = dieMapError;
+    note.classList.add("bad");
+  } else if (dieMap) {
+    const { minX, maxX, minY, maxY } = dieCoordRange();
+    const parts = [
+      `${dieMap.rows}행 x ${dieMap.cols}열`,
+      `유효다이 ${dieMap.die_count}개`,
+      `X ${minX} ~ ${maxX}`,
+      `Y ${minY} ~ ${maxY}`,
+      dieMap.origin_is_die ? "원점 칸 = 유효다이" : "원점 칸은 유효다이 아님 (정상)",
+    ];
+    note.textContent = parts.concat(dieMap.warnings || []).join(" · ");
+  } else {
+    note.textContent = "유효다이 맵 파일을 선택하면 격자 정보가 여기에 표시됩니다.";
+  }
+}
+/** 좌표를 읽어올 조건. 전체 분석이면 선택 항목이 속한 조건을 쓴다. */
+function dieCoordCondition() {
+  const row = selectedResultRow() || {};
+  const base = normalizedAnalysisSelection();
+  return Object.assign({}, base, {
+    item: row.reliability_item || base.item,
+    readout: row.readout || base.readout,
+    ft_temp: row.ft_temp || base.ft_temp,
+  });
+}
+async function ensureDieCoords() {
+  await loadWaferSettings();
+  const names = { wafer: waferSettings.item_wafer, x: waferSettings.item_x, y: waferSettings.item_y };
+  if (!names.wafer || !names.x || !names.y) {
+    dieCoords = {}; dieCoordsKey = ""; dieCoordsNote = "다이 정보 항목명이 설정되지 않았습니다.";
+    return;
+  }
+  const condition = dieCoordCondition();
+  const key = [condition.item, condition.readout, condition.ft_temp,
+               names.wafer, names.x, names.y].join("|");
+  if (key === dieCoordsKey) return;
+  try {
+    const res = await fetch("/die-coords", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection: condition, items: names }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "좌표를 읽지 못했습니다.");
+    dieCoords = data.coords || {};
+    dieCoordsKey = key;
+    dieCoordsNote = (data.missing || []).length
+      ? `항목을 찾지 못했습니다: ${data.missing.join(", ")}`
+      : "";
+  } catch (err) {
+    dieCoords = {}; dieCoordsKey = ""; dieCoordsNote = err.message || String(err);
+  }
+}
+function selectedWaferSample() {
+  const data = itemCache[selectedItem];
+  const row = (data?.details || []).find(r => String(r.sample) === String(highlightSample))
+    || (data?.details || [])[0] || {};
+  return highlightSample ?? row.sample;
 }
 function drawWaferMap() {
+  const sample = selectedWaferSample();
+  const entry = sample === undefined || sample === null ? null : dieCoords[String(sample)];
   const metaEl = document.getElementById("waferPanelMeta");
   if (metaEl) {
-    const data0 = itemCache[selectedItem];
-    const row0 = data0?.details?.find(r => String(r.sample) === String(highlightSample)) || data0?.details?.[0] || {};
-    const wafer = row0.wafer || row0.wafer_no || data0?.wafer_no || "W--";
-    const sample = highlightSample || row0.sample;
-    metaEl.textContent = `Wafer ${wafer}` + (sample != null && sample !== "" ? ` · Sample ${sample}` : "");
+    const bits = [];
+    if (entry && entry.wafer !== null && entry.wafer !== undefined) bits.push(`Wafer ${entry.wafer}`);
+    if (sample !== undefined && sample !== null && sample !== "") bits.push(`Sample ${sample}`);
+    if (dieCoordValid(entry)) bits.push(`X ${entry.x} · Y ${entry.y}`);
+    else if (entry) bits.push("좌표 없음");
+    metaEl.textContent = bits.join(" · ");
   }
   const canvas = document.getElementById("waferCanvas");
   if (!canvas) return;
+  if (!dieMap) {
+    drawGraphNotice(canvas, dieMapError
+      || "유효다이 맵이 설정되지 않았습니다 — 패널 오른쪽 위 [설정] 에서 지정하세요.", 520, 300);
+    return;
+  }
   const { ctx, w, h } = setupHiResCanvas(canvas, 520, 300);
-  const data = itemCache[selectedItem];
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#0b438c";
-  ctx.font = "800 16px Segoe UI";
-  const selectedDetail = data?.details?.find(row => String(row.sample) === String(highlightSample)) || data?.details?.[0] || {};
-  const rows = 10, cols = 12;
-  const left = 115;
-  const top = 50;
+
+  const steps = flatRotationSteps();
+  const shape = rotateCell(0, 0, dieMap.rows, dieMap.cols, steps);
+  const rows = shape.rows, cols = shape.cols;
   const legendReserve = Math.min(190, Math.max(110, w * 0.24));
-  const cellW = (w - left - legendReserve - 16) / cols;
-  const cellH = (h - top - 14) / (rows + 0.9);  // 0.9 = 반지름 여유(0.45셀) + 하단 여백
-  const cell = Math.max(6, Math.min(cellW, cellH));
-  const gridW = cols * cell;
-  const gridH = rows * cell;
-  const cx = left + gridW / 2;
-  const cy = top + gridH / 2;
-  const radius = Math.min(gridW, gridH) / 2 + cell * 0.45;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.clip();
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const x = left + col * cell;
-      const y = top + row * cell;
-      const centerX = x + cell / 2;
-      const centerY = y + cell / 2;
-      const edge = Math.hypot(centerX - cx, centerY - cy) > radius - cell * 0.8;
-      ctx.fillStyle = edge ? "#cfcfcf" : "#b8dafc";
-      ctx.fillRect(x, y, cell - 1, cell - 1);
+  const left = 46, top = 30;
+  const cell = Math.max(2, Math.min((w - left - legendReserve - 16) / cols,
+                                    (h - top - 24) / rows));
+  const gridW = cols * cell, gridH = rows * cell;
+  const cellAt = (row, col) => ({ x: left + col * cell, y: top + row * cell });
+
+  // 유효다이
+  for (let row = 0; row < dieMap.rows; row++) {
+    const line = dieMap.grid[row] || "";
+    for (let col = 0; col < dieMap.cols; col++) {
+      if (line[col] !== "1") continue;
+      const at = rotateCell(row, col, dieMap.rows, dieMap.cols, steps);
+      const pos = cellAt(at.row, at.col);
+      ctx.fillStyle = "#b8dafc";
+      ctx.fillRect(pos.x, pos.y, Math.max(1, cell - 0.6), Math.max(1, cell - 0.6));
     }
   }
-  const selectedSample = highlightSample || selectedDetail.sample;
-  if (selectedSample !== undefined && selectedSample !== null && selectedSample !== "") {
-    const pos = waferPositionForSample(selectedSample);
-    const sx = left + Math.max(0, Math.min(cols - 1, pos.col)) * cell;
-    const sy = top + Math.max(0, Math.min(rows - 1, pos.row)) * cell;
-    ctx.fillStyle = "#ff6b6b";
-    ctx.fillRect(sx, sy, cell - 1, cell - 1);
+  // 선택 샘플
+  let marked = null;
+  if (dieCoordValid(entry)) {
+    const origin = dieCellFor(entry.x, entry.y);
+    if (origin) {
+      const at = rotateCell(origin.row, origin.col, dieMap.rows, dieMap.cols, steps);
+      const pos = cellAt(at.row, at.col);
+      ctx.fillStyle = "#ff3b30";
+      ctx.fillRect(pos.x, pos.y, Math.max(1, cell - 0.6), Math.max(1, cell - 0.6));
+      // 칸이 작아 눈에 안 띄므로 테두리 원을 덧그린다
+      ctx.strokeStyle = "#ff3b30";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(pos.x + cell / 2, pos.y + cell / 2, Math.max(5, cell * 1.6), 0, Math.PI * 2);
+      ctx.stroke();
+      marked = pos;
+    }
   }
-  ctx.restore();
-  ctx.strokeStyle = "#777";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.stroke();
+  // 눈금 — 회전해도 축이 따라가도록, 좌표 두 점의 화면 위치로 방향을 구한다
+  const { minX, maxX, minY, maxY } = dieCoordRange();
+  const screenOf = (x, y) => {
+    const origin = dieCellFor(x, y);
+    if (!origin) return null;
+    const at = rotateCell(origin.row, origin.col, dieMap.rows, dieMap.cols, steps);
+    return cellAt(at.row, at.col);
+  };
+  ctx.font = "700 9px Segoe UI";
   ctx.fillStyle = "#0b438c";
-  ctx.font = "700 10px Segoe UI";
-  ctx.textAlign = "center";
-  for (let col = 0; col < cols; col++) ctx.fillText(String(col + 1), left + col * cell + cell / 2, top - 12);
-  ctx.textAlign = "right";
-  "ABCDEFGHIJ".split("").forEach((label, row) => ctx.fillText(label, left - 10, top + row * cell + cell / 2 + 4));
-  const legendX = Math.min(left + gridW + 40, w - 150);
-  const legendY = top + 70;
-  const legend = [["#ff6b6b", `Fail${highlightSample ? ` (Sample #${highlightSample})` : ""}`], ["#b8dafc", "Good"], ["#cfcfcf", "Edge / No Die"]];
+  const drawTicks = (values, fixed, axis) => {
+    values.forEach(value => {
+      const a = axis === "x" ? screenOf(value, fixed) : screenOf(fixed, value);
+      const b = axis === "x" ? screenOf(value, fixed + 1) : screenOf(fixed + 1, value);
+      if (!a || !b) return;
+      const dx = (a.x - b.x), dy = (a.y - b.y);
+      const len = Math.hypot(dx, dy) || 1;
+      ctx.textAlign = "center";
+      ctx.fillText(String(value),
+        a.x + cell / 2 + dx / len * cell * 1.3,
+        a.y + cell / 2 + dy / len * cell * 1.3 + 3);
+    });
+  };
+  const tickStep = Math.max(1, Math.ceil((maxX - minX + 1) / 12));
+  const xs = [], ys = [];
+  for (let v = minX; v <= maxX; v += tickStep) xs.push(v);
+  for (let v = minY; v <= maxY; v += tickStep) ys.push(v);
+  drawTicks(xs, minY, "x");
+  drawTicks(ys, minX, "y");
+
+  // Flat Zone 표시 — 격자 바깥쪽 해당 방향에 굵은 선
+  const zone = Number(waferSettings.flat_zone) || 6;
+  ctx.strokeStyle = "#5a6b7b";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  const cx = left + gridW / 2, cy = top + gridH / 2;
+  const half = Math.min(gridW, gridH) * 0.22;
+  if (zone === 6) { ctx.moveTo(cx - half, top + gridH + 6); ctx.lineTo(cx + half, top + gridH + 6); }
+  else if (zone === 12) { ctx.moveTo(cx - half, top - 6); ctx.lineTo(cx + half, top - 6); }
+  else if (zone === 9) { ctx.moveTo(left - 6, cy - half); ctx.lineTo(left - 6, cy + half); }
+  else { ctx.moveTo(left + gridW + 6, cy - half); ctx.lineTo(left + gridW + 6, cy + half); }
+  ctx.stroke();
+
+  // 범례
+  const legendX = Math.min(left + gridW + 30, w - 150);
   ctx.textAlign = "left";
   ctx.font = "10px Segoe UI";
+  const legend = [["#ff3b30", sample ? `Sample ${sample}` : "선택 샘플"],
+                  ["#b8dafc", `유효다이 ${dieMap.die_count}`]];
   legend.forEach(([color, label], index) => {
-    const y = legendY + index * 28;
+    const y = top + 40 + index * 24;
     ctx.fillStyle = color;
-    ctx.fillRect(legendX, y - 13, 18, 18);
+    ctx.fillRect(legendX, y - 12, 16, 16);
     ctx.fillStyle = "#17345f";
-    ctx.fillText(label, legendX + 28, y + 1);
+    ctx.fillText(label, legendX + 24, y + 1);
   });
+  ctx.fillStyle = "#5a6b7b";
+  ctx.font = "9.5px Segoe UI";
+  ctx.fillText(`Flat ${zone}시`, legendX, top + 40 + legend.length * 24 + 2);
+  if (!marked) {
+    ctx.fillStyle = "#b26a00";
+    ctx.fillText(dieCoordsNote || "이 샘플의 좌표를 찾지 못했습니다",
+                 legendX, top + 40 + legend.length * 24 + 20);
+  }
 }
 function drawDiffCdfChart() {
   const canvas = document.getElementById("diffCdfCanvas");
@@ -6411,11 +7203,12 @@ function failDirectionCdf(row) {
   if (Number.isFinite(upper) && Number.isFinite(post) && post > upper) return 1;
   return 0.5;
 }
-function flagLimit(key) {
+function flagLimit(key, forItem = selectedItem) {
   // 항목마다 n 이 달라 Grubbs 임계값도 다르다 — 현재 선택된 item 의 payload 에 실린
   // mea_threshold/diff_threshold(§S3) 를 우선 쓰고, 없으면(구 데이터/전역 표시용) 서버가
   // 내려준 flag_limit(고정 모드 값)으로 대체한다.
-  const data = itemCache[selectedItem] || analysis?.items?.[selectedItem] || {};
+  // R-050: 샘플 기준 상세는 한 표 안에서 항목이 행마다 바뀌므로 항목을 지정해 묻는다.
+  const data = itemCache[forItem] || analysis?.items?.[forItem] || {};
   const perItem = key === "diff_s" ? data.diff_threshold : data.mea_threshold;
   const value = Number(perItem);
   if (Number.isFinite(value)) return value;
@@ -7776,6 +8569,11 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_
         row["judged_readout"] = readout
         row["readout_history"] = history
         row["items"] = [key_by_item.get(item, item) for item in row.get("items", [])]
+    # R-053: 유형별 유닛 행도 over_sigma 와 같은 조건 필드를 달아야 화면 필터가 먹는다.
+    for row in (payload.get("unit_types") or {}).get("rows", []):
+        row["reliability_item"] = reliability_item
+        row["ft_temp"] = ft_temp
+        row["readout"] = readout
     return payload
 
 
@@ -7825,6 +8623,15 @@ def merge_combo_payloads(combo_payloads, mode):
                 agg = merged["fail_gate"]["items"].setdefault(item_key, {"kept": [], "folded": 0})
                 agg["kept"].extend(counts.get("kept") or [])
                 agg["folded"] += counts.get("folded", 0) or 0
+        # R-053: 유형별 유닛 행은 조건 필드를 달고 오므로 이어붙이기만 하면 된다.
+        # 유닛 수는 화면에서 조합 단위로 Set 을 만들어 세므로 중복 걱정이 없다.
+        combo_types = payload.get("unit_types") or {}
+        if combo_types.get("rows"):
+            agg_types = merged.setdefault("unit_types", {"order": [], "rows": []})
+            for name in combo_types.get("order") or []:
+                if name not in agg_types["order"]:
+                    agg_types["order"].append(name)
+            agg_types["rows"].extend(combo_types["rows"])
         for row in payload.get("results", []):
             rel = row.get("reliability_item", "")
             temp = row.get("ft_temp", "")
@@ -7892,6 +8699,14 @@ def merge_combo_payloads(combo_payloads, mode):
             item_counts_by_item.values(),
             key=lambda row: (reliability_sort_key(row["reliability_item"]), row["reliability_item"]),
         )
+    if merged.get("unit_types"):
+        # 조합마다 나온 유형이 달라 order 가 섞인다 — 정해진 심각도 순서로 다시 세운다.
+        if mode == "fail":
+            rank = lambda name: FAIL_TYPE_PRIORITY.get(name, 99)
+        else:
+            canonical = SELECT_TYPE_ORDER + ["기타"]
+            rank = lambda name: canonical.index(name) if name in canonical else 99
+        merged["unit_types"]["order"].sort(key=lambda name: (rank(name), name))
     merge_unit_counts(merged, combo_payloads)
     return merged
 
@@ -8080,6 +8895,7 @@ def fail_type_for_detail(
     initial_record, history, value, lower_limit, upper_limit, mea_s, diff_s,
     n, sigma, mean, diff_n=None, diff_sigma=None, diff_mean=None,
     mea_threshold=_UNSET, diff_threshold=_UNSET, unit_recovered=False,
+    shape_verdict=None,
 ):
     # 분류 우선순위(암묵적이던 순서를 명시): Intermittent -> Unstable -> Excessive ->
     # Slight -> Tail. §S6b.
@@ -8105,6 +8921,11 @@ def fail_type_for_detail(
                 return "Unstable"
     if spec_margin_ratio(value, lower_limit, upper_limit) >= 0.01:
         return "Excessive"
+    # R-043: 분포 형상 모드. Excessive 까지의 우선순위는 그대로 두고(이탈률 1% 이상은
+    # 형상과 무관하게 Excessive), 그 아래를 항목 단위 형상 판정으로 대체한다.
+    # 호출부가 항목마다 한 번 계산해 넘겨 준다 — 유닛마다 다시 재지 않는다.
+    if TAIL_SHAPE_MODE == "shape":
+        return shape_verdict or "Tail"
     # mea/diff 를 독립적으로 flag_result 로 평가 — pass 모집단(n, sigma, mean)의 Grubbs 임계값
     # 기준. §S3. mea_threshold/diff_threshold 를 넘기면(호출부가 루프 밖에서 한 번만 계산해둔
     # 값) grubbs_critical 재계산을 건너뛴다 — §S3 후속(성능).
@@ -8119,7 +8940,10 @@ def fail_type_for_detail(
     return "Tail"
 
 
-FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2, "Slight": 3, "Tail": 4}
+# Shift(집단 이동)·Separated(분리된 이상)는 R-043 형상 모드에서만 나온다. 기존 유형끼리의
+# 상대 순서는 그대로라 legacy 모드의 worst_fail_type 결과는 변하지 않는다.
+FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2,
+                      "Shift": 3, "Slight": 4, "Separated": 5, "Tail": 6}
 
 # R-032: Fail 목록에서 접을 "Marginal" 의 정의 — fail_type 이 Tail 인 건.
 # Tail 은 fail_type_for_detail() 의 마지막 분기, 즉 규격은 벗어났지만 이탈량이 1% 미만
@@ -8155,6 +8979,94 @@ def fail_marginal_gate(item_payloads):
     return {"excluded_type": FAIL_MARGINAL_TYPE, "items": items}
 
 
+SELECT_TYPE_ORDER = ["Measured + Delta", "Measured", "Delta"]
+
+
+def _over_threshold(value, threshold):
+    try:
+        return threshold is not None and abs(float(value)) > float(threshold)
+    except (TypeError, ValueError):
+        return False
+
+
+def _unit_type_payload(worst, order):
+    """샘플 -> 유형 표를 표시용 최상위 키 모양으로 바꾼다 (R-053).
+
+    최상위 키인 이유는 fail_gate / shift_gate 와 같다 — 골든 스냅샷 비교 대상
+    (results / selected_summary / over_sigma / items[].details)에 필드를 늘리면
+    회귀가 깨진다.
+
+    rows 에는 sample 과 type 만 담는다. 조건(reliability_item / ft_temp)은 전체 분석
+    태깅 단계에서 over_sigma 와 똑같이 붙으므로, 화면의 신뢰성 항목·온도 필터가
+    그대로 먹는다. order 는 실제로 나온 유형만, 심각한 순서로 남긴다.
+    """
+    present = {name for name in worst.values()}
+    seen = [name for name in order if name in present]
+    seen += sorted(name for name in present if name not in order)
+    index = {name: pos for pos, name in enumerate(seen)}
+    rows = [{"sample": sample, "type": name} for sample, name in worst.items()]
+    rows.sort(key=lambda row: (index.get(row["type"], 99), natural_key(str(row["sample"]))))
+    return {"order": seen, "rows": rows}
+
+
+def fail_unit_types(item_payloads):
+    """Fail 유닛을 Fail Type 별로 묶는다 (R-053, 표시 전용).
+
+    한 유닛이 여러 항목에서 걸리면 **가장 심한 유형 하나에만** 넣는다 — 그래야
+    유형 카드의 합이 Fail 유닛 수와 정확히 맞는다(Eden 님 확정 2026-09-13).
+    이 규칙 덕분에 Tail 묶음은 "모든 Fail 항목이 Tail 인 유닛" 이 되어
+    기존 Marginal 수(게이트 적용 전 - 적용 후)와 같은 값이 된다.
+    """
+    worst = {}
+    for item_payload in item_payloads.values():
+        for detail in item_payload.get("details") or []:
+            fail_type = detail.get("fail_type")
+            if not fail_type:
+                continue
+            sample = detail.get("sample")
+            current = worst.get(sample)
+            if current is None or (FAIL_TYPE_PRIORITY.get(fail_type, 99)
+                                   < FAIL_TYPE_PRIORITY.get(current, 99)):
+                worst[sample] = fail_type
+    order = [name for name, _ in sorted(FAIL_TYPE_PRIORITY.items(), key=lambda kv: kv[1])]
+    return _unit_type_payload(worst, order)
+
+
+def select_unit_types(app):
+    """SELECT 유닛을 판정축별로 묶는다 — Measured + Delta > Measured > Delta (R-053).
+
+    상세 행에는 유형 문자열이 없다. 화면이 쓰는 것과 같은 규칙(그 항목의 Grubbs 임계와
+    |mea_s| / |diff_s| 비교)으로 여기서 만든다.
+    """
+    worst = {}
+    for item in app.post_records:
+        entry = item_analysis(app, item)
+        result_row = entry["result_row"]
+        mea_threshold = result_row.get("mea_threshold")
+        diff_threshold = result_row.get("diff_threshold")
+        for detail in entry["details"]:
+            if detail.get("result") != "SELECT":
+                continue
+            mea_hit = _over_threshold(detail.get("mea_s"), mea_threshold)
+            diff_hit = _over_threshold(detail.get("diff_s"), diff_threshold)
+            if mea_hit and diff_hit:
+                name = "Measured + Delta"
+            elif mea_hit:
+                name = "Measured"
+            elif diff_hit:
+                name = "Delta"
+            else:
+                # 임계는 branch 마다 다를 수 있어 축을 못 가리는 SELECT 가 남을 수 있다.
+                # 조용히 버리면 카드 합이 안 맞으므로 따로 센다.
+                name = "기타"
+            sample = detail.get("sample")
+            current = worst.get(sample)
+            order = SELECT_TYPE_ORDER + ["기타"]
+            if current is None or order.index(name) < order.index(current):
+                worst[sample] = name
+    return _unit_type_payload(worst, SELECT_TYPE_ORDER + ["기타"])
+
+
 def worst_fail_type(details):
     """항목의 detail 행들 중 가장 심각한 fail_type 을 고른다.
 
@@ -8164,6 +9076,84 @@ def worst_fail_type(details):
     if not details:
         return ""
     return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
+
+
+def tail_shape_verdict(values, lower_limit, upper_limit,
+                       w_k=None, gap_k=None, res_k=None, n_min=None):
+    """항목 하나의 분포 형상으로 Spec Out 성격을 가른다 -> "Tail" / "Separated" / "Shift".
+
+    values 는 그 항목의 **전 유닛 Post 값**이어야 한다 (Pass + 이탈). Core 는 Median 과
+    MAD 로 잡으므로 이탈값이 섞여 있어도 중심은 흔들리지 않는다.
+
+    상·하한을 따로 보고, 둘 다 이탈이 있으면 더 심한 쪽(Shift > Separated > Tail)을 쓴다.
+    이탈이 없으면 None (판정할 게 없다).
+    """
+    w_k = TAIL_W_K if w_k is None else w_k
+    gap_k = TAIL_GAP_K if gap_k is None else gap_k
+    res_k = TAIL_RES_K if res_k is None else res_k
+    n_min = TAIL_N_MIN if n_min is None else n_min
+
+    nums = []
+    for value in values or []:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            nums.append(number)
+    if not nums or lower_limit is None or upper_limit is None:
+        return None
+    try:
+        low = float(lower_limit)
+        high = float(upper_limit)
+    except (TypeError, ValueError):
+        return None
+
+    over = [x for x in nums if x > high]
+    under = [x for x in nums if x < low]
+    if not over and not under:
+        return None
+    keep = sorted(x for x in nums if low <= x <= high)
+    if not keep:
+        return "Shift"                     # 전량 이탈 — Core 자체가 스펙 밖이다
+
+    def _median(seq):
+        data = sorted(seq)
+        half = len(data) // 2
+        return data[half] if len(data) % 2 else (data[half - 1] + data[half]) / 2.0
+
+    ordered = sorted(nums)
+    median = _median(ordered)
+    sigma = TAIL_MAD_TO_SIGMA * _median([abs(x - median) for x in ordered])
+    # 측정 분해능 추정 — 서로 다른 값들 사이의 최소 간격. 데이터로그에 분해능 항목이 없다.
+    uniq = sorted(set(ordered))
+    resolution = min((b - a) for a, b in zip(uniq, uniq[1:])) if len(uniq) > 1 else 0.0
+    limit = max(gap_k * sigma, res_k * resolution)
+    width = w_k * sigma
+
+    verdicts = []
+    for outside, edge, inward in ((over, high, True), (under, low, False)):
+        if not outside:
+            continue
+        if inward:
+            if median + TAIL_Z95 * sigma >= edge:
+                verdicts.append("Shift")
+                continue
+            near = [x for x in keep if x >= edge - width]
+            gap = min(outside) - keep[-1]
+        else:
+            if median - TAIL_Z95 * sigma <= edge:
+                verdicts.append("Shift")
+                continue
+            near = [x for x in keep if x <= edge + width]
+            gap = keep[0] - max(outside)
+        if len(near) < n_min:
+            verdicts.append("Separated")
+        else:
+            verdicts.append("Tail" if gap <= limit else "Separated")
+    if not verdicts:
+        return None
+    return min(verdicts, key=lambda name: {"Shift": 0, "Separated": 1, "Tail": 2}[name])
 
 
 def spec_width(lower_limit, upper_limit):
@@ -8401,6 +9391,7 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
         "shift_gate": shift_gate_summary(app),  # R-026 (표시 전용)
+        "unit_types": select_unit_types(app),  # R-053 (표시 전용)
     }
     # R-038: 배지가 유닛(샘플) 기준으로 바뀐다. pass payload 에는 지금까지 항목 수만
     # 있어서 "총 샘플 수"를 낼 수 없었다. 최상위 키라 골든 비교 대상이 아니다.
@@ -8464,11 +9455,17 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     for item in item_names:
         post_records = []
         pre_values_by_sample = {}
+        # R-043: 형상 판정의 Core 는 "그 항목의 전 유닛" 이다. post_records 는 규격을
+        # 벗어난 행만 남기고, pass_post_values 도 규격 안 pass 만 담는다 — 둘 다
+        # 모집단이 아니다. 다른 항목 때문에 Bin fail 인데 이 항목은 정상인 유닛이
+        # 빠지면 sigma_core 가 달라져 경계 판정이 흔들린다. 여기서 따로 모은다.
+        shape_pool = []
         for sample in fail_samples:
             state = sample_states[sample]
             latest = latest_record_for_sample_item(state, item)
             if latest is None:
                 continue
+            shape_pool.append(latest.get("value"))
             lower = latest.get("lower_limit")
             upper = latest.get("upper_limit")
             if spec_status(latest.get("value"), lower, upper) not in ("low", "high"):
@@ -8502,6 +9499,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             pass_record = latest_record_for_sample_item(state, item)
             if pass_record is None:
                 continue
+            shape_pool.append(pass_record.get("value"))
             pass_lower = pass_record.get("lower_limit")
             pass_upper = pass_record.get("upper_limit")
             if spec_status(pass_record.get("value"), pass_lower, pass_upper) in ("low", "high"):
@@ -8556,6 +9554,12 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         n_pass = len(pass_post_values)
         mea_threshold = threshold_for(n_pass) if n_pass else None
         diff_threshold = threshold_for(len(pass_diff_values)) if pass_diff_values else None
+        # R-043: 형상 판정은 항목 단위다 — 유닛 루프 밖에서 한 번만 계산한다.
+        # 모집단은 "그 항목의 전 유닛" 이라야 하므로 Pass 값과 이탈 값을 합친다.
+        shape_verdict = None
+        if TAIL_SHAPE_MODE == "shape":
+            shape_verdict = tail_shape_verdict(
+                shape_pool, metadata["lower_limit"], metadata["upper_limit"])
         for index, (sample, record) in enumerate(post_records):
             value = post_values[index]
             pre_value = post_pre_values[index]
@@ -8584,6 +9588,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                         diff_n=len(pass_diff_values), diff_sigma=diff_sigma, diff_mean=diff_mean,
                         mea_threshold=mea_threshold, diff_threshold=diff_threshold,
                         unit_recovered=bool(state.get("is_intermittent")),
+                        shape_verdict=shape_verdict,
                     ),
                     "result": "SELECT",
                 }
@@ -8653,6 +9658,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "select_count": sum(row["qty"] for row in summary_rows),
         "items": item_payloads,
         "fail_gate": marginal_gate,  # R-032 (표시 전용)
+        "unit_types": fail_unit_types(item_payloads),  # R-053 (표시 전용)
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
@@ -8766,7 +9772,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 25  # 24->25: 유닛 인구조사를 Serial # 기준 조합별로 재정의 (R-040).
+CACHE_SCHEMA = 26  # 25->26: 유형별 유닛 목록 unit_types 추가 (R-053).
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
 # 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
 # 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
@@ -9335,6 +10341,240 @@ def child_dirs(path):
         for entry in os.scandir(path)
         if entry.is_dir()
     )
+
+
+# ── R-056: 웨이퍼 다이 맵 ─────────────────────────────────────────────────────
+# 지금까지 Wafer Map 은 Serial # 를 12 로 나눈 자리에 점을 찍는 **가짜** 였다.
+# 칩 OTP 에 심은 (Wafer No., X, Y) 를 읽어 실제 다이 위치를 찍는다.
+#
+# 좌표 규칙 (Eden 님 정리):
+#   · 유효다이 맵 TXT 는 0/1 격자. 1 = 유효다이, 0 = 격자를 채우기 위한 자리.
+#   · 1 이 있는 가장 왼쪽 열 -> X = base, 1 이 있는 가장 위쪽 행 -> Y = base.
+#     두 기준을 **각각 독립적으로** 찾으므로 원점 칸 자체는 0 일 수 있다
+#     (웨이퍼가 둥글어 거의 항상 그렇다).
+#   · 오른쪽으로 +1, 아래로 +1. base 는 11 또는 1 중에서 고른다.
+#   · OTP 에는 좌표값이 **그대로** 2진수로 들어간다 (오프셋 없음).
+# 전부 표시 전용이다 — 판정·payload·골든에 관여하지 않는다.
+WAFER_SETTINGS_FILE = "wafer_map_settings.json"
+WAFER_SETTINGS_LOCK = threading.Lock()
+FLAT_ZONE_CHOICES = (12, 3, 6, 9)
+ORIGIN_BASE_CHOICES = (11, 1)
+DIE_MAP_MAX_CELLS = 4_000_000       # 방어용 — 사람이 만드는 맵은 수만 칸 규모다
+
+
+def wafer_settings_path():
+    return os.path.join(app_base_dir(), WAFER_SETTINGS_FILE)
+
+
+def default_wafer_settings():
+    return {
+        "die_map_path": "",
+        "origin_base": 11,
+        "flat_zone": 6,
+        "item_wafer": "",
+        "item_x": "",
+        "item_y": "",
+    }
+
+
+def _coerce_wafer_settings(raw):
+    settings = default_wafer_settings()
+    if isinstance(raw, dict):
+        for key in ("die_map_path", "item_wafer", "item_x", "item_y"):
+            value = raw.get(key)
+            if isinstance(value, str):
+                settings[key] = value.strip()
+        try:
+            base = int(raw.get("origin_base", settings["origin_base"]))
+            if base in ORIGIN_BASE_CHOICES:
+                settings["origin_base"] = base
+        except (TypeError, ValueError):
+            pass
+        try:
+            zone = int(raw.get("flat_zone", settings["flat_zone"]))
+            if zone in FLAT_ZONE_CHOICES:
+                settings["flat_zone"] = zone
+        except (TypeError, ValueError):
+            pass
+    return settings
+
+
+def load_wafer_settings(device=""):
+    """Device 별 설정을 읽는다.
+
+    Device 를 키로 두는 이유: 항목명이 Device 마다 다르고 같은 Device 안에서는
+    파일마다 같다 (Eden 님 확인 2026-09-16).
+    """
+    try:
+        with io.open(wafer_settings_path(), encoding="utf-8") as fh:
+            store = json.load(fh)
+    except Exception:
+        store = {}
+    devices = store.get("devices") if isinstance(store, dict) else None
+    saved = (devices or {}).get(device or "", {})
+    return _coerce_wafer_settings(saved)
+
+
+def save_wafer_settings(device, raw):
+    settings = _coerce_wafer_settings(raw)
+    with WAFER_SETTINGS_LOCK:
+        try:
+            with io.open(wafer_settings_path(), encoding="utf-8") as fh:
+                store = json.load(fh)
+        except Exception:
+            store = {}
+        if not isinstance(store, dict):
+            store = {}
+        store.setdefault("devices", {})[device or ""] = settings
+        write_json_file(wafer_settings_path(), store)
+    return settings
+
+
+def read_die_grid(path):
+    """0/1 격자 TXT 를 읽는다. 구분자(공백·쉼표·탭·붙여쓰기)는 줄마다 알아서 가른다."""
+    if not path or not os.path.isfile(path):
+        raise ValueError("유효다이 맵 파일을 찾을 수 없습니다: %s" % (path or "(미지정)"))
+    with io.open(path, encoding="utf-8-sig", errors="replace") as fh:
+        text = fh.read()
+    grid, unknown = [], 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "," in stripped:
+            cells = stripped.split(",")
+        elif "\t" in stripped:
+            cells = stripped.split("\t")
+        elif " " in stripped:
+            cells = stripped.split()
+        else:
+            cells = list(stripped)
+        row = []
+        for cell in cells:
+            token = cell.strip()
+            if not token:
+                continue
+            if token == "1":
+                row.append(1)
+            elif token == "0":
+                row.append(0)
+            else:
+                # 0/1 이 아닌 글자는 유효다이가 아닌 것으로 보되, 몇 개였는지 알린다.
+                unknown += 1
+                row.append(0)
+        if row:
+            grid.append(row)
+    if not grid:
+        raise ValueError("격자를 읽지 못했습니다 — 0 과 1 로 된 줄이 없습니다.")
+    width = max(len(row) for row in grid)
+    if width * len(grid) > DIE_MAP_MAX_CELLS:
+        raise ValueError("맵이 너무 큽니다 (%d행 x %d열)." % (len(grid), width))
+    # 줄 길이가 들쭉날쭉하면 뒤를 0 으로 채운다 — 좌표는 왼쪽 기준이라 영향이 없다.
+    grid = [row + [0] * (width - len(row)) for row in grid]
+    return grid, unknown
+
+
+def die_map_summary(path):
+    grid, unknown = read_die_grid(path)
+    ones = [(r, c) for r, row in enumerate(grid) for c, value in enumerate(row) if value]
+    if not ones:
+        raise ValueError("유효다이(1)가 하나도 없습니다.")
+    base_row = min(r for r, _c in ones)
+    base_col = min(c for _r, c in ones)
+    warnings = []
+    if unknown:
+        warnings.append("0/1 이 아닌 값 %d개는 유효다이가 아닌 것으로 봤습니다." % unknown)
+    return {
+        "path": os.path.abspath(path),
+        "rows": len(grid),
+        "cols": len(grid[0]),
+        "die_count": len(ones),
+        "base_row": base_row,
+        "base_col": base_col,
+        "span_x": max(c for _r, c in ones) - base_col + 1,
+        "span_y": max(r for r, _c in ones) - base_row + 1,
+        "origin_is_die": bool(grid[base_row][base_col]),
+        "grid": ["".join(str(value) for value in row) for row in grid],
+        "warnings": warnings,
+    }
+
+
+def binary_item_value(value):
+    """datalog 의 2진수 문자열 측정값을 정수로 바꾼다.
+
+    파서가 이미 숫자로 만들어 둬서 "1010010" 은 1010010.0 으로 들어온다.
+    자릿수가 0 과 1 뿐이면 2진수로 다시 읽는다. 8비트라 정수 손실이 없다.
+    """
+    try:
+        number = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    text = str(number)
+    if any(ch not in "01" for ch in text):
+        return None
+    return int(text, 2)
+
+
+def die_coords_for_selection(selection, names):
+    """선택한 조건의 판정 회차 파일에서 (Wafer, X, Y) 를 유닛별로 읽는다."""
+    _pre, post_files, _base = resolve_selection_file_set(dict(selection))
+    path = post_files[-1]                      # 판정은 마지막(최신) Read-out 으로 한다
+    records = cached_item_records(path, last_sample=True)
+    lowered = {key.strip().lower(): key for key in records}
+    found, missing = {}, []
+    for role in ("wafer", "x", "y"):
+        name = (names.get(role) or "").strip()
+        if not name:
+            missing.append(role)
+            continue
+        key = lowered.get(name.lower())
+        if key is None:
+            missing.append(name)
+        else:
+            found[role] = key
+    coords = {}
+    if len(found) == 3:
+        by_role = {
+            role: {str(rec.get("sample")): binary_item_value(rec.get("value"))
+                   for rec in records[key]}
+            for role, key in found.items()
+        }
+        samples = set()
+        for table in by_role.values():
+            samples |= set(table)
+        for sample in samples:
+            coords[sample] = {
+                "wafer": by_role["wafer"].get(sample),
+                "x": by_role["x"].get(sample),
+                "y": by_role["y"].get(sample),
+            }
+    return {
+        "coords": coords,
+        "missing": missing,
+        "file": os.path.basename(path),
+    }
+
+
+def browse_die_map():
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        selected = filedialog.askopenfilename(
+            title="유효다이 맵 파일 선택",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialdir=DATA_ROOT if os.path.isdir(DATA_ROOT) else os.getcwd(),
+        )
+    finally:
+        root.destroy()
+    if not selected:
+        return {"changed": False}
+    return dict(die_map_summary(os.path.abspath(selected)), changed=True)
 
 
 def browse_data_root():
@@ -10215,6 +11455,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return
+        if parsed.path == "/wafer-settings":                      # R-056
+            try:
+                device = parse_qs(parsed.query).get("device", [""])[0].strip()
+                self.send_json({"settings": load_wafer_settings(device)})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if parsed.path == "/die-map":                             # R-056
+            try:
+                path = parse_qs(parsed.query).get("path", [""])[0].strip()
+                self.send_json(die_map_summary(path))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
         else:
             self.send_error(404)
             return
@@ -10224,6 +11478,30 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/browse-data-root":
             try:
                 self.send_json(browse_data_root())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/browse-die-map":                        # R-056
+            try:
+                self.send_json(browse_die_map())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/wafer-settings":                        # R-056
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                saved = save_wafer_settings(body.get("device", ""), body.get("settings"))
+                self.send_json({"settings": saved})
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/die-coords":                            # R-056
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                self.send_json(die_coords_for_selection(
+                    body.get("selection") or {}, body.get("items") or {}))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return
@@ -10443,22 +11721,42 @@ def open_browser():
 
 
 def create_server():
+    """빈 포트를 찾아 서버를 연다.
+
+    R-055: 첫 포트가 이미 차 있으면 그건 대개 "예전 프로세스가 아직 떠 있다" 는 뜻이다.
+    그대로 다음 포트로 조용히 넘어가면, 브라우저에 열려 있던 예전 주소는 계속 예전 코드를
+    돌려주고 화면만 보고는 알 수가 없다 — 실제로 그렇게 한참 헤맸다. 크게 알린다.
+    """
     global PORT
-    last_error = None
+    first_port, last_error, busy = PORT, None, []
     for port in range(PORT, PORT_END + 1):
         try:
             server = ThreadingHTTPServer((HOST, port), Handler)
             PORT = port
+            if busy:
+                print("")
+                print("  [!] 포트 %s 는 이미 다른 인스턴스가 쓰고 있습니다."
+                      % ", ".join(str(p) for p in busy))
+                print("      브라우저에 그 주소가 열려 있다면 그 창은 **예전 코드**입니다.")
+                print("      예전 창은 닫고 아래 새 주소를 쓰세요.")
+                print("")
             return server
         except OSError as exc:
             last_error = exc
-    raise RuntimeError(f"No available port from {PORT} to {PORT_END}.") from last_error
+            busy.append(port)
+    raise RuntimeError(f"No available port from {first_port} to {PORT_END}.") from last_error
 
 
 def main():
     server = create_server()
     threading.Thread(target=open_browser, daemon=True).start()
-    print(f"{APP_TITLE} HTML UI: http://{HOST}:{PORT}/")
+    # R-055: 지금 도는 것이 어느 파일의 어느 내용인지 먼저 말한다. 화면 좌상단의
+    # "Rev.x · <git>+<소스해시>" 와 같은 값이므로 둘을 맞춰 보면 예전 창인지 바로 안다.
+    source = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+    print(f"{APP_TITLE} {APP_REVISION} · {BUILD_ID}")
+    print(f"  소스   : {source}")
+    print(f"  데이터 : {DATA_ROOT}")
+    print(f"  주소   : http://{HOST}:{PORT}/")
     server.serve_forever()
 
 
