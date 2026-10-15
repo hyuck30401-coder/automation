@@ -2727,7 +2727,8 @@ HTML = r"""<!doctype html>
       padding:10px 12px; gap:10px }
     .wafer-panel .wafer-setup[hidden]{ display:none }
     /* R-057: 웨이퍼 선택 드롭박스 + 표시 옵션 토글 */
-    .wafer-select{ flex:0 0 auto; height:28px; width:116px; padding:0 8px; border:1px solid var(--r-line-in);
+    /* min-width:0 이 필요하다 — 위쪽 `select { min-width:240px }` 가 폭을 밀어낸다 */
+    .wafer-select{ flex:0 0 auto; height:28px; width:124px; min-width:0; padding:0 8px; border:1px solid var(--r-line-in);
       border-radius:7px; background:#fff; font-family:inherit; font-size:12px; color:var(--r-ink) }
     .wafer-select:disabled{ color:var(--r-ink4); background:var(--r-soft) }
     .wafer-view-bar{ flex:0 0 auto }
