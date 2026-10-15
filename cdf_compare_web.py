@@ -2431,26 +2431,415 @@ HTML = r"""<!doctype html>
     /* R-031: 항목 수 열. 숫자라 좁게 두고 오른쪽 정렬한다. */
     #overSampleTable th:nth-child(2), #overSampleTable td:nth-child(2){ width:84px }
     #overSampleTable td.over-count{ text-align:right; padding-right:14px; color:var(--ink2) }
+
+    /* ══════════════════════════════════════════════════════════════════
+       R-060 리디자인 — 디자인 토큰 / 3분할 골격 / 조건 패널
+       source-order 로 위 정의를 덮는다 (기존 규칙은 manager·fs·report·
+       Pre/Post 새 창·결과 새 창이 아직 쓰고 있어 지우지 않는다).
+       ══════════════════════════════════════════════════════════════════ */
+    :root{
+      --r-bg:#F2F3F0; --r-card:#FFFFFF; --r-soft:#F7F8F6; --r-seg:#F0F1EE;
+      --r-ink:#14161B; --r-ink2:#3D434D; --r-ink3:#5E6571; --r-ink4:#8A909A;
+      --r-line:#E3E5E1; --r-line-in:#D3D6D1; --r-line-row:#EEF0EC;
+      --r-acc:#2747D4; --r-acc-d:#1A33A3; --r-acc-s:#EDF0FD;
+      --r-warn-s:#FFF4E4; --r-warn-t:#8A4305; --r-warn-l:#F3D3A6;
+      --r-ok-s:#F2FAF5; --r-ok-b:#DDF2E5; --r-ok-t:#1C6B43;
+      --r-neg:#7F93B2; --r-pos:#D2612C;
+      --r-sans:"IBM Plex Sans KR","Pretendant","Pretendard","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+      --r-mono:"IBM Plex Mono","D2Coding",Consolas,"Courier New",monospace;
+      /* 기존 변수도 새 값으로 맞춰 둔다 — 200곳 넘게 참조 중이라 이름을 갈지 않는다 */
+      --bg:var(--r-bg); --panel:var(--r-card); --line:var(--r-line); --line2:var(--r-line-row);
+      --ink:var(--r-ink); --ink2:var(--r-ink3); --ink3:var(--r-ink4);
+      --acc:var(--r-acc); --acc-d:var(--r-acc-d); --acc-s:var(--r-acc-s); --acc-b:#C6D0F5;
+      --muted:var(--r-ink3); --text:var(--r-ink);
+      --neg:#C0392B; --pos:var(--r-ok-t); --warn:var(--r-warn-t);
+    }
+    body{ font-family:var(--r-sans); background:var(--r-bg); color:var(--r-ink); font-size:13px; }
+    main{ padding:0; max-width:none; }
+    .app-shell{ display:block; min-height:100vh; background:var(--r-bg); }
+    .content{ display:flex; flex-direction:column; min-height:100vh; padding:0; gap:0; }
+
+    /* ── 상단 헤더 ─────────────────────────────────────────── */
+    .appbar{ flex:0 0 auto; display:flex; align-items:center; gap:12px; height:56px;
+      padding:0 16px; background:#14161B; color:#fff; border:0; }
+    .ab-logo{ width:34px; height:34px; flex:0 0 auto; border-radius:8px; background:var(--r-acc);
+      display:inline-flex; align-items:center; justify-content:center }
+    .ab-logo svg{ width:20px; height:20px }
+    .ab-id{ display:flex; flex-direction:column; gap:1px; margin-right:4px }
+    .ab-id b{ font-size:15px; font-weight:700; letter-spacing:-.01em; color:#fff }
+    .ab-id small{ font-size:11px; font-family:var(--r-mono); color:#9AA1AC }
+    .ab-crumb{ font-size:13px; color:#C9CDD4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      min-width:0; flex:0 1 auto }
+    .ab-crumb b{ color:#fff; font-weight:600 }
+    .ab-state{ flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; height:24px;
+      padding:0 10px; border-radius:999px; background:#1E3A2C; color:#8FE0B2;
+      font-size:11.5px; font-weight:600 }
+    .ab-state::before{ content:""; width:6px; height:6px; border-radius:50%; background:#49C97F }
+    .ab-state.st-warn{ background:#3A3020; color:#E8C98A } .ab-state.st-warn::before{ background:#E0A33A }
+    .ab-state.st-err{ background:#3A2322; color:#F0A6A1 } .ab-state.st-err::before{ background:#D9534F }
+    .ab-actions{ margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto }
+    .ab-btn{ display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 14px;
+      border-radius:8px; border:1px solid #3A3D45; background:transparent; color:#E8EAED;
+      font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer }
+    .ab-btn svg{ width:16px; height:16px; flex:0 0 auto }
+    .ab-btn:hover:not(:disabled){ background:#22252C }
+    .ab-btn.light{ background:#F2F3F0; color:#14161B; border-color:#F2F3F0 }
+    .ab-btn.light:hover:not(:disabled){ background:#fff }
+    .ab-btn:disabled{ opacity:.45; cursor:default }
+
+    /* ── 3분할 ────────────────────────────────────────────── */
+    .workspace{ flex:1 1 auto; display:grid; grid-template-columns:272px minmax(0,1fr);
+      align-items:stretch; min-height:0 }
+    /* 접으면 48px 레일만 남긴다 — 0 으로 줄이면 펴는 버튼까지 사라진다. */
+    .workspace.folded{ grid-template-columns:48px minmax(0,1fr) }
+    .workspace.folded .sp-body{ display:none }
+    .workspace.folded .sp-head{ flex-direction:column; height:auto; gap:10px; padding:12px 0 }
+    .workspace.folded .sp-title{ display:none }
+    .workspace.folded .sp-fold{ margin-left:0 }
+    .workspace.folded .sp-fold svg{ transform:scaleX(-1) }
+    .sidepanel{ background:#fff; border-right:1px solid var(--r-line); display:flex;
+      flex-direction:column; min-height:0; overflow:auto }
+    .resultarea{ display:none; min-width:0; padding:16px; gap:16px; flex-direction:column; background:var(--r-bg) }
+    .resultarea.active{ display:flex }
+    .view{ display:none } .view.active{ display:block }
+    #rdaView.view.active{ display:flex }
+
+    /* ── 왼쪽 조건 패널 ────────────────────────────────────── */
+    .sp-head{ flex:0 0 auto; display:flex; align-items:center; gap:9px; height:56px; padding:0 16px }
+    .sp-num{ width:22px; height:22px; border-radius:50%; background:var(--r-acc); color:#fff;
+      font-size:11.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center }
+    .sp-title{ font-size:14.5px; font-weight:700; color:var(--r-ink) }
+    .sp-fold{ margin-left:auto; width:30px; height:30px; display:inline-flex; align-items:center;
+      justify-content:center; border:1px solid var(--r-line); border-radius:8px; background:#fff;
+      color:var(--r-ink3); cursor:pointer; padding:0 }
+    .sp-fold svg{ width:17px; height:17px }
+    .sp-fold:hover{ background:var(--r-soft) }
+    .sp-body{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; padding:4px 16px 16px; min-height:0 }
+    .sp-label{ font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--r-ink3);
+      display:flex; align-items:center; gap:6px }
+    .sp-label svg{ width:14px; height:14px }
+    .sp-div{ height:1px; background:var(--r-line); margin:2px 0 }
+    .sp-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+    .sp-grid .field{ display:flex; flex-direction:column; gap:5px; min-width:0 }
+    .sp-grid .field.wide{ grid-column:1 / -1 }
+    .sp-grid label{ font-size:12px; font-weight:600; color:var(--r-ink2) }
+    .sp-grid input,.sp-grid select{ height:36px; width:100%; min-width:0; padding:0 10px;
+      border:1px solid var(--r-line-in); border-radius:8px; background:#fff; color:var(--r-ink);
+      font-family:inherit; font-size:13px }
+    .sp-grid select:invalid,.sp-grid select option[value=""]{ color:var(--r-ink4) }
+    .sp-grid input:focus,.sp-grid select:focus{ outline:none; border-color:var(--r-acc);
+      box-shadow:0 0 0 3px rgba(39,71,212,.12) }
+    .sp-check{ display:flex; align-items:center; gap:9px; height:36px; padding:0 12px;
+      border-radius:8px; background:var(--r-soft); font-size:13px; font-weight:600; color:var(--r-ink2);
+      cursor:pointer }
+    .sp-check input{ width:16px; height:16px; accent-color:var(--r-acc); margin:0 }
+    .sp-run{ display:flex; flex-direction:column; gap:8px; border:0; padding:0; background:none }
+    .sp-go{ display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:44px;
+      border:0; border-radius:8px; background:var(--r-acc); color:#fff;
+      font-family:inherit; font-size:14px; font-weight:700; cursor:pointer }
+    .sp-go svg{ width:17px; height:17px }
+    .sp-go:hover:not(:disabled){ background:var(--r-acc-d) }
+    .sp-go:disabled{ opacity:.5; cursor:default }
+    .sp-runrow{ display:grid; grid-template-columns:1fr 1.45fr; gap:8px }
+    .sp-sub{ display:inline-flex; align-items:center; justify-content:center; gap:6px; height:38px;
+      padding:0 10px; border:1px solid var(--r-line-in); border-radius:8px; background:#fff;
+      color:var(--r-ink2); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer;
+      line-height:1.2; text-align:center }
+    .sp-sub svg{ width:15px; height:15px; flex:0 0 auto }
+    .sp-sub:hover:not(:disabled){ background:var(--r-soft) }
+    .sp-sub:disabled{ color:var(--r-ink4); background:var(--r-soft); cursor:default }
+    .sp-sub.sm{ height:28px; font-size:11.5px; padding:0 10px; flex:0 0 auto }
+    .sp-status{ border:1px solid #CDEBD8; background:var(--r-ok-s); border-radius:10px; padding:11px 12px;
+      display:flex; flex-direction:column; gap:8px }
+    .sp-status-head{ display:flex; align-items:center; justify-content:space-between;
+      font-size:12.5px; font-weight:700; color:var(--r-ink) }
+    .sp-status-msg{ font-size:12px; line-height:1.5; color:var(--r-ink2) }
+    .sp-status-msg:empty{ display:none }
+    .sp-status-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+      border-top:1px solid #CDEBD8; padding-top:8px; font-size:11.5px; color:var(--r-ink3) }
+    .sp-status-foot span:last-child{ font-family:var(--r-mono); color:var(--r-ink2) }
+    .status-pill{ display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px;
+      border-radius:999px; background:var(--r-ok-b); color:var(--r-ok-t);
+      font-size:11.5px; font-weight:700; border:0 }
+    .status-pill.st-warn{ background:var(--r-warn-s); color:var(--r-warn-t) }
+    .status-pill.st-err{ background:#FDE8E7; color:#9B2C22 }
+    .sp-gap{ flex:1 1 auto; min-height:8px }
+    .sp-pathlabel{ margin-top:4px }
+    .sp-path{ display:flex; align-items:flex-start; gap:8px; padding:9px 10px; border-radius:8px;
+      background:var(--r-soft); border:1px solid var(--r-line) }
+    .sp-path .pathtxt{ flex:1 1 auto; min-width:0; font-family:var(--r-mono); font-size:11.5px;
+      color:var(--r-ink2); word-break:break-all; line-height:1.45; background:none; padding:0; border:0 }
+
+    /* ── 결과 영역 공통 카드 ──────────────────────────────── */
+    .resultarea .panel,.ra-tabs{ background:var(--r-card); border:1px solid var(--r-line);
+      border-radius:12px; box-shadow:none; overflow:hidden }
+    .resultarea .chead{ height:46px; padding:0 14px; border-bottom:1px solid var(--r-line);
+      display:flex; align-items:center; gap:10px; background:#fff }
+    .resultarea .chead h2{ font-size:13.5px; font-weight:700; color:var(--r-ink) }
+
+    /* 시험 항목 탭 줄 */
+    .ra-tabs{ flex:0 0 auto; padding:0 14px }
+    .ra-tabs .analysis-filter-bar{ display:flex; align-items:center; gap:14px; min-height:56px }
+    .ra-tabs .crow{ padding:0; gap:10px; border:0; min-height:56px }
+    .ra-tabs .crow+.crow{ border-top:0; margin-left:auto }
+    .ra-tabs .item-tabs{ gap:2px; height:auto; flex-wrap:nowrap; overflow-x:auto }
+    .item-tab{ height:36px; padding:0 13px; border-radius:8px; gap:7px;
+      font-size:12.5px; font-weight:700; color:var(--r-ink2); background:none }
+    .item-tab:hover:not(:disabled):not(.active){ background:var(--r-soft) }
+    .item-tab.active,.graph-tabs button.active{ background:var(--r-ink); color:#fff; border-radius:8px }
+    .item-tab.active::after,.graph-tabs button.active::after{ display:none }
+    .item-tab-badge{ font-size:11px; font-weight:600; font-family:var(--r-mono); color:var(--r-ink4);
+      background:none; padding:0 }
+    .item-tab.active .item-tab-badge{ color:#C9CDD4 }
+    .item-tab-empty,.item-tab:disabled{ color:var(--r-ink4) }
+    .temp-filter-group,.filter-chip{ font-family:inherit }
+    /* FT TEMP. 은 라벨·Multi 체크가 같은 상자에 들어 있어 알약 배경을 씌우면
+       라벨까지 칩처럼 보인다. 배경 없이 '밑줄 탭'으로 둔다. */
+    .temp-filter-group{ display:inline-flex; align-items:center; gap:4px; padding:0;
+      background:none; border-radius:0 }
+    .temp-filter-group .lbl{ font-size:11px; font-weight:700; letter-spacing:.06em;
+      color:var(--r-ink3); margin-right:6px }
+    .filter-chip{ position:relative; height:36px; padding:0 13px; border-radius:0; border:0;
+      background:none; font-size:12.5px; font-weight:600; color:var(--r-ink3) }
+    .filter-chip:hover:not(.active){ color:var(--r-ink) }
+    .filter-chip.active{ background:none; box-shadow:none; color:var(--r-ink) }
+    .filter-chip.active::after{ content:""; position:absolute; left:4px; right:4px; bottom:0;
+      height:2px; background:var(--r-acc); border-radius:2px }
+    .temp-filter-group .filter-check{ display:inline-flex; align-items:center; gap:6px;
+      margin-left:8px; font-size:12px; font-weight:600; color:var(--r-ink2) }
+    .temp-filter-group .filter-check input{ width:15px; height:15px; accent-color:var(--r-acc) }
+
+    /* KPI 줄 */
+    .summary-strip{ flex:0 0 auto; display:flex; height:auto; min-height:0; margin:0;
+      background:var(--r-card); border:1px solid var(--r-line); border-radius:12px; overflow:hidden }
+    .summary-card{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:flex-start;
+      justify-content:center; gap:3px; padding:10px 16px; border:0;
+      border-right:1px solid var(--r-line); border-radius:0; background:none }
+    .summary-card:last-of-type{ border-right:0 }
+    .summary-card-label{ font-size:11.5px; font-weight:600; color:var(--r-ink3); white-space:nowrap }
+    .summary-card-value{ font-size:22px; font-weight:600; font-family:var(--r-mono);
+      font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1.15; color:var(--r-ink) }
+    .summary-card-flag{ background:var(--r-warn-s) }
+    .summary-card-flag .summary-card-label{ color:var(--r-warn-t) }
+    .summary-card-flag .summary-card-value{ color:var(--r-warn-t) }
+
+    /* ── 2 x 2 격자 ───────────────────────────────────────── */
+    .grid{ display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+      grid-template-rows:minmax(240px,1.25fr) minmax(0,1fr); grid-template-areas:none;
+      gap:16px; flex:1 1 auto; min-height:0; align-items:stretch }
+    .grid>.summary-panel{ grid-area:1 / 1 } .grid>.chart-card{ grid-area:1 / 2 }
+    .grid>.detail-panel { grid-area:2 / 1 } .grid>.wafer-panel{ grid-area:2 / 2 }
+    .grid>.over-panel{ display:none }
+    .summary-panel,.chart-card,.detail-panel,.wafer-panel{
+      display:flex; flex-direction:column; min-height:0; min-width:0 }
+    .chart-card>.ctl{ flex:0 0 auto; border:0; border-radius:0; background:none;
+      border-bottom:1px solid var(--r-line); min-height:0; height:auto }
+    .chart-card .chart-panel,.chart-card .diff-cdf-panel,.chart-card .ppf-panel,.chart-card .scatter-panel{
+      border:0; border-radius:0; flex:1 1 auto; min-height:0 }
+    .wafer-panel{ flex:1 1 auto }
+
+    @media (max-width:1100px){
+      .workspace{ grid-template-columns:1fr }
+      .sidepanel{ border-right:0; border-bottom:1px solid var(--r-line) }
+      .grid{ grid-template-columns:1fr; grid-template-rows:none }
+      .grid>.summary-panel,.grid>.chart-card,.grid>.detail-panel,.grid>.wafer-panel{
+        grid-area:auto; min-height:340px }
+    }
+    /* ══════════════════════════════════════════════════════════════════
+       R-060 (2) — 결과 영역 컨테이너 중립화 / 카드 내부 스타일
+       ══════════════════════════════════════════════════════════════════ */
+    #rdaView.view.active{ display:flex; flex-direction:column; gap:14px;
+      padding:16px; min-width:0; min-height:0; overflow:auto; background:var(--r-bg) }
+    body:not(.results-window) #rdaView .analysis-results-section{
+      border:0; background:none; box-shadow:none; padding:0; overflow:visible;
+      border-radius:0; display:flex; flex-direction:column; flex:1 1 auto; min-height:0 }
+    body:not(.results-window) #rdaView .analysis-results-scroll{
+      padding:0; background:none; display:flex; flex-direction:column; gap:14px;
+      flex:1 1 auto; min-height:0; overflow:visible }
+    body:not(.results-window) #rdaView #passResultsGrid:not(.results-hidden){
+      flex:1 1 auto; min-height:560px }
+    #rdaView .condition-summary-line{ display:none !important }
+
+    /* ── 카드 머리 / 탭 / 알약 버튼 ───────────────────────── */
+    .resultarea,.grid>.panel{ min-width:0 }
+    .grid>.panel>h2,.grid>.panel>.chead{ flex:0 0 auto }
+    .summary-panel>.ptabs{ flex:0 0 auto; display:flex; align-items:center; gap:2px;
+      height:46px; padding:0 8px; border-bottom:1px solid var(--r-line); background:#fff }
+    .summary-panel>.ptabs .pt{ height:46px; padding:0 12px; border:0; background:none;
+      font-family:inherit; font-size:13px; font-weight:700; color:var(--r-ink3); cursor:pointer;
+      border-bottom:2px solid transparent; border-radius:0 }
+    .summary-panel>.ptabs .pt:hover:not(.active){ color:var(--r-ink) }
+    .summary-panel>.ptabs .pt.active{ color:var(--r-ink); border-bottom-color:var(--r-acc) }
+    .ptool{ flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:8px;
+      padding:9px 12px; border-bottom:1px solid var(--r-line); background:var(--r-soft) }
+    .ptool .r{ margin-left:auto; display:flex; align-items:center; gap:8px }
+    .pill{ display:inline-flex; align-items:center; gap:2px; padding:3px; background:var(--r-seg);
+      border:0; border-radius:8px }
+    .pill button{ height:28px; padding:0 11px; border:0; border-radius:6px; background:none;
+      font-family:inherit; font-size:12px; font-weight:600; color:var(--r-ink3); cursor:pointer }
+    .pill button.active{ background:#fff; color:var(--r-ink); box-shadow:0 1px 2px rgba(20,22,27,.10) }
+    .gbtn,.column-toggle-btn{ height:28px; padding:0 11px; border:1px solid var(--r-line-in);
+      border-radius:7px; background:#fff; color:var(--r-ink2); font-family:inherit;
+      font-size:12px; font-weight:600; cursor:pointer }
+    .gbtn:hover:not(:disabled){ background:var(--r-soft) }
+    #shiftGateNote,#flagAlphaLabel,.chead .s{ font-size:11.5px; color:var(--r-ink3) }
+
+    /* ── 표 ───────────────────────────────────────────────── */
+    .grid .table-wrap{ flex:1 1 auto; min-height:0; overflow:auto }
+    .grid table{ width:100%; border-collapse:separate; border-spacing:0; font-size:12px }
+    .grid table th{ position:sticky; top:0; z-index:2; height:34px; padding:0 10px;
+      background:var(--r-soft); border-bottom:1px solid var(--r-line);
+      font-size:11px; font-weight:700; letter-spacing:.02em; color:var(--r-ink3);
+      text-align:left; white-space:nowrap }
+    .grid table td{ height:34px; padding:0 10px; border-bottom:1px solid var(--r-line-row);
+      color:var(--r-ink2); white-space:nowrap }
+    .grid table tbody tr:hover td{ background:var(--r-soft) }
+    .grid table tbody tr.selected td,.grid table tbody tr.active td{ background:var(--r-acc-s) }
+    .grid table td.num,.grid table th.num{ text-align:right; font-family:var(--r-mono);
+      font-variant-numeric:tabular-nums }
+
+    /* ── 그래프 카드 ──────────────────────────────────────── */
+    .chart-card>.ctl{ display:flex; flex-direction:column; gap:0 }
+    .chart-card .crow{ display:flex; align-items:center; gap:10px; min-height:46px;
+      padding:0 12px; border:0 }
+    .chart-card .crow+.crow{ border-top:1px solid var(--r-line) }
+    .chart-card .gpick{ display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto }
+    .chart-card .gpick select{ height:30px; max-width:300px; min-width:0; padding:0 8px;
+      border:1px solid var(--r-line-in); border-radius:7px; background:#fff;
+      font-family:inherit; font-size:12px; color:var(--r-ink) }
+    .chart-card .gsearch input{ height:30px; width:150px; padding:0 24px 0 9px;
+      border:1px solid var(--r-line-in); border-radius:7px; background:#fff;
+      font-family:inherit; font-size:12px }
+    .chart-card .tail2{ margin-left:auto; flex:0 0 auto }
+    .chart-card .graph-filter-bar{ display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+      padding:8px 12px; border-top:1px solid var(--r-line); background:var(--r-soft) }
+    .chart-card .graph-tabs{ display:inline-flex; align-items:center; gap:2px; padding:3px;
+      background:var(--r-seg); border-radius:8px }
+    .chart-card .graph-tabs button{ height:28px; padding:0 11px; border:0; border-radius:6px;
+      background:none; font-family:inherit; font-size:12px; font-weight:600;
+      color:var(--r-ink3); cursor:pointer }
+    .chart-card .graph-tabs button.active{ background:var(--r-ink); color:#fff }
+    .chart-card .chart-box,.chart-card .scatter-box{ flex:1 1 auto; min-height:0; padding:10px 12px 12px }
+
+    /* ── Wafer 카드 ───────────────────────────────────────── */
+    .wafer-panel .wafer-box{ flex:1 1 auto; min-height:0; padding:10px 12px 12px }
+    .wafer-panel .wafer-setup{ border-bottom:1px solid var(--r-line); background:var(--r-soft);
+      padding:10px 12px; gap:10px }
+    .wafer-panel .wafer-setup[hidden]{ display:none }
+    /* ══════════════════════════════════════════════════════════════════
+       R-060 (3) — 기존 ID 규칙과 부딪히는 곳만 같은 무게로 되받는다
+       ══════════════════════════════════════════════════════════════════ */
+    /* 시험 항목 탭 줄: #analysisFilterBar 의 display:contents 를 되돌린다.
+       display:contents 면 .ra-tabs 가 두 crow 를 직접 품어 세로로 쌓인다. */
+    .ra-tabs #analysisFilterBar{ display:none; flex-direction:row; align-items:center;
+      gap:14px; min-height:56px; padding:0; margin:0; border:0; background:none }
+    .ra-tabs #analysisFilterBar.active{ display:flex }
+    .ra-tabs .crow.tabs{ height:auto; min-height:56px; padding:0; align-items:center;
+      border-top:0; flex:1 1 auto; min-width:0 }
+    .ra-tabs .crow.foot{ height:56px; padding:0; border-top:0; margin-left:auto; flex:0 0 auto }
+    .ra-tabs .crow.tabs .item-tabs{ flex-wrap:nowrap; overflow-x:auto; row-gap:0 }
+    .ra-tabs .crow.tabs .item-tab{ height:36px }
+    .ra-tabs .filter-group strong{ font-size:11px; font-weight:700; letter-spacing:.06em;
+      color:var(--r-ink3); margin-right:4px }
+
+    /* 왼쪽 패널 버튼: 예전 고정 폭(84/64/126px)을 패널 폭에 맞춘다 */
+    #analyzeBtn.sp-go{ width:100%; min-height:44px; padding:0 12px }
+    #stopAnalyzeBtn.sp-sub,#initializeBtn.sp-sub{ width:auto; min-height:38px; padding:0 8px }
+    .sp-status .status-pill{ font-size:11.5px; padding:0 9px; height:22px }
+    .sp-path #dataPath{ white-space:normal; overflow:visible; text-overflow:clip;
+      max-height:48px; overflow-y:auto }
+
+    /* 2 x 2 격자 높이: 위 줄(표·그래프)에 조금 더 준다 */
+    .grid{ grid-template-rows:minmax(300px,1.3fr) minmax(240px,1fr) }
+    /* ══════════════════════════════════════════════════════════════════
+       R-060 (4) — 마감. 값·열 구성은 그대로, 보이는 방식만 손본다.
+       ══════════════════════════════════════════════════════════════════ */
+    /* 숫자는 자릿수가 맞아야 세로로 읽힌다 (값 자체는 그대로다) */
+    .grid table{ font-variant-numeric:tabular-nums }
+    .grid table td:first-child{ font-family:var(--r-mono); color:var(--r-ink3) }
+    .grid #resultTable td:nth-child(2),.grid #overSampleTable td:nth-child(2){ font-weight:600; color:var(--r-ink) }
+    .grid table th{ cursor:pointer; user-select:none }
+    .grid table th:hover{ color:var(--r-ink) }
+    .grid table tbody tr{ cursor:pointer }
+    /* 샘플 번호는 누를 수 있는 곳이다 */
+    .grid table .sample-link,.grid table a{ color:var(--r-acc); text-decoration:underline;
+      text-underline-offset:2px; font-weight:600 }
+    /* 체크박스 열 */
+    .grid table input[type=checkbox]{ width:15px; height:15px; accent-color:var(--r-acc) }
+    /* 빈 표 안내 */
+    .grid table tbody tr.empty-row td{ color:var(--r-ink4); text-align:center; cursor:default }
+
+    /* 카드 머리의 보조 설명 */
+    .chead .s,#detailPanelMeta,#waferPanelMeta{ font-size:11.5px; color:var(--r-ink3) }
+    .detail-panel .chead,.wafer-panel .chead{ gap:8px }
+    .detail-panel .chead h2,.wafer-panel .chead h2{ position:relative; padding:0 2px 2px;
+      border-bottom:2px solid var(--r-acc) }
+    .detail-panel .chead .column-toggle-wrap,.wafer-panel .chead #waferSetupBtn{ margin-left:auto }
+
+    /* 열 추가 메뉴 */
+    .column-toggle-menu{ border:1px solid var(--r-line); border-radius:9px;
+      box-shadow:0 12px 28px rgba(20,22,27,.14); background:#fff; font-size:12px }
+
+    /* 오류 띠 */
+    .analyze-error{ border-radius:10px; font-size:12.5px }
+
+    /* 접힌 레일의 번호 배지는 가운데로 */
+    .workspace.folded .sp-num{ margin:0 auto }
   </style>
 </head>
 <body>
   <main>
     <section class="app-shell">
       <div class="content">
-        <header class="top">
-          <div class="ttl"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></div>
-          <div class="vr"></div>
-          <button type="button" class="cond" id="conditionSecBtn" aria-expanded="true">
-            <span class="n">1</span><span class="t">분석 조건</span>
-            <span class="m" id="conditionSummaryLine"></span><span class="c">▾</span>
-          </button>
-          <div class="rt">
-            <button type="button" class="lnk" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled>결과 새 창</button>
-            <div class="vr"></div>
-            <span class="pathtxt" id="dataPath">-</span>
-            <button type="button" class="lnk" id="browseDataPathBtn">경로 변경</button>
-          </div>
+        <header class="appbar">
+          <span class="ab-logo"><svg viewBox="0 0 20 20" fill="none" stroke="#fff" stroke-width="1.5"><path d="M6 5.2h5.2a2.8 2.8 0 0 1 0 5.6H8.4v4"/></svg></span>
+          <span class="ab-id"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></span>
+          <span class="ab-crumb" id="conditionSummaryLine"></span>
+          <span class="ab-state" id="statusTop">Ready</span>
+          <span class="ab-actions">
+            <button id="rawExportBtn" class="ab-btn" type="button" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10 3.5v9M6.4 9.3 10 12.9l3.6-3.6M3.8 15.6h12.4"/></svg> Raw Data Export</button>
+            <button type="button" class="ab-btn light" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> 결과 새 창</button>
+          </span>
         </header>
+        <div class="workspace" id="workspace">
+          <aside class="sidepanel" id="conditionCard">
+            <div class="sp-head">
+              <span class="sp-num">1</span><b class="sp-title">분석 조건</b>
+              <button type="button" class="sp-fold" id="conditionSecBtn" aria-expanded="true" title="패널 접기"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M8 3.5v13M14.5 7.5 12 10l2.5 2.5"/></svg></button>
+            </div>
+            <div class="sp-body" id="conditionBody">
+              <div class="sp-label">PRODUCT</div>
+              <div class="sp-grid">
+                <div class="field wide"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
+                <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
+                <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
+                <div class="field wide"><label>Purpose</label><select id="purposeSelect"></select></div>
+              </div>
+              <div class="sp-div"></div>
+              <div class="sp-label">TEST SCOPE</div>
+              <div class="sp-grid">
+                <div class="field wide"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
+                <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
+                <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
+              </div>
+              <label class="sp-check"><input id="includePreCheck" type="checkbox" checked><span>Including Pre</span></label>
+              <section id="executionToolbar" class="sp-run">
+                <button id="analyzeBtn" class="sp-go"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 4.8v10.4L16 10z"/></svg> Analyze</button>
+                <div class="sp-runrow">
+                  <button id="stopAnalyzeBtn" class="sp-sub" type="button" disabled><svg viewBox="0 0 20 20" fill="currentColor"><rect x="6" y="6" width="8" height="8" rx="1.2"/></svg> Stop</button>
+                  <button id="initializeBtn" class="sp-sub" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M16 10a6 6 0 1 1-1.9-4.4"/><path d="M16.3 3.4v3.1h-3.1"/></svg> Analysis Initialization</button>
+                </div>
+              </section>
+              <section class="sp-status">
+                <div class="sp-status-head"><span>Status</span><span class="status-pill" id="status">Ready</span></div>
+                <div class="sp-status-msg" id="summary"></div>
+                <div class="sp-status-foot"><span>Latest Analysis Date</span><span id="latestAnalysisDate">-</span></div>
+              </section>
+              <div class="sp-gap"></div>
+              <div class="sp-label sp-pathlabel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.8 6.2a1.4 1.4 0 0 1 1.4-1.4h3.1l1.5 1.8h6.3a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H4.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg> DATA PATH</div>
+              <div class="sp-path"><span class="pathtxt" id="dataPath">-</span><button type="button" class="sp-sub sm" id="browseDataPathBtn">경로 변경</button></div>
+            </div>
+          </aside>
         <section id="managerView" class="view">
           <div class="manager-section">
             <h2>On-Going RMA Status</h2>
@@ -2482,39 +2871,12 @@ HTML = r"""<!doctype html>
           </div>
         </section>
         <section id="rdaView" class="view active">
-          <section class="rda-card condition-card" id="conditionCard">
-            <div class="condition-body" id="conditionBody">
-              <div class="rda-form">
-                <div class="field"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
-                <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
-                <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
-                <div class="field"><label>Purpose</label><select id="purposeSelect"></select></div>
-                <div class="field"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
-                <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
-                <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
-              </div>
-            </div>
-          </section>
-        <section class="toolbar condition-attached" id="executionToolbar">
-          <button id="analyzeBtn" class="primary">▶ &nbsp;Analyze</button>
-          <button id="stopAnalyzeBtn" class="secondary" type="button" disabled>Stop</button>
-          <label><input id="includePreCheck" type="checkbox" checked> Including Pre</label>
-          <button id="initializeBtn" class="secondary" type="button">Analysis Initialization</button>
-          <strong>Status:</strong><span class="status-pill" id="status">Ready</span>
-          <span class="status" id="summary"></span>
-          <span class="status latest-date" id="latestAnalysisDate">Latest Analysis Date: -</span>
-          <button id="rawExportBtn" class="secondary raw-export-btn" type="button" disabled>Raw Data Export</button>
-        </section>
-        <div id="analyzeError" class="analyze-error" role="alert"></div>
-        <section class="analysis-results-section">
-          <div class="analysis-results-scroll">
+          <div id="analyzeError" class="analyze-error" role="alert"></div>
+          <div class="ra-tabs"><section id="analysisFilterBar" class="analysis-filter-bar"></section></div>
+          <section class="analysis-results-section">
+            <div class="analysis-results-scroll">
+        <section id="summaryStrip" class="summary-strip"></section>
         <section id="passResultsGrid" class="grid results-hidden">
-      <div class="result-table-column">
-      <div class="condition-title results-window-title"><span class="filter-icon"></span><span class="title-text">2. Analysis Results</span></div>
-      <section class="ctl">
-        <div class="crow kpi"><section id="summaryStrip" class="summary-strip"></section></div>
-        <section id="analysisFilterBar" class="analysis-filter-bar"></section>
-      </section>
       <section class="panel summary-panel">
         <div class="ptabs" id="resultModeBar" title="Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)">
           <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 항목</button>
@@ -2540,9 +2902,8 @@ HTML = r"""<!doctype html>
         <div class="chead"><h2>선택 항목 상세</h2><span class="s" id="detailPanelMeta"></span><div class="column-toggle-wrap detail-col-wrap" id="detailColumnToggleWrap"><button id="detailColumnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="detailColumnToggleMenu" class="column-toggle-menu"></div></div></div>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </section>
-      </div>
-      <div class="result-graph-column">
-      <section class="ctl">
+      <section class="panel chart-card">
+        <div class="ctl">
         <div class="crow kpi gsum">
           <div class="gpick">
             <select id="itemSelect"></select>
@@ -2556,7 +2917,7 @@ HTML = r"""<!doctype html>
           <div class="tail2"><button class="gbtn copy-chart-btn" type="button" data-canvas="cdfCanvas">복사</button></div>
         </div>
         <section id="graphFilterBar" class="graph-filter-bar"></section>
-      </section>
+        </div>
       <section class="panel chart-panel">
         <div class="chart-box"><canvas id="cdfCanvas"></canvas></div>
       </section>
@@ -2568,6 +2929,7 @@ HTML = r"""<!doctype html>
       </section>
       <section class="panel scatter-panel">
         <div class="scatter-box"><canvas id="scatterCanvas"></canvas></div>
+      </section>
       </section>
       <section class="panel wafer-panel">
         <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span><button id="waferSetupBtn" class="gbtn wafer-setup-btn" type="button" title="다이 맵 설정">설정</button></div>
@@ -2588,10 +2950,9 @@ HTML = r"""<!doctype html>
         </div>
         <div class="wafer-box"><canvas id="waferCanvas"></canvas></div>
       </section>
-      </div>
         </section>
-          </div>
-        </section>
+            </div>
+          </section>
         </section>
         <section id="fsView" class="view">
           <div class="view-header"><h2 class="view-title">FS Deliverables Management</h2><span class="status">Ready</span></div>
@@ -2601,6 +2962,7 @@ HTML = r"""<!doctype html>
           <div class="view-header"><h2 class="view-title">8D Report</h2><span class="status">Ready</span></div>
           <div class="manager-section"><h2>8D Report Status</h2><div class="table-wrap"><table class="status-table"><thead><tr><th>Issue No.</th><th>Customer</th><th>Device</th><th>Owner</th><th>D-Step</th><th>Status</th><th>Report Issue Date</th></tr></thead><tbody><tr><td></td><td></td><td>SM3502Q</td><td></td><td>D1</td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td><td>D2</td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td><td>D3</td><td></td><td></td></tr></tbody></table></div></div>
         </section>
+        </div>
       </div>
     </section>
   </main>
@@ -2737,6 +3099,14 @@ function normalizedAnalysisSelection(extra = {}) {
 let dataRootPath = "";
 
 function setStatus(text) {
+  /* R-060: 상단 appbar 에도 같은 상태를 비춘다. 값/판정은 건드리지 않고 표시만 늘린다. */
+  const top = document.getElementById("statusTop");
+  if (top) {
+    top.textContent = text;
+    top.classList.remove("st-warn", "st-err");
+    if (/fail|error|실패/i.test(text)) top.classList.add("st-err");
+    else if (/running|searching|initial|stopp|preparing|\d%/i.test(text)) top.classList.add("st-warn");
+  }
   const target = document.getElementById("status") || document.getElementById("dataPath");
   if (!target) return;
   target.textContent = text;
@@ -4138,7 +4508,7 @@ function applyAnalysisPayload(data, remember = true) {
   selectedItem = itemKey(analysis.results?.[0]) || "";
   highlightSample = null;
   highlightMode = null;
-  document.getElementById("latestAnalysisDate").textContent = `Latest Analysis Date: ${analysis.analysis_date || "-"}`;
+  document.getElementById("latestAnalysisDate").textContent = analysis.analysis_date || "-";
   updateReliabilityTabs();
   renderSummary();
 }
@@ -4822,9 +5192,11 @@ function setConditionCollapsed(collapsed) {
   const rdaView = document.getElementById("rdaView");
   if (!rdaView) return;
   rdaView.classList.toggle("condition-collapsed", collapsed);
+  /* R-060: 조건 패널이 왼쪽 열이 되었으므로, 접기는 workspace 의 왼쪽 열을 48px 레일로 줄인다. */
+  document.getElementById("workspace")?.classList.toggle("folded", collapsed);
   const toggle = document.getElementById("conditionSecBtn");
   if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-  if (collapsed) renderConditionSummaryLine();
+  renderConditionSummaryLine();
 }
 
 function renderConditionSummaryLine() {
@@ -4839,10 +5211,21 @@ function renderConditionSummaryLine() {
   if (lookupState.readout && lookupState.readout !== AUTO_LATEST_READOUT) parts.push(lookupState.readout);
   if (lookupState.ft_temp) parts.push(lookupState.ft_temp);
   const includePre = document.getElementById("includePreCheck")?.checked;
-  line.textContent = `✓ ${parts.join(" · ")}${includePre ? " · Pre 포함" : " · Pre 제외"}`;
+  if (!lookupState.device) { line.textContent = ""; return; }
+  /* R-060: appbar 빵조각. 첫 토막(Device)만 강조하고 나머지는 그대로 이어 붙인다. */
+  const head = parts.shift();
+  const rest = parts.concat([includePre ? "Pre 포함" : "Pre 제외"]).join(" · ");
+  line.innerHTML = "";
+  const b = document.createElement("b");
+  b.textContent = head;
+  line.appendChild(b);
+  line.appendChild(document.createTextNode(rest ? ` · ${rest}` : ""));
 }
 
 function bindConditionToggle() {
+  /* R-060: 조건 입력이 바뀔 때마다 appbar 빵조각을 다시 그린다. */
+  document.getElementById("conditionBody")?.addEventListener("change", () => renderConditionSummaryLine());
+  renderConditionSummaryLine();
   document.getElementById("conditionSecBtn")?.addEventListener("click", () => {
     const view = document.getElementById("rdaView");
     const next = !view.classList.contains("condition-collapsed");
