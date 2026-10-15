@@ -2726,6 +2726,14 @@ HTML = r"""<!doctype html>
     .wafer-panel .wafer-setup{ border-bottom:1px solid var(--r-line); background:var(--r-soft);
       padding:10px 12px; gap:10px }
     .wafer-panel .wafer-setup[hidden]{ display:none }
+    /* R-057: 웨이퍼 선택 드롭박스 + 표시 옵션 토글 */
+    .wafer-select{ flex:0 0 auto; height:28px; width:116px; padding:0 8px; border:1px solid var(--r-line-in);
+      border-radius:7px; background:#fff; font-family:inherit; font-size:12px; color:var(--r-ink) }
+    .wafer-select:disabled{ color:var(--r-ink4); background:var(--r-soft) }
+    .wafer-view-bar{ flex:0 0 auto }
+    .wafer-panel .chead #waferPanelMeta{ margin-left:4px; min-width:0; overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap }
+    #waferCanvas{ cursor:pointer }
     /* ══════════════════════════════════════════════════════════════════
        R-060 (3) — 기존 ID 규칙과 부딪히는 곳만 같은 무게로 되받는다
        ══════════════════════════════════════════════════════════════════ */
@@ -2932,7 +2940,7 @@ HTML = r"""<!doctype html>
       </section>
       </section>
       <section class="panel wafer-panel">
-        <div class="chead"><h2>Wafer Map</h2><span class="s" id="waferPanelMeta"></span><button id="waferSetupBtn" class="gbtn wafer-setup-btn" type="button" title="다이 맵 설정">설정</button></div>
+        <div class="chead"><h2>Wafer Map</h2><select id="waferSelect" class="wafer-select" title="표시할 웨이퍼"></select><div class="pill wafer-view-bar" id="waferViewBar" title="기본은 선택된 샘플 하나다. 나머지는 옵션."><button type="button" data-wview="sample" class="active">선택 샘플</button><button type="button" data-wview="fail">Fail 유닛</button><button type="button" data-wview="heat">값 히트맵</button></div><span class="s" id="waferPanelMeta"></span><button id="waferSetupBtn" class="gbtn wafer-setup-btn" type="button" title="다이 맵 설정">설정</button></div>
         <div class="wafer-setup" id="waferSetup" hidden>
           <label class="wafer-field wafer-field-wide">유효다이 Map
             <span class="wafer-file"><input id="dieMapPath" type="text" readonly placeholder="파일을 선택하세요"><button id="dieMapBrowse" class="gbtn" type="button">찾아보기</button></span>
@@ -6934,6 +6942,13 @@ function drawCharts() {
    TXT 격자 그대로가 6시 상태이고, 한 칸 옮길 때마다 시계방향 90도 돌린다. */
 let waferSettings = { die_map_path: "", origin_base: 11, flat_zone: 6,
                       item_wafer: "", item_x: "", item_y: "" };
+/* R-057: 표시 옵션. 기본은 R-056 과 같은 "선택된 샘플 하나" 다.
+   waferPick 은 사용자가 드롭박스로 직접 고른 웨이퍼. 비어 있으면 선택 샘플을 따라간다.
+   waferHits 는 그리면서 쌓는 (화면칸 -> 샘플) 역조회 상자다 — 회전 역변환을 따로
+   만드는 것보다 안전하다(회전 단계가 늘어도 그리는 쪽만 맞으면 클릭도 맞는다). */
+let waferView = "sample";
+let waferPick = "";
+let waferHits = [];
 let waferSettingsDevice = null;     // 어느 Device 의 설정을 들고 있는지
 let dieMap = null;                  // 파싱된 격자 요약
 let dieMapError = "";
@@ -7090,6 +7105,135 @@ async function ensureDieCoords() {
     dieCoords = {}; dieCoordsKey = ""; dieCoordsNote = err.message || String(err);
   }
 }
+/* R-057 ─ 보조 함수. 전부 표시 전용이며 판정에 쓰이는 값은 읽기만 한다. ── */
+
+/** 유형별 색. unit_types.order 순서를 그대로 쓰므로 배지 카드와 같은 순서다. */
+const WAFER_TYPE_COLORS = ["#D2612C", "#E2A03A", "#2747D4", "#7F93B2", "#8A2A1C", "#1C6B43"];
+function waferTypeColor(type, order) {
+  const index = order.indexOf(type);
+  return WAFER_TYPE_COLORS[(index < 0 ? order.length : index) % WAFER_TYPE_COLORS.length];
+}
+/** 지금 조건에서 샘플 -> 유형(Fail Type / 셀렉 유형). R-053 의 unit_types 를 그대로 읽는다. */
+function waferTypeBySample() {
+  const out = {};
+  const item = analysisFilters.reliability_item || "";
+  ((analysis?.unit_types || {}).rows || []).forEach(row => {
+    if (!rowMatchesPayloadFilters(row, analysis)) return;
+    if (item && row.reliability_item !== item) return;
+    out[String(row.sample)] = row.type;
+  });
+  return out;
+}
+/** 지금 탭·필터 기준으로 걸린 유닛(샘플) 집합. 샘플 기준 표와 같은 목록이다. */
+function waferFailSamples() {
+  return overSigmaRows().map(row => String(row.sample));
+}
+/** 좌표가 읽힌 샘플의 웨이퍼 번호 목록 + 그 웨이퍼의 Fail 유닛 수. */
+function waferNumbers() {
+  const failSet = new Set(waferFailSamples());
+  const byWafer = {};
+  Object.keys(dieCoords).forEach(sample => {
+    const entry = dieCoords[sample];
+    if (!dieCoordValid(entry)) return;
+    const wafer = entry.wafer;
+    if (wafer === null || wafer === undefined || wafer === "") return;
+    const key = String(wafer);
+    const bucket = byWafer[key] = byWafer[key] || { wafer: key, total: 0, fail: 0 };
+    bucket.total += 1;
+    if (failSet.has(String(sample))) bucket.fail += 1;
+  });
+  return Object.values(byWafer)
+    .sort((a, b) => (Number(a.wafer) - Number(b.wafer)) || a.wafer.localeCompare(b.wafer));
+}
+/** 지금 그릴 웨이퍼. 사용자가 고른 것이 우선, 없으면 선택 샘플의 웨이퍼, 그다음 첫 장. */
+function activeWaferNo() {
+  const list = waferNumbers();
+  if (waferPick && list.some(w => w.wafer === waferPick)) return waferPick;
+  const sample = selectedWaferSample();
+  const entry = sample === undefined || sample === null ? null : dieCoords[String(sample)];
+  if (entry && dieCoordValid(entry) && entry.wafer !== null && entry.wafer !== undefined) {
+    return String(entry.wafer);
+  }
+  return list.length ? list[0].wafer : "";
+}
+/** 그 웨이퍼에 좌표가 찍히는 샘플들. */
+function waferSamplesOn(waferNo) {
+  return Object.keys(dieCoords).filter(sample => {
+    const entry = dieCoords[sample];
+    return dieCoordValid(entry) && String(entry.wafer) === String(waferNo);
+  });
+}
+/** 선택 항목의 샘플별 측정값(판정 회차 우선). 히트맵 전용 — 판정에는 쓰지 않는다. */
+function waferHeatValues() {
+  const rows = itemCache[selectedItem]?.details || [];
+  const out = {};
+  rows.forEach(row => {
+    const value = [row.post_t3, row.post_t2, row.post_t1, row.pre_value]
+      .map(v => finiteNumber(v)).find(v => v !== null);
+    if (value !== null && value !== undefined) out[String(row.sample)] = value;
+  });
+  return out;
+}
+/** 드롭박스를 다시 그린다. 라벨은 "W03 (8)" — 번호 + 그 웨이퍼의 Fail 유닛 수. */
+function renderWaferSelect() {
+  const sel = document.getElementById("waferSelect");
+  if (!sel) return;
+  const list = waferNumbers();
+  const active = activeWaferNo();
+  sel.innerHTML = "";
+  if (!list.length) {
+    const option = document.createElement("option");
+    option.value = ""; option.textContent = "웨이퍼 없음";
+    sel.appendChild(option);
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  list.forEach(entry => {
+    const option = document.createElement("option");
+    option.value = entry.wafer;
+    const no = /^\d+$/.test(entry.wafer) ? String(entry.wafer).padStart(2, "0") : entry.wafer;
+    option.textContent = `W${no} (${entry.fail})`;
+    option.title = `유닛 ${entry.total}개 중 걸린 유닛 ${entry.fail}개`;
+    sel.appendChild(option);
+  });
+  sel.value = active;
+}
+/** 맵에서 다이를 눌렀을 때. 상세 표·그래프 하이라이트는 기존 경로를 그대로 쓴다. */
+function bindWaferCanvas() {
+  const canvas = document.getElementById("waferCanvas");
+  if (!canvas || canvas.dataset.r57 === "1") return;
+  canvas.dataset.r57 = "1";
+  canvas.addEventListener("click", event => {
+    if (!waferHits.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left, py = event.clientY - rect.top;
+    const hit = waferHits.find(box => px >= box.x0 && px <= box.x1 && py >= box.y0 && py <= box.y1);
+    if (!hit) return;
+    highlightSample = hit.sample;
+    highlightMode = "sample";
+    waferPick = "";                    // 고른 샘플의 웨이퍼로 자동 전환되게 한다
+    renderDetailTable();
+    drawCharts();
+  });
+  const sel = document.getElementById("waferSelect");
+  if (sel && sel.dataset.r57 !== "1") {
+    sel.dataset.r57 = "1";
+    sel.addEventListener("change", () => { waferPick = sel.value; drawWaferMap(); });
+  }
+  const bar = document.getElementById("waferViewBar");
+  if (bar && bar.dataset.r57 !== "1") {
+    bar.dataset.r57 = "1";
+    bar.addEventListener("click", event => {
+      const button = event.target.closest("button[data-wview]");
+      if (!button) return;
+      waferView = button.dataset.wview;
+      bar.querySelectorAll("button[data-wview]").forEach(other =>
+        other.classList.toggle("active", other === button));
+      drawWaferMap();
+    });
+  }
+}
 function selectedWaferSample() {
   const data = itemCache[selectedItem];
   const row = (data?.details || []).find(r => String(r.sample) === String(highlightSample))
@@ -7099,10 +7243,12 @@ function selectedWaferSample() {
 function drawWaferMap() {
   const sample = selectedWaferSample();
   const entry = sample === undefined || sample === null ? null : dieCoords[String(sample)];
+  renderWaferSelect();                 // R-057
+  bindWaferCanvas();                   // R-057 (한 번만 묶인다)
+  const waferNo = activeWaferNo();     // R-057: 지금 그리는 웨이퍼
   const metaEl = document.getElementById("waferPanelMeta");
   if (metaEl) {
     const bits = [];
-    if (entry && entry.wafer !== null && entry.wafer !== undefined) bits.push(`Wafer ${entry.wafer}`);
     if (sample !== undefined && sample !== null && sample !== "") bits.push(`Sample ${sample}`);
     if (dieCoordValid(entry)) bits.push(`X ${entry.x} · Y ${entry.y}`);
     else if (entry) bits.push("좌표 없음");
@@ -7136,19 +7282,89 @@ function drawWaferMap() {
       if (line[col] !== "1") continue;
       const at = rotateCell(row, col, dieMap.rows, dieMap.cols, steps);
       const pos = cellAt(at.row, at.col);
-      ctx.fillStyle = "#b8dafc";
+      ctx.fillStyle = "#E3EEF9";
       ctx.fillRect(pos.x, pos.y, Math.max(1, cell - 0.6), Math.max(1, cell - 0.6));
     }
   }
-  // 선택 샘플
+
+  /* R-057 ── 겹쳐 그리기. 좌표·판정은 읽기만 하고 아무것도 바꾸지 않는다.
+     히트박스는 모드와 무관하게 "이 웨이퍼에 좌표가 있는 모든 샘플" 을 담는다 —
+     옵션을 꺼 둔 상태에서도 다이를 눌러 샘플을 고를 수 있어야 한다. */
+  waferHits = [];
+  const pad = Math.max(1, cell - 0.6);
+  const hitPad = Math.max(3, cell * 0.5);   // 칸이 작아 그대로는 누르기 어렵다
+  const screenCell = (x, y) => {
+    const origin = dieCellFor(x, y);
+    if (!origin) return null;
+    const at = rotateCell(origin.row, origin.col, dieMap.rows, dieMap.cols, steps);
+    return cellAt(at.row, at.col);
+  };
+  const onWafer = waferSamplesOn(waferNo);
+  onWafer.forEach(key => {
+    const pos = screenCell(dieCoords[key].x, dieCoords[key].y);
+    if (!pos) return;
+    waferHits.push({ x0: pos.x - hitPad, y0: pos.y - hitPad,
+                     x1: pos.x + pad + hitPad, y1: pos.y + pad + hitPad, sample: key });   // coords 의 키가 곧 샘플
+  });
+
+  const legend = [];
+  if (waferView === "fail") {
+    // "Fail 유닛" 은 조건 전체가 아니라 **지금 보고 있는 웨이퍼의** 걸린 유닛이다.
+    const failSet = new Set(waferFailSamples());
+    const typeBySample = waferTypeBySample();
+    const order = unitTypeOrder();
+    const used = {};
+    onWafer.forEach(key => {
+      if (!failSet.has(String(key))) return;
+      const pos = screenCell(dieCoords[key].x, dieCoords[key].y);
+      if (!pos) return;
+      const type = typeBySample[String(key)] || "기타";
+      const color = waferTypeColor(type, order);
+      used[type] = (used[type] || 0) + 1;
+      ctx.fillStyle = color;
+      ctx.fillRect(pos.x, pos.y, pad, pad);
+    });
+    const names = order.filter(type => used[type]).concat(
+      Object.keys(used).filter(type => !order.includes(type)));
+    names.forEach(type => legend.push([waferTypeColor(type, order), `${type} ${used[type]}`]));
+    if (!names.length) legend.push(["#E3EEF9", "이 웨이퍼에 걸린 유닛 없음"]);
+  } else if (waferView === "heat") {
+    // 선택 항목의 측정값 농도. 값 자체는 상세 표와 같은 것을 읽기만 한다.
+    const values = waferHeatValues();
+    const onThis = onWafer.filter(key => values[String(key)] !== undefined);
+    const nums = onThis.map(key => values[String(key)]);
+    const lo = Math.min(...nums), hi = Math.max(...nums);
+    const span = (hi - lo) || 1;
+    onThis.forEach(key => {
+      const pos = screenCell(dieCoords[key].x, dieCoords[key].y);
+      if (!pos) return;
+      const t = (values[String(key)] - lo) / span;
+      // 파랑(낮음) -> 주황(높음). 색각 이상에서도 명도가 같이 움직이도록 밝기를 섞는다.
+      const r = Math.round(0x7F + t * (0xD2 - 0x7F));
+      const g = Math.round(0x93 + t * (0x61 - 0x93));
+      const b = Math.round(0xB2 + t * (0x2C - 0xB2));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(pos.x, pos.y, pad, pad);
+    });
+    if (onThis.length) {
+      legend.push(["rgb(127,147,178)", `min ${fmt(lo)}`]);
+      legend.push(["rgb(210,97,44)", `max ${fmt(hi)}`]);
+      /* 값은 payload 의 상세 행에서만 온다 — 즉 "그 항목 목록에 오른 유닛" 이다.
+         전 유닛 값을 쓰려면 payload 에 키를 늘려야 해서(캐시 스키마 변경) 여기서는
+         범위를 범례에 명시한다. Abnormal Pass 탭은 목록이 커서 더 촘촘히 보인다. */
+      legend.push(["#E3EEF9", `${itemDisplayName(selectedItem)} 목록 ${onThis.length}개`]);
+    } else {
+      legend.push(["#E3EEF9", "이 웨이퍼에 값이 있는 유닛 없음"]);
+    }
+  }
+
+  // 선택 샘플 — 어떤 모드에서든 맨 위에 그린다
   let marked = null;
   if (dieCoordValid(entry)) {
-    const origin = dieCellFor(entry.x, entry.y);
-    if (origin) {
-      const at = rotateCell(origin.row, origin.col, dieMap.rows, dieMap.cols, steps);
-      const pos = cellAt(at.row, at.col);
+    const pos = screenCell(entry.x, entry.y);
+    if (pos) {
       ctx.fillStyle = "#ff3b30";
-      ctx.fillRect(pos.x, pos.y, Math.max(1, cell - 0.6), Math.max(1, cell - 0.6));
+      ctx.fillRect(pos.x, pos.y, pad, pad);
       // 칸이 작아 눈에 안 띄므로 테두리 원을 덧그린다
       ctx.strokeStyle = "#ff3b30";
       ctx.lineWidth = 1.5;
@@ -7205,8 +7421,8 @@ function drawWaferMap() {
   const legendX = Math.min(left + gridW + 30, w - 150);
   ctx.textAlign = "left";
   ctx.font = "10px Segoe UI";
-  const legend = [["#ff3b30", sample ? `Sample ${sample}` : "선택 샘플"],
-                  ["#b8dafc", `유효다이 ${dieMap.die_count}`]];
+  legend.unshift(["#ff3b30", sample ? `Sample ${sample}` : "선택 샘플"]);
+  legend.push(["#E3EEF9", `유효다이 ${dieMap.die_count}`]);
   legend.forEach(([color, label], index) => {
     const y = top + 40 + index * 24;
     ctx.fillStyle = color;
@@ -7216,7 +7432,8 @@ function drawWaferMap() {
   });
   ctx.fillStyle = "#5a6b7b";
   ctx.font = "9.5px Segoe UI";
-  ctx.fillText(`Flat ${zone}시`, legendX, top + 40 + legend.length * 24 + 2);
+  const waferLabel = waferNo === "" ? "웨이퍼 미상" : `Wafer ${waferNo}`;
+  ctx.fillText(`${waferLabel} · Flat ${zone}시`, legendX, top + 40 + legend.length * 24 + 2);
   if (!marked) {
     ctx.fillStyle = "#b26a00";
     ctx.fillText(dieCoordsNote || "이 샘플의 좌표를 찾지 못했습니다",
