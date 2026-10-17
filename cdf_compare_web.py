@@ -9666,20 +9666,55 @@ def worst_fail_type(details):
     return min(details, key=lambda detail: FAIL_TYPE_PRIORITY.get(detail.get("fail_type"), 99)).get("fail_type", "")
 
 
-def tail_shape_verdict(values, lower_limit, upper_limit,
-                       w_k=None, gap_k=None, res_k=None, n_min=None):
+# R-062: Gap 검사에서 떨어진 건을 "꼬리 외삽" 으로 한 번 더 본다 (구제형).
+# Gap 한계와 Near-Spec Zone 은 Core sigma(MAD — 분포 가운데 50% 의 기울기)로 잰다.
+# 가운데는 가파른데 이탈한 쪽 꼬리만 넓게 퍼진 분포에서는 MAD 가 그 퍼짐을 못 봐서,
+# 꼬리 끝이 자연스럽게 넘어간 것도 "빈칸이 크다" 며 Separated 로 떨어졌다.
+# 구제형이라 판정은 Separated -> Tail 한 방향으로만 바뀐다 (기존 Tail 은 그대로).
+# 끄려면 CDFTOOL_TAIL_RESCUE=0.
+TAIL_RESCUE = (os.environ.get("CDFTOOL_TAIL_RESCUE", "1") or "1").strip() not in ("0", "false", "off")
+TAIL_P10_Z = 1.2815515655446004          # 표준정규 P90 분위수 (= -P10)
+
+
+def tail_shape_verdict(values, lower_limit, upper_limit, **kwargs):
     """항목 하나의 분포 형상으로 Spec Out 성격을 가른다 -> "Tail" / "Separated".
+
+    상·하한 판정(tail_shape_verdicts)을 하나로 합친다 — 둘 다 이탈이 있고 판정이 갈리면
+    보수적인 쪽(Separated). 이탈이 없으면 None (판정할 게 없다).
+    분석 경로는 R-063 부터 쪽별 판정을 쓴다. 이 함수는 항목 단위 요약이 필요한 도구용이다.
+    """
+    sides = tail_shape_verdicts(values, lower_limit, upper_limit, **kwargs)
+    if not sides:
+        return None
+    return min(sides.values(), key=lambda name: {"Separated": 0, "Tail": 1}[name])
+
+
+def tail_shape_verdicts(values, lower_limit, upper_limit,
+                        w_k=None, gap_k=None, res_k=None, n_min=None, rescue=None):
+    """항목 하나의 분포 형상으로 Spec Out 성격을 상·하한 쪽별로 가른다 (R-063).
+
+    -> {"high": "Tail"/"Separated", "low": ...}. 이탈이 있는 쪽만 키가 생긴다.
+       이탈이 없거나 판정할 수 없으면 빈 dict.
 
     values 는 그 항목의 **전 유닛 Post 값**이어야 한다 (Pass + 이탈). Core 는 Median 과
     MAD 로 잡으므로 이탈값이 섞여 있어도 중심은 흔들리지 않는다.
 
-    상·하한을 따로 보고, 둘 다 이탈이 있으면 더 심한 쪽(Shift > Separated > Tail)을 쓴다.
-    이탈이 없으면 None (판정할 게 없다).
+    R-063: 한 항목에 하한 이탈과 상한 이탈이 함께 있으면 예전에는 두 판정을 보수적인 쪽
+    하나로 합쳐 모든 이탈 유닛에 줬다. 그러면 상한 쪽 큰 이탈 하나가 하한 쪽 꼬리 유닛까지
+    Separated 로 끌고 간다. 이제 각 유닛은 자기가 나간 쪽의 판정을 받는다.
+
+    판정 순서 (상·하한 각각):
+      1. Core 가 규격선에 닿음                     -> Separated (Shift 성격, 구제 안 함)
+      2. Near-Spec Pass >= N_min 이고 Gap <= 한계   -> Tail
+      3. (R-062) 꼬리 외삽: 이탈한 쪽 꼬리 sigma 로 본 최외곽 이탈값의 z 가
+         Grubbs 임계(n, alpha) 이하                  -> Tail
+      4. 나머지                                    -> Separated
     """
     w_k = TAIL_W_K if w_k is None else w_k
     gap_k = TAIL_GAP_K if gap_k is None else gap_k
     res_k = TAIL_RES_K if res_k is None else res_k
     n_min = TAIL_N_MIN if n_min is None else n_min
+    rescue = TAIL_RESCUE if rescue is None else rescue
 
     nums = []
     for value in values or []:
@@ -9690,20 +9725,24 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
         if math.isfinite(number):
             nums.append(number)
     if not nums or lower_limit is None or upper_limit is None:
-        return None
+        return {}
     try:
         low = float(lower_limit)
         high = float(upper_limit)
     except (TypeError, ValueError):
-        return None
+        return {}
 
     over = [x for x in nums if x > high]
     under = [x for x in nums if x < low]
     if not over and not under:
-        return None
+        return {}
+
+    def _every_side(name):
+        return {side: name for side, outside in (("high", over), ("low", under)) if outside}
+
     keep = sorted(x for x in nums if low <= x <= high)
     if not keep:
-        return "Separated"                 # 전량 이탈 — 꼬리라고 볼 수 없다
+        return _every_side("Separated")    # 전량 이탈 — 꼬리라고 볼 수 없다
 
     def _median(seq):
         data = sorted(seq)
@@ -9721,36 +9760,62 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
     # 항목에서는 Zone 폭이 0 이라 Pass 가 들어올 수 없어 전부 Separated 로 떨어졌고,
     # LL=UL 인 무공차 항목은 median >= UL 이 항상 참이라 전부 Shift 로 떨어졌다.
     if sigma < TAIL_QUANT_K * resolution or (sigma == 0 and resolution == 0):
-        return "Separated"
+        return _every_side("Separated")
     limit = max(gap_k * sigma, res_k * resolution)
     width = w_k * sigma
 
-    verdicts = []
-    for outside, edge, inward in ((over, high, True), (under, low, False)):
+    def _quantile(p):
+        # 선형 보간 분위수 (numpy.percentile 기본값과 같은 정의)
+        pos = p * (len(ordered) - 1)
+        base = int(math.floor(pos))
+        frac = pos - base
+        if base + 1 >= len(ordered):
+            return ordered[-1]
+        return ordered[base] + frac * (ordered[base + 1] - ordered[base])
+
+    def _extrapolates(inward, outside):
+        """R-062: 이탈값이 그쪽 꼬리를 정규로 연장한 범위 안인가.
+
+        꼬리 sigma = |P10(P90) - Median| / 1.2816. 분위점이 규격 밖이면(이탈이 10% 넘게
+        몰려 있으면) 그건 꼬리가 아니라 무리이므로 구제하지 않는다.
+        """
+        q = _quantile(0.9 if inward else 0.1)
+        if not (low <= q <= high):
+            return False
+        spread = (q - median) if inward else (median - q)
+        if spread <= 0:
+            return False
+        tail_sigma = spread / TAIL_P10_Z
+        worst = max(outside) if inward else min(outside)
+        z = abs(worst - median) / tail_sigma
+        critical = threshold_for(len(nums))
+        return critical is not None and z <= critical
+
+    sides = {}
+    for side, outside, edge, inward in (("high", over, high, True), ("low", under, low, False)):
         if not outside:
             continue
         if inward:
             # Core 의 P95 적합값이 규격선에 닿았으면 이탈분은 꼬리가 아니라
             # 밀려온 집단의 선두다 — 꼬리가 아니라는 점에서 Separated 로 보낸다.
             if median + TAIL_Z95 * sigma >= edge:
-                verdicts.append("Separated")
+                sides[side] = "Separated"
                 continue
             near = [x for x in keep if x >= edge - width]
             gap = min(outside) - keep[-1]
         else:
             if median - TAIL_Z95 * sigma <= edge:
-                verdicts.append("Separated")
+                sides[side] = "Separated"
                 continue
             near = [x for x in keep if x <= edge + width]
             gap = keep[0] - max(outside)
-        if len(near) < n_min:
-            verdicts.append("Separated")
+        if len(near) >= n_min and gap <= limit:
+            sides[side] = "Tail"
+        elif rescue and _extrapolates(inward, outside):
+            sides[side] = "Tail"
         else:
-            verdicts.append("Tail" if gap <= limit else "Separated")
-    if not verdicts:
-        return None
-    # 상·하한 판정이 갈리면 보수적인 쪽(Separated)을 쓴다.
-    return min(verdicts, key=lambda name: {"Separated": 0, "Tail": 1}[name])
+            sides[side] = "Separated"
+    return sides
 
 
 def spec_width(lower_limit, upper_limit):
@@ -10153,10 +10218,16 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         diff_threshold = threshold_for(len(pass_diff_values)) if pass_diff_values else None
         # R-043: 형상 판정은 항목 단위다 — 유닛 루프 밖에서 한 번만 계산한다.
         # 모집단은 "그 항목의 전 유닛" 이라야 하므로 Pass 값과 이탈 값을 합친다.
+        # R-063: 상·하한 쪽별 판정을 받아 두고, 유닛마다 자기가 나간 쪽 판정을 쓴다.
+        # 규격 안 값(쪽이 없음)은 예전처럼 두 쪽을 합친 판정을 받는다.
+        shape_sides = {}
         shape_verdict = None
         if TAIL_SHAPE_MODE == "shape":
-            shape_verdict = tail_shape_verdict(
+            shape_sides = tail_shape_verdicts(
                 shape_pool, metadata["lower_limit"], metadata["upper_limit"])
+            if shape_sides:
+                shape_verdict = min(shape_sides.values(),
+                                    key=lambda name: {"Separated": 0, "Tail": 1}[name])
         for index, (sample, record) in enumerate(post_records):
             value = post_values[index]
             pre_value = post_pre_values[index]
@@ -10185,7 +10256,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                         diff_n=len(pass_diff_values), diff_sigma=diff_sigma, diff_mean=diff_mean,
                         mea_threshold=mea_threshold, diff_threshold=diff_threshold,
                         unit_recovered=bool(state.get("is_intermittent")),
-                        shape_verdict=shape_verdict,
+                        shape_verdict=shape_sides.get(
+                            spec_status(value, lower, upper), shape_verdict),
                     ),
                     "result": "SELECT",
                 }
@@ -10540,7 +10612,8 @@ def cache_key_for(selection, pre_path, post_path, mode, post_paths=None):
         # 분석한 뒤 legacy 로 켰을 때 같은 키가 잡혀 shape 결과가 그대로 떠버린다
         # (mode 는 pass/fail 만 가리킨다). 환경변수로 켜고 끄는 값이라 더 위험하다.
         "tail_mode": TAIL_SHAPE_MODE,
-        "tail_params": [TAIL_W_K, TAIL_GAP_K, TAIL_RES_K, TAIL_N_MIN, TAIL_QUANT_K]
+        "tail_params": [TAIL_W_K, TAIL_GAP_K, TAIL_RES_K, TAIL_N_MIN, TAIL_QUANT_K,
+                        "rescue-r062" if TAIL_RESCUE else "no-rescue", "sides-r063"]
                        if TAIL_SHAPE_MODE == "shape" else None,
         "pre_path": os.path.abspath(pre_path) if pre_path else "",
         "post_path": os.path.abspath(post_path) if post_path else "",
