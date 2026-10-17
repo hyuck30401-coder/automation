@@ -140,6 +140,14 @@ TAIL_W_K = _env_float("CDFTOOL_TAIL_W_K", 1.0)        # Near-Spec Zone 폭 = W_K
 TAIL_GAP_K = _env_float("CDFTOOL_TAIL_GAP_K", 0.5)    # Gap_Limit = MAX(GAP_K x sigma_core, RES_K x 분해능)
 TAIL_RES_K = _env_float("CDFTOOL_TAIL_RES_K", 3.0)
 TAIL_N_MIN = int(_env_float("CDFTOOL_TAIL_N_MIN", 1))
+# R-061: 형상 판정은 "정상 산포" 를 전제한다. 양자화된 항목(측정 분해능 몇 칸 안에
+# 전 유닛이 몰려 있는 것 — IDDQ 처럼 78 유닛에 고유값이 3 개뿐인 경우)은 꼬리라는
+# 개념 자체가 성립하지 않으므로 형상 판정에서 뺀다.
+#   실측 근거: 전 조건 511 (조건x항목) 중 sigma_core/분해능 이
+#   0 (40건) · 1.48 (17건) · 2.97 (11건) 에 몰려 있다가 3.71 에서 1 건으로 끊긴다.
+#   MAD 가 분해능의 정수배라 값이 1.4826 x k 로만 나오기 때문이다. 임계 3 은 그
+#   빈 구간에 걸치고, 4 로 올려도 1 건만 늘어 둔감하다.
+TAIL_QUANT_K = _env_float("CDFTOOL_TAIL_QUANT_K", 3.0)
 TAIL_MAD_TO_SIGMA = 1.4826
 TAIL_Z95 = 1.6448536269514722
 CURRENT_APP = None
@@ -3822,6 +3830,13 @@ function failItemFolded(key, payload = analysis) {
 function failMarginalType(payload = analysis) {
   return failGateInfo(payload)?.excluded_type || "Tail";
 }
+/* R-061: 벤치에서 접히는 유형이 둘이 될 수 있다 (Tail = 꼬리, Unstable = 재시험 회복).
+   옛 payload 는 excluded_types 가 없으므로 excluded_type 하나로 되돌아간다. */
+function failExcludedTypes(payload = analysis) {
+  const info = failGateInfo(payload);
+  const list = info?.excluded_types;
+  return Array.isArray(list) && list.length ? list : [failMarginalType(payload)];
+}
 function shiftGateInfo(payload = analysis) {
   const info = payload?.shift_gate;
   return (info && info.items) ? info : null;
@@ -5381,6 +5396,7 @@ function renderSummaryStrip() {
      Fail 탭의 Tail 묶음은 정의상 Marginal 과 같은 수라 한 장으로 합쳐 표기한다.
      R-041 대로 배지는 기준 탭(Marginal 제외 / 전체)에 반응하지 않는다. */
   const marginalType = failMarginalType();
+  const excludedTypes = failExcludedTypes();
   const typeCounts = unitTypeCounts();
   const cards = [
     { label: isFailMode ? "총 진행" : "Pass 진행", value: baseUnits,
@@ -5389,7 +5405,7 @@ function renderSummaryStrip() {
         : "그중 양품 샘플 수 — 이상 산포 판정의 모집단" },
   ];
   unitTypeOrder().forEach(type => {
-    if (isFailMode && type === marginalType) return;   // 아래 Marginal 카드로 합친다
+    if (isFailMode && excludedTypes.includes(type)) return;   // 아래 제외 카드로 뺀다
     cards.push({
       label: type, value: typeCounts[type] || 0,
       title: isFailMode
@@ -5398,8 +5414,25 @@ function renderSummaryStrip() {
     });
   });
   if (isFailMode) {
-    cards.push({ label: `${marginalType} (Marginal)`, value: Math.max(allUnits - keptUnits, 0),
-      title: "규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 샘플 — 벤치 검토에서 접히는 분" });
+    /* 접힌 이유가 둘이면 카드도 둘로 나눈다 — 한 장에 합치면 "꼬리라서 뺀 것" 과
+       "재시험에서 살아나서 뺀 것" 이 섞여 숫자의 뜻을 잃는다. */
+    const folded = Math.max(allUnits - keptUnits, 0);
+    const TITLES = {
+      Tail: "규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 샘플 — 벤치 검토에서 접히는 분",
+      Unstable: "FT 에서 Fail 났지만 재시험에서 최종 Pass 한 샘플 — 최종 양품이라 벤치 대상이 아니다",
+    };
+    if (excludedTypes.length <= 1) {
+      cards.push({ label: `${marginalType} (Marginal)`, value: folded,
+        title: TITLES[marginalType] || "벤치 검토에서 접히는 분" });
+    } else {
+      excludedTypes.forEach(type => {
+        cards.push({
+          label: type === marginalType ? `${type} (Marginal)` : type,
+          value: typeCounts[type] || 0,
+          title: TITLES[type] || "벤치 검토에서 접히는 분",
+        });
+      });
+    }
   }
   cards.push({ label: "벤치 검토 필요", value: keptUnits, cls: "flag",
     title: isFailMode
@@ -9131,12 +9164,18 @@ def merge_combo_payloads(combo_payloads, mode):
         if combo_fail_gate.get("items"):
             merged.setdefault("fail_gate", {
                 "excluded_type": combo_fail_gate.get("excluded_type", FAIL_MARGINAL_TYPE),
+                # R-061: 제외 유형 목록도 같이 올린다 (조건마다 같은 값이다).
+                "excluded_types": list(combo_fail_gate.get("excluded_types")
+                                       or [combo_fail_gate.get("excluded_type", FAIL_MARGINAL_TYPE)]),
                 "items": {},
             })
             for item_key, counts in combo_fail_gate["items"].items():
-                agg = merged["fail_gate"]["items"].setdefault(item_key, {"kept": [], "folded": 0})
+                agg = merged["fail_gate"]["items"].setdefault(
+                    item_key, {"kept": [], "folded": 0, "folded_by_type": {}})
                 agg["kept"].extend(counts.get("kept") or [])
                 agg["folded"] += counts.get("folded", 0) or 0
+                for type_name, count in (counts.get("folded_by_type") or {}).items():
+                    agg["folded_by_type"][type_name] = agg["folded_by_type"].get(type_name, 0) + count
         # R-053: 유형별 유닛 행은 조건 필드를 달고 오므로 이어붙이기만 하면 된다.
         # 유닛 수는 화면에서 조합 단위로 Set 을 만들어 세므로 중복 걱정이 없다.
         combo_types = payload.get("unit_types") or {}
@@ -9422,24 +9461,36 @@ def fail_type_for_detail(
     # 유닛이 회복했다면(unit_recovered) 그게 더 상위 사실이므로 Intermittent 가 우선이고,
     # 이 항목이 개별적으로 flip-flop 했는지는 더 따지지 않는다(Bin pass 는 그 회차의 모든
     # 항목이 스펙 안이라는 뜻이라 항상 참이 된다).
-    if unit_recovered:
-        return "Intermittent"
-    initial_failed = initial_record is not None and spec_status(
-        initial_record.get("value"), initial_record.get("lower_limit"), initial_record.get("upper_limit")
-    ) in ("low", "high")
-    if initial_failed:
-        for stage_index, record in history:
-            if stage_index == 0:
-                continue
-            if spec_status(record.get("value"), record.get("lower_limit"), record.get("upper_limit")) == "pass":
-                return "Unstable"
+    # R-061(shape): 재시험 축을 하나로 합친다. FT 에서 Fail 난 유닛을 모아 최대 3 회
+    # 재시험하는데, 소켓 컨택 문제로도 뒤집히므로 T1<->T2<->T3 사이의 Pass/Fail 변화
+    # 자체는 신호가 아니다 (Eden 님 확인 2026-10-17). 의미 있는 것은 최종 결과뿐 —
+    # 재시험에서 살아난 유닛을 "Unstable" 하나로 묶고, 항목 단위 fail->pass->fail
+    # 오락가락 판정(옛 Unstable)은 두지 않는다.
+    if TAIL_SHAPE_MODE == "shape":
+        if unit_recovered:
+            return "Unstable"
+    else:
+        if unit_recovered:
+            return "Intermittent"
+        initial_failed = initial_record is not None and spec_status(
+            initial_record.get("value"), initial_record.get("lower_limit"), initial_record.get("upper_limit")
+        ) in ("low", "high")
+        if initial_failed:
+            for stage_index, record in history:
+                if stage_index == 0:
+                    continue
+                if spec_status(record.get("value"), record.get("lower_limit"), record.get("upper_limit")) == "pass":
+                    return "Unstable"
     if spec_margin_ratio(value, lower_limit, upper_limit) >= 0.01:
         return "Excessive"
     # R-043: 분포 형상 모드. Excessive 까지의 우선순위는 그대로 두고(이탈률 1% 이상은
     # 형상과 무관하게 Excessive), 그 아래를 항목 단위 형상 판정으로 대체한다.
     # 호출부가 항목마다 한 번 계산해 넘겨 준다 — 유닛마다 다시 재지 않는다.
+    # R-061: 출력은 Tail / Separated 두 가지뿐이다. Slight 는 Separated 와 같은 뜻
+    # (집단에서 떨어져 나온 개체)이라 흡수했고, Shift 는 tail_shape_verdict 에서
+    # Separated 로 보낸다. 판정할 근거가 없으면(이탈 없음 등) 보수적으로 Separated.
     if TAIL_SHAPE_MODE == "shape":
-        return shape_verdict or "Tail"
+        return shape_verdict or "Separated"
     # mea/diff 를 독립적으로 flag_result 로 평가 — pass 모집단(n, sigma, mean)의 Grubbs 임계값
     # 기준. §S3. mea_threshold/diff_threshold 를 넘기면(호출부가 루프 밖에서 한 번만 계산해둔
     # 값) grubbs_critical 재계산을 건너뛴다 — §S3 후속(성능).
@@ -9456,8 +9507,11 @@ def fail_type_for_detail(
 
 # Shift(집단 이동)·Separated(분리된 이상)는 R-043 형상 모드에서만 나온다. 기존 유형끼리의
 # 상대 순서는 그대로라 legacy 모드의 worst_fail_type 결과는 변하지 않는다.
+# Slight 와 Separated 는 같은 뜻이라 같은 순위다 (판정 경로만 Grubbs z / 분포 Gap 으로
+# 다르고, 두 모드가 각자 한쪽만 내므로 실제로 같이 나오는 일은 없다). R-061 에서
+# Shift 를 없앴다 — 집단 이동도 "꼬리가 아니다" 라는 점에서 Separated 와 같은 취급이다.
 FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2,
-                      "Shift": 3, "Slight": 4, "Separated": 5, "Tail": 6}
+                      "Slight": 3, "Separated": 3, "Tail": 4}
 
 # R-032: Fail 목록에서 접을 "Marginal" 의 정의 — fail_type 이 Tail 인 건.
 # Tail 은 fail_type_for_detail() 의 마지막 분기, 즉 규격은 벗어났지만 이탈량이 1% 미만
@@ -9467,6 +9521,19 @@ FAIL_TYPE_PRIORITY = {"Intermittent": 0, "Unstable": 1, "Excessive": 2,
 # 실측(Test Data, 상세 24건): Tail 17건의 이탈/스펙폭 중앙 0.500%, Diff_S 임계 초과는 1건뿐.
 # (Excessive 32.667% · Slight 13.000% 와 자릿수가 다르다.)
 FAIL_MARGINAL_TYPE = "Tail"
+
+
+def bench_excluded_types():
+    """벤치(FA) 검토에서 빼는 fail_type 들.
+
+    legacy 는 Tail(Marginal) 하나뿐이다 — 기존 동작 그대로다.
+    shape 는 Unstable 을 더한다: 재시험에서 최종 Pass 한 유닛이라 FA 대상이 아니다.
+    (옛 Intermittent 는 주석에 "벤치에서 제외한다" 고 적혀 있었지만 실제로는
+     fail_gate 가 Tail 만 걸러서 벤치에 포함되고 있었다 — R-061 에서 바로잡는다.)
+    """
+    if TAIL_SHAPE_MODE == "shape":
+        return ("Tail", "Unstable")
+    return (FAIL_MARGINAL_TYPE,)
 
 
 def fail_marginal_gate(item_payloads):
@@ -9479,18 +9546,25 @@ def fail_marginal_gate(item_payloads):
     최상위 키인 이유는 shift_gate 와 같다 — 골든 스냅샷 비교 대상(results /
     selected_summary / over_sigma / items[].details)에 필드를 늘리면 회귀가 깨진다.
     """
+    excluded = bench_excluded_types()
     items = {}
     for item, item_payload in item_payloads.items():
         kept, folded = [], 0
+        folded_by_type = {}
         for detail in item_payload.get("details") or []:
-            if not detail.get("fail_type"):
+            fail_type = detail.get("fail_type")
+            if not fail_type:
                 continue
-            if detail.get("fail_type") == FAIL_MARGINAL_TYPE:
+            if fail_type in excluded:
                 folded += 1
+                # R-061: 접힌 이유가 두 가지(꼬리 / 재시험 회복)라 따로 센다 —
+                # 한 숫자로 뭉치면 화면에서 둘을 구분할 수 없다.
+                folded_by_type[fail_type] = folded_by_type.get(fail_type, 0) + 1
             else:
                 kept.append(detail.get("sample"))
-        items[item] = {"kept": kept, "folded": folded}
-    return {"excluded_type": FAIL_MARGINAL_TYPE, "items": items}
+        items[item] = {"kept": kept, "folded": folded, "folded_by_type": folded_by_type}
+    return {"excluded_type": FAIL_MARGINAL_TYPE,
+            "excluded_types": list(excluded), "items": items}
 
 
 SELECT_TYPE_ORDER = ["Measured + Delta", "Measured", "Delta"]
@@ -9594,7 +9668,7 @@ def worst_fail_type(details):
 
 def tail_shape_verdict(values, lower_limit, upper_limit,
                        w_k=None, gap_k=None, res_k=None, n_min=None):
-    """항목 하나의 분포 형상으로 Spec Out 성격을 가른다 -> "Tail" / "Separated" / "Shift".
+    """항목 하나의 분포 형상으로 Spec Out 성격을 가른다 -> "Tail" / "Separated".
 
     values 는 그 항목의 **전 유닛 Post 값**이어야 한다 (Pass + 이탈). Core 는 Median 과
     MAD 로 잡으므로 이탈값이 섞여 있어도 중심은 흔들리지 않는다.
@@ -9629,7 +9703,7 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
         return None
     keep = sorted(x for x in nums if low <= x <= high)
     if not keep:
-        return "Shift"                     # 전량 이탈 — Core 자체가 스펙 밖이다
+        return "Separated"                 # 전량 이탈 — 꼬리라고 볼 수 없다
 
     def _median(seq):
         data = sorted(seq)
@@ -9642,6 +9716,12 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
     # 측정 분해능 추정 — 서로 다른 값들 사이의 최소 간격. 데이터로그에 분해능 항목이 없다.
     uniq = sorted(set(ordered))
     resolution = min((b - a) for a, b in zip(uniq, uniq[1:])) if len(uniq) > 1 else 0.0
+    # R-061: 양자화 항목은 형상 판정 대상이 아니다. sigma 가 분해능 몇 칸 수준이면
+    # Near-Spec Zone(폭 = w_k x sigma)도 Gap 한계도 의미를 잃는다 — 실제로 sigma=0 인
+    # 항목에서는 Zone 폭이 0 이라 Pass 가 들어올 수 없어 전부 Separated 로 떨어졌고,
+    # LL=UL 인 무공차 항목은 median >= UL 이 항상 참이라 전부 Shift 로 떨어졌다.
+    if sigma < TAIL_QUANT_K * resolution or (sigma == 0 and resolution == 0):
+        return "Separated"
     limit = max(gap_k * sigma, res_k * resolution)
     width = w_k * sigma
 
@@ -9650,14 +9730,16 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
         if not outside:
             continue
         if inward:
+            # Core 의 P95 적합값이 규격선에 닿았으면 이탈분은 꼬리가 아니라
+            # 밀려온 집단의 선두다 — 꼬리가 아니라는 점에서 Separated 로 보낸다.
             if median + TAIL_Z95 * sigma >= edge:
-                verdicts.append("Shift")
+                verdicts.append("Separated")
                 continue
             near = [x for x in keep if x >= edge - width]
             gap = min(outside) - keep[-1]
         else:
             if median - TAIL_Z95 * sigma <= edge:
-                verdicts.append("Shift")
+                verdicts.append("Separated")
                 continue
             near = [x for x in keep if x <= edge + width]
             gap = keep[0] - max(outside)
@@ -9667,7 +9749,8 @@ def tail_shape_verdict(values, lower_limit, upper_limit,
             verdicts.append("Tail" if gap <= limit else "Separated")
     if not verdicts:
         return None
-    return min(verdicts, key=lambda name: {"Shift": 0, "Separated": 1, "Tail": 2}[name])
+    # 상·하한 판정이 갈리면 보수적인 쪽(Separated)을 쓴다.
+    return min(verdicts, key=lambda name: {"Separated": 0, "Tail": 1}[name])
 
 
 def spec_width(lower_limit, upper_limit):
@@ -10286,7 +10369,9 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 26  # 25->26: 유형별 유닛 목록 unit_types 추가 (R-053).
+CACHE_SCHEMA = 27  # 26->27: fail_gate 에 excluded_types / folded_by_type 추가 (R-061).
+#   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
+#   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
 # 게이트 정보가 없어 프런트의 기준 탭이 조용히 비활성된다 — 눌러도 아무것도 안 접히는데
 # 화면에는 아무 경고도 없어서 "반영이 안 됐다"로 보인다. 실제로 그렇게 진단이 한참 헤맸다.
@@ -10451,6 +10536,12 @@ def cache_key_for(selection, pre_path, post_path, mode, post_paths=None):
         "schema": CACHE_SCHEMA,
         "data_root": os.path.abspath(DATA_ROOT),
         "mode": mode,
+        # R-061: 판정 모드와 그 파라미터도 키에 넣는다. 빠져 있으면 shape 로 한 번
+        # 분석한 뒤 legacy 로 켰을 때 같은 키가 잡혀 shape 결과가 그대로 떠버린다
+        # (mode 는 pass/fail 만 가리킨다). 환경변수로 켜고 끄는 값이라 더 위험하다.
+        "tail_mode": TAIL_SHAPE_MODE,
+        "tail_params": [TAIL_W_K, TAIL_GAP_K, TAIL_RES_K, TAIL_N_MIN, TAIL_QUANT_K]
+                       if TAIL_SHAPE_MODE == "shape" else None,
         "pre_path": os.path.abspath(pre_path) if pre_path else "",
         "post_path": os.path.abspath(post_path) if post_path else "",
         "pre_stamp": file_stamp(pre_path) if pre_path else None,
