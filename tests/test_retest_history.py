@@ -154,7 +154,17 @@ def test_sample_states_from_history():
 
 
 def test_fail_type_for_detail_intermittent():
-    print("fail_type_for_detail (Intermittent / Unstable 분기, §S6b)")
+    """재시험 분류를 두 모드 모두에서 본다.
+
+    Rev.0.033 부터 기본 판정 모드가 shape 라 이 함수의 분기도 모드를 탄다. exe 를
+    legacy(Rev.0.032)·shape(Rev.0.033) 둘 다 내보내므로 둘 다 고정해 둔다 — 한쪽만
+    걸어 두면 나머지는 다음에 건드렸을 때 조용히 깨진다.
+
+      legacy : 유닛 회복 -> Intermittent, 항목 flip-flop -> Unstable (§S6b 원안)
+      shape  : 둘을 Unstable 하나로 합쳤고, 항목 flip-flop 판정은 없앴다 (R-061).
+               재시험 간 Pass/Fail 뒤집힘은 소켓 컨택으로도 생겨 신호가 아니다.
+    """
+    print("fail_type_for_detail (재시험 분류, §S6b / R-061)")
     records = build_synthetic_records()
     history = w.stage_history_from_records(records)
     states = w.sample_states_from_history(history)
@@ -169,28 +179,48 @@ def test_fail_type_for_detail_intermittent():
             unit_recovered=bool(state.get("is_intermittent")),
         )
 
-    # 시나리오 1: 1회차 fail -> 2회차 fail -> 3회차 pass, 유닛 회복(unit_recovered) => Intermittent
-    check("S1/V1 => Intermittent (유닛 회복)", classify(states["S1"], "V1") == "Intermittent")
+    saved = w.TAIL_SHAPE_MODE
+    try:
+        # ── legacy ───────────────────────────────────────────────
+        w.TAIL_SHAPE_MODE = "legacy"
+        check("[legacy] S1/V1 => Intermittent (유닛 회복)",
+              classify(states["S1"], "V1") == "Intermittent")
+        result_s2 = classify(states["S2"], "V1")
+        check("[legacy] S2/V1 => Intermittent 아님 (유닛 회복 아님)", result_s2 != "Intermittent")
+        check("[legacy] S2/V1 => Unstable 아님 (항목이 중간에 pass 한 적 없음)", result_s2 != "Unstable")
+        check("[legacy] S2/V1 => Excessive (margin >= 1%, 기존 로직 그대로)", result_s2 == "Excessive")
+        check("[legacy] S4/V1 => Intermittent (재시험 4회 후 유닛 회복)",
+              classify(states["S4"], "V1") == "Intermittent")
+        # 유닛 회복 + 항목 flip-flop 동시 -> 회복이 더 상위 사실이라 Intermittent 우선
+        check("[legacy] S5/V1 => Intermittent (회복 + flip-flop, 우선순위)",
+              classify(states["S5"], "V1") == "Intermittent")
+        # 유닛 최종 fail + 항목만 flip-flop -> Unstable (실데이터 VSTART Serial 25/62 패턴)
+        check("[legacy] S6/V1 => Unstable (유닛 최종 fail, 항목만 flip-flop)",
+              classify(states["S6"], "V1") == "Unstable")
+        check("[legacy] S6/V1 => Intermittent 아님", classify(states["S6"], "V1") != "Intermittent")
 
-    # 시나리오 2: 1회차 fail -> ... -> 마지막 fail, 항목도 계속 fail => 기존 분류 유지
-    result_s2 = classify(states["S2"], "V1")
-    check("S2/V1 => Intermittent 아님 (유닛 회복 아님)", result_s2 != "Intermittent")
-    check("S2/V1 => Unstable 아님 (항목이 중간에 pass 한 적 없음)", result_s2 != "Unstable")
-    check("S2/V1 => Excessive (margin >= 1%, 기존 로직 그대로)", result_s2 == "Excessive")
-
-    # 재시험 4회 이상에서도 유닛 회복이 정상 검출되는지 => Intermittent
-    check("S4/V1 => Intermittent (재시험 4회 후 유닛 회복)", classify(states["S4"], "V1") == "Intermittent")
-
-    # 시나리오(§S6b 요구 1): 유닛 회복 + 항목도 중간에 flip-flop => Intermittent 우선
-    # (유닛이 살아났으면 그게 더 상위 사실이므로, 항목이 개별적으로 흔들렸는지는 따지지 않는다)
-    check("S5/V1 => Intermittent (유닛 회복 + 항목 flip-flop 동시, 우선순위 검증)",
-          classify(states["S5"], "V1") == "Intermittent")
-
-    # 시나리오(§S6b 요구 2): 유닛 최종 fail + 항목만 중간에 flip-flop => Unstable
-    # (실데이터 VSTART Serial 25/62 와 동일한 패턴 -- 유닛은 안 살아났으므로 벤치 대상)
-    check("S6/V1 => Unstable (유닛 최종 fail, 항목만 flip-flop)",
-          classify(states["S6"], "V1") == "Unstable")
-    check("S6/V1 => Intermittent 아님 (유닛 회복 아님)", classify(states["S6"], "V1") != "Intermittent")
+        # ── shape (R-061) ────────────────────────────────────────
+        w.TAIL_SHAPE_MODE = "shape"
+        check("[shape] S1/V1 => Unstable (재시험에서 회복 — Intermittent 를 흡수)",
+              classify(states["S1"], "V1") == "Unstable")
+        check("[shape] S4/V1 => Unstable (재시험 4회 후 회복)",
+              classify(states["S4"], "V1") == "Unstable")
+        check("[shape] S5/V1 => Unstable (회복이면 flip-flop 은 더 따지지 않는다)",
+              classify(states["S5"], "V1") == "Unstable")
+        check("[shape] S2/V1 => Excessive (회복 아님, margin >= 1%)",
+              classify(states["S2"], "V1") == "Excessive")
+        # 항목 flip-flop 판정을 없앴으므로 S6 는 더 이상 Unstable 이 아니다 —
+        # 값 기준(Excessive) 또는 형상 판정으로 내려간다.
+        result_s6 = classify(states["S6"], "V1")
+        check("[shape] S6/V1 => Unstable 아님 (항목 flip-flop 판정 삭제)",
+              result_s6 != "Unstable")
+        check("[shape] S6/V1 => 값 기준으로 내려감 (Excessive / Separated / Tail)",
+              result_s6 in ("Excessive", "Separated", "Tail"))
+        check("[shape] Intermittent 는 더 이상 나오지 않는다",
+              all(classify(states[s], "V1") != "Intermittent"
+                  for s in ("S1", "S2", "S4", "S5", "S6")))
+    finally:
+        w.TAIL_SHAPE_MODE = saved
 
 
 def test_analyze_bypass_condition():

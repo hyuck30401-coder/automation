@@ -1,0 +1,20 @@
+# tests/golden/MANIFEST.txt - 골든 스냅샷 출처 기록
+# regression_snapshot.py 가 재생성 시마다 자동 갱신한다 (변경 사유 칸은 사람이 직접 채운다)
+
+생성 시각: 2026-10-19 13:53:06
+git commit: ea09d811c7587bd41ac57b5c891d9a3f3d55676b
+데이터 루트: /sessions/rcw-01mezxsha6eeucgnlhojhfgz/mnt/신뢰성데이터분석툴/Test Data
+
+## 골든 파일
+파일명                                                          sha256                                                                  바이트
+SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json  30cbc637d3a7da68616b7adfdb219ef6a474db5c22feeeab781907c3d3638239    3379068
+SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json  ff51cf59da70ad454e60b2e3f79b91d01223447c37c205d833ff5a3f2da40efd      14470
+index.json                                                   6560f01efb2f0e3a6b1f5b4dd2522b04a555a59e8f18ec5601897f80dec1dd07        875
+
+## 조합별 요약
+조합                                                              항목수  SELECT수   detail행수  fail_type 분포
+SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[pass]              138      138       7866  {'': 7866}
+SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[fail]                5        5         24  {'Excessive': 3, 'Separated': 21}
+
+## 직전 재생성 대비 변경 사유 (사람이 적는 칸)
+- (여기에 이번 재생성 사유를 적을 것)

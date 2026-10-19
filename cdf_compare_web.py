@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.032"
+APP_REVISION = "Rev.0.033"
 # R-042: 리비전은 "릴리즈 번호"다 — 릴리즈할 때만 올린다. 변경마다 올렸더니 마지막
 # 릴리즈(v0.0.30) 이후 배포한 적도 없는 Rev.0.031~0.038 이 생겼다.
 # 같은 리비전 안에서 빌드를 구분하는 것은 아래 BUILD_ID 가 맡는다 — R-033 진단이
@@ -126,8 +126,10 @@ except (TypeError, ValueError):
 #   W 는 1.0 이상에서 결과가 포화한다. 0.5 로 두면 N_min 을 1->2 로만 올려도 Tail 이
 #   반토막 나지만 1.0 이상이면 둔감해진다 — 그래서 안정성 때문에 1.0 을 쓴다.
 #
-# 판정이 바뀌는 변경이라(CLAUDE.md §5-1) 기본값은 legacy 다. 환경변수로만 켠다:
-#   CDFTOOL_TAIL_MODE=shape
+# Rev.0.033 부터 기본값이 shape 다 (Eden 님 확정 2026-10-19 — 실데이터로 이상 없음을
+# 확인). 판정이 바뀌는 변경이라(CLAUDE.md §5-1) 리비전을 나눠 내보낸다:
+#   Rev.0.032 = legacy,  Rev.0.033 = shape. 둘 다 Release 에 올린다.
+# 되돌리려면 CDFTOOL_TAIL_MODE=legacy.
 def _env_float(name, default):
     try:
         return float(os.environ.get(name, str(default)))
@@ -135,7 +137,7 @@ def _env_float(name, default):
         return default
 
 
-TAIL_SHAPE_MODE = (os.environ.get("CDFTOOL_TAIL_MODE", "legacy") or "legacy").strip().lower()
+TAIL_SHAPE_MODE = (os.environ.get("CDFTOOL_TAIL_MODE", "shape") or "shape").strip().lower()
 TAIL_W_K = _env_float("CDFTOOL_TAIL_W_K", 1.0)        # Near-Spec Zone 폭 = W_K x sigma_core
 TAIL_GAP_K = _env_float("CDFTOOL_TAIL_GAP_K", 0.5)    # Gap_Limit = MAX(GAP_K x sigma_core, RES_K x 분해능)
 TAIL_RES_K = _env_float("CDFTOOL_TAIL_RES_K", 3.0)
@@ -8079,7 +8081,8 @@ if (typeof ResizeObserver !== "undefined") {
 # R-042: 리비전 옆에 빌드 식별자를 붙인다. 같은 리비전으로 여러 번 고쳐도 화면에서
 # 빌드가 구분되어 "반영이 안 됐다" 를 바로 판별할 수 있다.
 HTML = HTML.replace(
-    "__APP_REVISION__", f"{APP_REVISION} · {BUILD_ID}" if BUILD_ID else APP_REVISION
+    "__APP_REVISION__",
+    " · ".join(part for part in (APP_REVISION, BUILD_ID, f"Tail={TAIL_SHAPE_MODE}") if part)
 )
 
 
@@ -12535,7 +12538,7 @@ def main():
     # R-055: 지금 도는 것이 어느 파일의 어느 내용인지 먼저 말한다. 화면 좌상단의
     # "Rev.x · <git>+<소스해시>" 와 같은 값이므로 둘을 맞춰 보면 예전 창인지 바로 안다.
     source = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-    print(f"{APP_TITLE} {APP_REVISION} · {BUILD_ID}")
+    print(f"{APP_TITLE} {APP_REVISION} · {BUILD_ID} · Tail={TAIL_SHAPE_MODE}")
     print(f"  소스   : {source}")
     print(f"  데이터 : {DATA_ROOT}")
     print(f"  주소   : http://{HOST}:{PORT}/")

@@ -28,9 +28,15 @@ UNIT_TESTS = [
 ]
 
 
-def run(label, args, timeout):
-    """검사 하나를 실행하고 (통과여부, 소요초, 출력) 을 돌려준다."""
+def run(label, args, timeout, env=None):
+    """검사 하나를 실행하고 (통과여부, 소요초, 출력) 을 돌려준다.
+
+    env 를 주면 그 값만 환경에 얹어서 돌린다 (판정 모드처럼 프로세스 단위로 갈리는 것).
+    """
     started = time.time()
+    child_env = dict(os.environ)
+    if env:
+        child_env.update(env)
     try:
         proc = subprocess.run(
             [sys.executable, RUN_ONE] + args,
@@ -38,6 +44,7 @@ def run(label, args, timeout):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=timeout,
+            env=child_env,
         )
         elapsed = time.time() - started
         output = proc.stdout.decode("utf-8", errors="replace")
@@ -53,7 +60,11 @@ def main():
         help="실제 시험 데이터 폴더. 지정하면 골든 회귀 검증까지 수행한다.",
     )
     parser.add_argument(
-        "--golden", default="tests/golden/", help="골든 스냅샷 폴더 (기본: tests/golden/)"
+        "--golden", default="tests/golden/", help="legacy 골든 스냅샷 폴더 (기본: tests/golden/)"
+    )
+    parser.add_argument(
+        "--golden-shape", default="tests/golden_shape/",
+        help="shape 골든 스냅샷 폴더 (기본: tests/golden_shape/)"
     )
     parser.add_argument(
         "--timeout", type=int, default=1800, help="회귀 검증 제한시간(초), 기본 1800"
@@ -80,15 +91,26 @@ def main():
         print("=" * 62)
         print(" 골든 회귀 검증  (데이터: {})".format(args.data_root))
         print("=" * 62)
-        ok, elapsed, output = run(
-            "regression_check",
-            ["tools/regression_check.py", "--data-root", args.data_root, "--golden", args.golden],
-            timeout=args.timeout,
-        )
-        results.append(("regression_check", ok, elapsed))
-        for line in output.strip().splitlines()[-25:]:
-            print("  " + line)
-        print("  [{}] {:>6.1f}s".format("PASS" if ok else "FAIL", elapsed))
+        # Rev.0.033: 판정 모드가 둘이고 exe 도 둘(Rev.0.032 legacy / Rev.0.033 shape)이라
+        # 둘 다 게이트에 건다. 한쪽만 걸면 나머지는 다음에 건드렸을 때 조용히 깨진다.
+        # 모드는 환경변수로 명시한다 — 기본값에 기대면 기본값을 바꾼 날 둘 다 같은 걸
+        # 보게 된다.
+        for mode, golden in (("legacy", args.golden), ("shape", args.golden_shape)):
+            if not os.path.isdir(os.path.join(ROOT, golden)):
+                print("  (건너뜀 — {} 골든 폴더가 없습니다: {})".format(mode, golden))
+                continue
+            label = "regression_check[{}]".format(mode)
+            ok, elapsed, output = run(
+                label,
+                ["tools/regression_check.py", "--data-root", args.data_root, "--golden", golden],
+                timeout=args.timeout,
+                env={"CDFTOOL_TAIL_MODE": mode},
+            )
+            results.append((label, ok, elapsed))
+            print("  -- {} --".format(mode))
+            for line in output.strip().splitlines()[-25:]:
+                print("  " + line)
+            print("  [{}] {:<22} {:>6.1f}s".format("PASS" if ok else "FAIL", label, elapsed))
     else:
         print()
         print("  (회귀 검증 건너뜀 — --data-root 를 주면 실행합니다)")
