@@ -2628,6 +2628,16 @@ HTML = r"""<!doctype html>
     .summary-card-value{ font-size:22px; font-weight:600; font-family:var(--r-mono);
       font-variant-numeric:tabular-nums; letter-spacing:-.02em; line-height:1.15; color:var(--r-ink) }
     .summary-card-flag{ background:var(--r-warn-s) }
+    /* R-064: 누를 수 있는 카드 + 선택 표시 */
+    .summary-card.pickable{ cursor:pointer; position:relative }
+    .summary-card.pickable:hover{ background:var(--r-soft) }
+    .summary-card.summary-card-flag.pickable:hover{ background:#FFEBD2 }
+    .summary-card.picked{ background:var(--r-acc-s) }
+    .summary-card.picked .summary-card-label{ color:var(--r-acc-d) }
+    .summary-card.picked .summary-card-value{ color:var(--r-acc-d) }
+    .summary-card.picked::after{ content:""; position:absolute; left:0; right:0; bottom:0;
+      height:3px; background:var(--r-acc) }
+    .summary-strip.filtered .summary-card:not(.picked) .summary-card-value{ opacity:.5 }
     .summary-card-flag .summary-card-label{ color:var(--r-warn-t) }
     .summary-card-flag .summary-card-value{ color:var(--r-warn-t) }
 
@@ -3456,6 +3466,12 @@ function setParallelAnalysisProgress(mode, percent, message = "Analyzing") {
   setStatus(`Pass ${pass.progress}% / Fail ${fail.progress}% - ${modeDisplayName(key)} ${message || "Analyzing"} ${total}%`);
 }
 function setAnalysisMode(mode, renderExisting = true) {
+  // R-064: Fail 탭(Fail Type)과 Pass 탭(셀렉 유형)은 유형 이름 자체가 다르다. 그대로
+  // 들고 가면 건너편 탭에서 아무것도 안 걸려 빈 표가 된다 — 탭을 옮기면 푼다.
+  if (analysisMode !== (mode === "fail" ? "fail" : "pass")) {
+    typeFilter = "";
+    invalidateTypeFilter();
+  }
   analysisMode = mode === "fail" ? "fail" : "pass";
   updateResultTabButtons();
   updateResultTabVisibility();
@@ -4033,6 +4049,91 @@ function activatePayloadMode(mode, item = "") {
    Test No. 도 대상이다 — 드롭박스에 "9.8 - VSTART" 로 보이므로 그 문자열로 찾는다.
    표시만 바꾼다 — 판정·집계·표에는 전혀 관여하지 않는다. */
 let graphItemQuery = "";
+/* ── R-064: 배지 카드로 유형 거르기 ───────────────────────────────
+   배지 숫자만 보고는 "그래서 그게 어느 건인데" 를 알 수 없어 표를 손으로 뒤져야 했다.
+   카드를 누르면 그 유형의 유닛만 남긴다 — 항목 기준 표·샘플 기준 표·선택 항목 상세
+   표·그래프(드롭박스·CDF·산점도)가 함께 따라간다.
+
+   표시 전용이다. payload·캐시 스키마·판정에 전혀 관여하지 않고, 배지 숫자 자체도
+   필터와 무관하게 그대로 둔다 — 필터를 걸었다고 숫자가 변하면 기준을 잃는다.
+     ""          필터 없음(기본)
+     "<유형명>"  그 유형만 (Excessive / Separated / Tail / Unstable …)
+     "__kept__"  제외 유형(Tail·Unstable)을 뺀 전부 = 벤치 검토 필요 */
+const TYPE_FILTER_KEPT = "__kept__";
+let typeFilter = "";
+/* 지금 조건에서 "필터에 걸리는 샘플" 집합. 없으면 null(= 거르지 않음). */
+function typeFilterSamples() {
+  if (!typeFilter || !analysis) return null;
+  const sets = unitTypeSetsByCondition();
+  const excluded = (analysis.analysis_mode || analysisMode) === "fail" ? failExcludedTypes() : [];
+  const out = new Set();
+  Object.keys(sets).forEach(conditionKeyName => {
+    const byType = sets[conditionKeyName] || {};
+    Object.keys(byType).forEach(type => {
+      const take = typeFilter === TYPE_FILTER_KEPT ? !excluded.includes(type) : type === typeFilter;
+      if (take) byType[type].forEach(sample => out.add(String(sample)));
+    });
+  });
+  return out;
+}
+/* 매 행마다 Set 을 다시 만들면 표가 수백 행일 때 눈에 띄게 느려진다. 한 번 그릴 때
+   한 번만 만들어 두고 쓴다 — 필터·탭·분석이 바뀌면 버린다. */
+let typeFilterCache = null;
+function typeFilterSet() {
+  if (typeFilterCache === null) typeFilterCache = { set: typeFilterSamples() };
+  return typeFilterCache.set;
+}
+function invalidateTypeFilter() { typeFilterCache = null; }
+function typeFilterOn() { return !!typeFilter; }
+function sampleMatchesTypeFilter(sample) {
+  const set = typeFilterSet();
+  return !set || set.has(String(sample));
+}
+/* 항목은 "그 유형 샘플이 하나라도 걸린 항목인가" 로 남긴다.
+
+   itemCache 는 **선택한 항목의 상세만** 들고 있어서 그걸로 판단하면 나머지 항목이
+   전부 통과해 표가 거의 안 걸러진다. over_sigma 는 샘플마다 "그 샘플이 걸린 항목
+   목록(items)" 을 들고 있고 전 항목을 덮으므로, 이것과 유형별 샘플 집합을 맞춰
+   항목 키 집합을 만든다. */
+function typeFilterItemKeys() {
+  const set = typeFilterSet();
+  if (!set) return null;
+  if (typeFilterCache && typeFilterCache.items) return typeFilterCache.items;
+  const keys = new Set();
+  (analysis?.over_sigma || []).forEach(row => {
+    if (!rowMatchesPayloadFilters(row, analysis)) return;
+    if (!set.has(String(row.sample))) return;
+    (row.items || []).forEach(item => { if (item) keys.add(item); });
+  });
+  if (typeFilterCache) typeFilterCache.items = keys;
+  return keys;
+}
+function itemMatchesTypeFilter(row) {
+  const keys = typeFilterItemKeys();
+  return !keys || keys.has(itemKey(row));
+}
+async function applyTypeFilter(value) {
+  typeFilter = (typeFilter === value) ? "" : (value || "");   // 같은 카드 재클릭 = 해제
+  invalidateTypeFilter();
+  // 보던 항목이 필터에 안 걸리면 첫 항목으로 옮긴다 (R-054 검색과 같은 규칙).
+  const keys = searchedResultRows().map(itemKey);
+  if (keys.length && !keys.includes(selectedItem)) {
+    selectedItem = keys[0];
+    highlightSample = null;
+    highlightMode = null;
+    detailSampleFocus = null;
+    await refreshSelectedItem();
+    renderSummaryStrip();
+    return;
+  }
+  renderItemSelect();
+  renderItemSearchCount();
+  renderResultTable();
+  renderOverTable();
+  renderDetailTable();
+  renderSummaryStrip();
+  drawCharts();
+}
 function graphItemMatches(row) {
   const query = graphItemQuery.trim().toLowerCase();
   if (!query) return true;
@@ -4076,7 +4177,9 @@ function filteredResultRows() {
     .filter(rowMatchesAnalysisFilters)
     // R-026 / R-032: 목록에서 뺀 항목이 자동 선택되지 않도록 같은 기준을 적용한다.
     .filter(row => !(shiftGateOn() && itemFoldedByGate(itemKey(row))))
-    .filter(row => !(failGateOn() && failItemFolded(itemKey(row))));
+    .filter(row => !(failGateOn() && failItemFolded(itemKey(row))))
+    // R-064: 배지 카드 유형 필터. 여기에 얹으면 표·드롭박스·그래프가 모두 따라온다.
+    .filter(itemMatchesTypeFilter);
 }
 function ensureSelectedItemVisible() {
   const rows = filteredResultRows();
@@ -5266,6 +5369,9 @@ if (isResultsWindow) {
 }
 
 function renderSummary() {
+  // R-064: 신뢰성 항목·FT Temp 필터가 바뀌면 유형별 샘플 집합도 달라진다. 여기서 버린다
+  // (필터 바의 모든 핸들러가 renderSummary 를 거친다).
+  invalidateTypeFilter();
   renderShiftGateNote();   // R-035: 기준 바·노트가 결과 패널로 올라왔다 — 요약을 그릴 때도 갱신한다.
   renderAnalysisFilterBar();
   renderGraphFilterBar();
@@ -5407,7 +5513,7 @@ function renderSummaryStrip() {
   unitTypeOrder().forEach(type => {
     if (isFailMode && excludedTypes.includes(type)) return;   // 아래 제외 카드로 뺀다
     cards.push({
-      label: type, value: typeCounts[type] || 0,
+      label: type, value: typeCounts[type] || 0, type,
       title: isFailMode
         ? `Fail Type 이 ${type} 인 샘플 수 (한 샘플은 가장 심한 유형 하나에만 들어갑니다)`
         : `판정축이 ${type} 인 샘플 수 (한 샘플은 가장 심한 유형 하나에만 들어갑니다)`,
@@ -5422,27 +5528,44 @@ function renderSummaryStrip() {
       Unstable: "FT 에서 Fail 났지만 재시험에서 최종 Pass 한 샘플 — 최종 양품이라 벤치 대상이 아니다",
     };
     if (excludedTypes.length <= 1) {
-      cards.push({ label: `${marginalType} (Marginal)`, value: folded,
+      cards.push({ label: `${marginalType} (Marginal)`, value: folded, type: marginalType,
         title: TITLES[marginalType] || "벤치 검토에서 접히는 분" });
     } else {
       excludedTypes.forEach(type => {
         cards.push({
           label: type === marginalType ? `${type} (Marginal)` : type,
-          value: typeCounts[type] || 0,
+          value: typeCounts[type] || 0, type,
           title: TITLES[type] || "벤치 검토에서 접히는 분",
         });
       });
     }
   }
-  cards.push({ label: "벤치 검토 필요", value: keptUnits, cls: "flag",
+  cards.push({ label: "벤치 검토 필요", value: keptUnits, cls: "flag", pick: TYPE_FILTER_KEPT,
     title: isFailMode
       ? `Fail 샘플 중 Marginal(${marginalType})을 뺀 수 — 벤치(FA) 대상`
       : "이상 산포 샘플 중 스펙 대비 이동이 미미한 건을 뺀 수" });
+
+  /* R-064: 유형 카드는 그 유형의 pick 값을 단다. 첫 카드(총 진행/Pass 진행)는 "" 라
+     누르면 해제된다. 유형별 카드는 label 이 곧 유형명이다. */
+  cards.forEach(card => {
+    if (card.pick === undefined) card.pick = card.type !== undefined ? card.type : "";
+  });
+  strip.classList.toggle("filtered", typeFilterOn());
 
   cards.forEach(card => {
     const div = document.createElement("div");
     div.className = `summary-card${card.cls ? " summary-card-" + card.cls : ""}`;
     if (card.title) div.title = card.title;
+    // 첫 카드(해제)는 필터가 걸려 있을 때만 누를 의미가 있다.
+    const usable = card.pick !== "" || typeFilterOn();
+    if (usable) {
+      div.classList.add("pickable");
+      div.classList.toggle("picked", typeFilter === card.pick && card.pick !== "");
+      div.title = (card.title ? card.title + " — " : "")
+        + (card.pick === "" ? "눌러서 필터 해제"
+           : typeFilter === card.pick ? "다시 누르면 해제" : "눌러서 이 유형만 보기");
+      div.onclick = () => applyTypeFilter(card.pick);
+    }
     const labelEl = document.createElement("div");
     labelEl.className = "summary-card-label";
     labelEl.textContent = card.label;
@@ -5677,6 +5800,8 @@ function sortedDetails(details) {
     const resultRow = selectedResultRow() || {};
     rows = rows.filter(row => !detailRowFolded(row, itemData, resultRow));
   }
+  // R-064: 배지 카드로 유형을 고르면 그 유닛의 행만 남긴다.
+  if (typeFilterOn()) rows = rows.filter(row => sampleMatchesTypeFilter(row.sample));
   if (detailSortState.column) {
     rows.sort((a, b) => compareDetailValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
   }
@@ -5987,7 +6112,8 @@ function renderSummaryListTable(table, payload, mode) {
 /* R-049: 표시 순서만 바꾼다 — 판정·집계가 쓰는 overSigmaRows() 자체는 건드리지 않는다.
    어느 열로 정렬하든 동점이면 Sample # 순서로 떨어져, 표가 매번 같은 모양이 된다. */
 function sortedOverRows() {
-  const rows = [...overSigmaRows()];
+  // R-064: 유형 필터는 유닛 단위라 샘플 기준 표에 그대로 적용된다.
+  const rows = overSigmaRows().filter(row => sampleMatchesTypeFilter(row.sample));
   const dir = overSortState.reverse ? -1 : 1;
   const itemCount = row => (row.items || []).filter(Boolean).length;
   const firstItem = row => itemDisplayName((row.items || []).filter(Boolean)[0] || "");
