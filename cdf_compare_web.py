@@ -2906,8 +2906,8 @@ HTML = r"""<!doctype html>
         <section id="passResultsGrid" class="grid results-hidden">
       <section class="panel summary-panel">
         <div class="ptabs" id="resultModeBar" title="Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)">
-          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 항목</button>
-          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Abnormal Pass</button>
+          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 분석 결과</button>
+          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Pass 분석 결과</button>
         </div>
         <div class="ptool">
           <div class="pill" id="resultViewBar">
@@ -5442,33 +5442,11 @@ function setTabBadge(btn, value, title) {
 }
 function renderSummaryStrip() {
   const strip = document.getElementById("summaryStrip");
-  const failBtn = document.getElementById("failModeBtn");
-  if (failBtn) {
-    let badge = failBtn.querySelector(".fail-count-badge");
-    const failCount = failSelectCount();
-    if (failCount && failCount.items) {
-      if (!badge) {
-        badge = document.createElement("span");
-        badge.className = "fail-count-badge";
-        failBtn.appendChild(badge);
-      }
-      // 탭 버튼이 고정폭(166px)이라 배지는 항목 수만 짧게 표시하고, 상세 건수는
-      // 필요할 때 마우스오버로 확인하도록 title 에 병기한다.
-      badge.textContent = failCount.items;
-      badge.title = (failCount.details != null && failCount.details !== failCount.items)
-        ? `이상 항목 ${failCount.items}개 / 상세 ${failCount.details}건`
-        : `이상 항목 ${failCount.items}개`;
-    } else if (badge) {
-      badge.remove();
-    }
-  }
-  const passCount = passSelectCount();
-  // 배지는 좁아서 항목 수만 띄우고, 샘플 수는 마우스오버로 병기한다 (R-027).
-  setTabBadge(
-    document.getElementById("passModeBtn"),
-    passCount ? passCount.items : null,
-    passCount ? `이상 데이터 식별 ${formatItemsSamples(passCount)}` : "",
-  );
+  /* R-065: 탭 이름 옆 숫자를 뺀다. 바로 아래 배지 카드가 같은 값을 더 크게 보여주고
+     있어 군더더기였고, 둘의 단위가 달라(탭=항목 수 / 배지=유닛 수) 오히려 헷갈렸다.
+     옛 창이나 되돌린 상태에서 배지가 남아 있을 수 있으므로 있으면 지운다. */
+  document.querySelectorAll("#resultModeBar .fail-count-badge, #resultModeBar .tab-count-badge")
+    .forEach(badge => badge.remove());
   if (!strip) return;
   strip.innerHTML = "";
   /* R-038: 배지를 유닛(샘플) 기준 3장으로 통일한다 — 총 / Select / No Select.
