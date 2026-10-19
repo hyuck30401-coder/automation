@@ -40,7 +40,7 @@ HOST = "127.0.0.1"
 PORT = 8765
 PORT_END = 8799
 DATA_ROOT = os.environ.get("CDFTOOL_DATA_ROOT") or r"D:\000_업무폴더\1000. 업무자동화\Reliability Test Data"
-APP_REVISION = "Rev.0.031"
+APP_REVISION = "Rev.0.032"
 # R-042: 리비전은 "릴리즈 번호"다 — 릴리즈할 때만 올린다. 변경마다 올렸더니 마지막
 # 릴리즈(v0.0.30) 이후 배포한 적도 없는 Rev.0.031~0.038 이 생겼다.
 # 같은 리비전 안에서 빌드를 구분하는 것은 아래 BUILD_ID 가 맡는다 — R-033 진단이
