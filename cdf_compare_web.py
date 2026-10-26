@@ -820,10 +820,13 @@ HTML = r"""<!doctype html>
     .chart-panel.active-graph,
     .diff-cdf-panel.active-graph,
     .ppf-panel.active-graph,
-    .scatter-panel.active-graph {
+    .scatter-panel.active-graph,
+    .wafer-panel.active-graph {
       display: flex;
     }
+    /* R-070: Wafer Map 도 탭 하나 — 다른 그래프 패널과 같은 규칙으로 숨긴다. */
     .wafer-panel {
+      display: none;
       flex: 1 1 0;
       min-height: 160px;
     }
@@ -1379,8 +1382,8 @@ HTML = r"""<!doctype html>
     body.results-window .diff-cdf-panel.active-graph,
     body.results-window .ppf-panel.active-graph,
     body.results-window .scatter-panel.active-graph,
-    body.results-window .wafer-panel {
-      display: flex;
+    body.results-window .wafer-panel.active-graph {
+      display: flex;                 /* R-070: 새 창도 본창과 같은 탭 전환 */
     }
     body.results-window .table-wrap {
       flex: 1 1 auto;
@@ -2397,13 +2400,12 @@ HTML = r"""<!doctype html>
     tr.active td:first-child{ box-shadow:inset 2.5px 0 0 var(--acc) }
     td.sigma-fail{ background:none; color:var(--neg); font-weight:800 }
 
-    /* 그래프 4종은 탭으로 하나만 표시 */
-    .chart-panel,.diff-cdf-panel,.ppf-panel,.scatter-panel{
+    /* 그래프 5종(Wafer Map 포함)은 탭으로 하나만 표시 — R-070 */
+    .chart-panel,.diff-cdf-panel,.ppf-panel,.scatter-panel,.wafer-panel{
       display:none; flex:1 1 0; min-height:0 }
     .chart-panel.active-graph,.diff-cdf-panel.active-graph,
-    .ppf-panel.active-graph,.scatter-panel.active-graph{ display:flex }
-    /* Wafer Map 은 상시 표시. 활성 그래프와 세로 1 : 1 (flex-basis 0 이어야 정확히 1:1) */
-    .wafer-panel{ display:flex; flex:1 1 0; min-height:0 }
+    .ppf-panel.active-graph,.scatter-panel.active-graph,
+    .wafer-panel.active-graph{ display:flex }
 
     #detailPanelMeta.is-loading{ color:var(--acc); opacity:.85 }
 
@@ -2647,22 +2649,25 @@ HTML = r"""<!doctype html>
     .grid{ display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
       grid-template-rows:minmax(240px,1.25fr) minmax(0,1fr); grid-template-areas:none;
       gap:16px; flex:1 1 auto; min-height:0; align-items:stretch }
-    .grid>.summary-panel{ grid-area:1 / 1 } .grid>.chart-card{ grid-area:1 / 2 }
-    .grid>.detail-panel { grid-area:2 / 1 } .grid>.wafer-panel{ grid-area:2 / 2 }
+    /* R-070: 우측은 그래프 카드 하나가 두 행을 모두 쓴다 (종전 우하단 = Wafer Map). */
+    .grid>.summary-panel{ grid-area:1 / 1 } .grid>.chart-card{ grid-area:1 / 2 / 3 / 3 }
+    .grid>.detail-panel { grid-area:2 / 1 }
     .grid>.over-panel{ display:none }
-    .summary-panel,.chart-card,.detail-panel,.wafer-panel{
+    .summary-panel,.chart-card,.detail-panel{
       display:flex; flex-direction:column; min-height:0; min-width:0 }
+    /* wafer-panel 은 탭이라 display 를 여기서 주면 안 된다 — 항상 보이게 된다. */
+    .wafer-panel{ flex-direction:column; min-height:0; min-width:0 }
     .chart-card>.ctl{ flex:0 0 auto; border:0; border-radius:0; background:none;
       border-bottom:1px solid var(--r-line); min-height:0; height:auto }
-    .chart-card .chart-panel,.chart-card .diff-cdf-panel,.chart-card .ppf-panel,.chart-card .scatter-panel{
+    .chart-card .chart-panel,.chart-card .diff-cdf-panel,.chart-card .ppf-panel,
+    .chart-card .scatter-panel,.chart-card .wafer-panel{
       border:0; border-radius:0; flex:1 1 auto; min-height:0 }
-    .wafer-panel{ flex:1 1 auto }
 
     @media (max-width:1100px){
       .workspace{ grid-template-columns:1fr }
       .sidepanel{ border-right:0; border-bottom:1px solid var(--r-line) }
       .grid{ grid-template-columns:1fr; grid-template-rows:none }
-      .grid>.summary-panel,.grid>.chart-card,.grid>.detail-panel,.grid>.wafer-panel{
+      .grid>.summary-panel,.grid>.chart-card,.grid>.detail-panel{
         grid-area:auto; min-height:340px }
     }
     /* ══════════════════════════════════════════════════════════════════
@@ -2908,15 +2913,15 @@ HTML = r"""<!doctype html>
         <section id="passResultsGrid" class="grid results-hidden">
       <section class="panel summary-panel">
         <div class="ptabs" id="resultModeBar" title="Abnormal Shift Items (Mea_S or Diff_S &gt; Grubbs threshold)">
-          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail 분석 결과</button>
-          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Pass 분석 결과</button>
+          <button id="failModeBtn" class="pt" type="button" data-mode="fail">Fail Data Analysis</button>
+          <button id="passModeBtn" class="pt active" type="button" data-mode="pass">Pass Data Analysis</button>
         </div>
         <div class="ptool">
           <div class="pill" id="resultViewBar">
-            <button id="itemViewBtn" class="active" type="button" data-view="item">항목 기준</button>
-            <button id="sampleViewBtn" type="button" data-view="sample">샘플 기준</button>
+            <button id="itemViewBtn" class="active" type="button" data-view="item">Items</button>
+            <button id="sampleViewBtn" type="button" data-view="sample">Samples</button>
           </div>
-          <div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button></div><span id="shiftGateNote"></span>
+          <div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button></div><span id="shiftGateNote"></span>
           <span id="flagAlphaLabel" class="flag-alpha-label"></span>
           <div class="r"><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></div>
         </div>
@@ -2959,7 +2964,6 @@ HTML = r"""<!doctype html>
       <section class="panel scatter-panel">
         <div class="scatter-box"><canvas id="scatterCanvas"></canvas></div>
       </section>
-      </section>
       <section class="panel wafer-panel">
         <div class="chead"><h2>Wafer Map</h2><select id="waferSelect" class="wafer-select" title="표시할 웨이퍼"></select><div class="pill wafer-view-bar" id="waferViewBar" title="기본은 선택된 샘플 하나다. 나머지는 옵션."><button type="button" data-wview="sample" class="active">선택 샘플</button><button type="button" data-wview="fail">Fail 유닛</button><button type="button" data-wview="heat">값 히트맵</button></div><span class="s" id="waferPanelMeta"></span><button id="waferSetupBtn" class="gbtn wafer-setup-btn" type="button" title="다이 맵 설정">설정</button></div>
         <div class="wafer-setup" id="waferSetup" hidden>
@@ -2978,6 +2982,7 @@ HTML = r"""<!doctype html>
           <div class="wafer-setup-note" id="waferSetupNote"></div>
         </div>
         <div class="wafer-box"><canvas id="waferCanvas"></canvas></div>
+      </section>
       </section>
         </section>
             </div>
@@ -3010,6 +3015,15 @@ let overSortState = { column: "sample", reverse: false };
 /* R-050: 샘플 기준 표에서 Sample # 을 누르면 선택 항목 상세가 "그 샘플이 걸린 항목 목록"
    으로 바뀐다. null 이면 지금까지와 같은 "그 항목의 샘플 목록" 이다. */
 let detailSampleFocus = null;
+/* R-066: 샘플 기준(Samples) 탭에서 Fail Item 셀을 누르면 그 샘플 하나만 본다.
+   detailSampleFocus 와 다르다 — 그쪽은 Sample # 을 눌러 "그 샘플이 걸린 항목 목록" 으로
+   상세 표를 통째로 바꾸는 것(R-050)이고, 이쪽은 상세 표와 그래프를 **지금 고른 항목의
+   그 샘플 행** 으로만 좁히는 것이다. 같은 항목으로 걸린 다른 샘플은 빠진다. */
+let itemSampleFocus = null;
+function graphSampleFocus() {
+  if (resultViewMode !== "sample") return null;
+  return itemSampleFocus === null || itemSampleFocus === undefined ? null : itemSampleFocus;
+}
 /* R-048: 위/아래 방향키가 움직일 표와, 그 표에서 마지막으로 고른 행/열 */
 let rowNavTableId = "";
 let rowNavRowKey = "";
@@ -3745,7 +3759,8 @@ function updateGraphPanels() {
     cdf: "chart-panel",
     diff: "diff-cdf-panel",
     ppf: "ppf-panel",
-    scatter: "scatter-panel"
+    scatter: "scatter-panel",
+    wafer: "wafer-panel"          // R-070
   };
   const canvasMap = {
     cdf: "cdfCanvas",
@@ -4097,33 +4112,83 @@ function sampleMatchesTypeFilter(sample) {
    전부 통과해 표가 거의 안 걸러진다. over_sigma 는 샘플마다 "그 샘플이 걸린 항목
    목록(items)" 을 들고 있고 전 항목을 덮으므로, 이것과 유형별 샘플 집합을 맞춰
    항목 키 집합을 만든다. */
+/* R-064 보완(5차): 배지 하나를 누르면 "그 배지가 센 유닛" 과 "그 유형의 데이터" 가
+   동시에 걸려야 한다 (Eden 님 확정).
+
+     · 어느 유닛을 볼지 — 배지와 같은 규칙. unit_types 의 대표 유형(R-053: 한 유닛은
+       가장 심한 유형 하나에만)이 고른 유형인 유닛만. 그래서 배지 숫자와 표의 행 수가
+       같아진다.
+     · 그 유닛 안에서 무엇을 볼지 — item_types 의 항목 단위 유형. 대표 유형이
+       Excessive 인 유닛의 Tail 항목은 Excessive 배지에서도 보이지 않는다.
+
+   두 조건을 한 번에 담은 (항목, 유닛) 쌍 집합을 만들어 표·상세·그래프·웨이퍼 맵이
+   모두 이것 하나를 본다. 배지를 아무것도 안 고르면 전부 보인다. */
+function typeFilterBuild() {
+  if (typeFilterCache && typeFilterCache.pairs) return typeFilterCache;
+  const unitSet = typeFilterSet();                 // 배지와 같은 유닛 집합
+  const pairs = new Set();
+  const items = new Set();
+  if (!unitSet) return { pairs: null, items: null };
+  const rows = (analysis?.item_types || {}).rows || [];
+  if (rows.length) {
+    const excluded = (analysis?.analysis_mode || analysisMode) === "fail" ? failExcludedTypes() : [];
+    rows.forEach(row => {
+      if (!rowMatchesPayloadFilters(row, analysis)) return;
+      if (!unitSet.has(String(row.sample))) return;          // 배지가 센 유닛만
+      const take = typeFilter === TYPE_FILTER_KEPT
+        ? !excluded.includes(row.type)
+        : row.type === typeFilter;
+      if (!take || !row.item) return;
+      pairs.add(typeFilterPairKey(row.item, row.sample));
+      items.add(String(row.item));
+    });
+  } else {
+    /* 옛 캐시(item_types 이전)로 열린 결과는 유닛 단위로만 거른다.
+       CACHE_SCHEMA 가 올라가 재분석되면 위 경로를 탄다. */
+    (analysis?.over_sigma || []).forEach(row => {
+      if (!rowMatchesPayloadFilters(row, analysis)) return;
+      if (!unitSet.has(String(row.sample))) return;
+      (row.items || []).forEach(item => {
+        if (!item) return;
+        pairs.add(typeFilterPairKey(item, row.sample));
+        items.add(String(item));
+      });
+    });
+  }
+  if (typeFilterCache) { typeFilterCache.pairs = pairs; typeFilterCache.items = items; }
+  return { pairs, items };
+}
 function typeFilterItemKeys() {
-  const set = typeFilterSet();
-  if (!set) return null;
-  if (typeFilterCache && typeFilterCache.items) return typeFilterCache.items;
-  const keys = new Set();
-  (analysis?.over_sigma || []).forEach(row => {
-    if (!rowMatchesPayloadFilters(row, analysis)) return;
-    if (!set.has(String(row.sample))) return;
-    (row.items || []).forEach(item => { if (item) keys.add(item); });
-  });
-  if (typeFilterCache) typeFilterCache.items = keys;
-  return keys;
+  return typeFilterBuild().items;
 }
 function itemMatchesTypeFilter(row) {
   const keys = typeFilterItemKeys();
   return !keys || keys.has(itemKey(row));
 }
+function typeFilterPairSet() {
+  return typeFilterBuild().pairs;
+}
+function typeFilterPairKey(item, sample) {
+  return String(item) + "\u0000" + String(sample);
+}
+/** 이 (항목, 유닛) 이 지금 고른 배지에 들어가는가. */
+function pairMatchesTypeFilter(item, sample) {
+  const pairs = typeFilterPairSet();
+  if (!pairs) return true;
+  return pairs.has(typeFilterPairKey(item, sample));
+}
 async function applyTypeFilter(value) {
   typeFilter = (typeFilter === value) ? "" : (value || "");   // 같은 카드 재클릭 = 해제
   invalidateTypeFilter();
+  itemSampleFocus = null;                                      // R-066
   // 보던 항목이 필터에 안 걸리면 첫 항목으로 옮긴다 (R-054 검색과 같은 규칙).
-  const keys = searchedResultRows().map(itemKey);
+  const keys = graphItemKeys();                                // R-067
   if (keys.length && !keys.includes(selectedItem)) {
     selectedItem = keys[0];
     highlightSample = null;
     highlightMode = null;
     detailSampleFocus = null;
+    itemSampleFocus = null;                      // R-066
     await refreshSelectedItem();
     renderSummaryStrip();
     return;
@@ -4145,6 +4210,23 @@ function graphItemMatches(row) {
 function searchedResultRows() {
   return filteredResultRows().filter(graphItemMatches);
 }
+/* R-067: 그래프 드롭다운은 판정에 걸린 항목이 아니라 **전체 시험 항목** 을 담는다.
+   단 유형 필터가 켜져 있으면 그 유형 항목만 남긴다 — R-064 의 "배지를 누르면
+   표·드롭박스·그래프가 모두 따라간다" 를 지키기 위해서다 (Eden 님 확정 (나)안).
+   전체 목록은 값이 없는 이름표라, 안 걸린 항목을 고르면 /item 으로 따로 불러온다. */
+function graphItemRows() {
+  if (typeFilterOn()) return searchedResultRows();
+  return graphItemTotalRows().filter(graphItemMatches);
+}
+function graphItemKeys() {
+  return graphItemRows().map(itemKey);
+}
+/* 검색 카운터의 분모 — graphItemRows() 와 같은 목록에서 검색어만 뺀 것. */
+function graphItemTotalRows() {
+  if (typeFilterOn()) return filteredResultRows();
+  const all = (analysis?.all_items || []).filter(row => rowMatchesPayloadFilters(row, analysis));
+  return all.length ? all : filteredResultRows();
+}
 function renderItemSearchCount() {
   const wrap = document.getElementById("itemSearchWrap");
   const countEl = document.getElementById("itemSearchCount");
@@ -4153,14 +4235,14 @@ function renderItemSearchCount() {
   if (wrap) wrap.classList.toggle("on", !!graphItemQuery);
   if (!countEl) return;
   if (!graphItemQuery) { countEl.textContent = ""; countEl.classList.remove("none"); return; }
-  const hit = searchedResultRows().length;
-  const total = filteredResultRows().length;
+  const hit = graphItemRows().length;
+  const total = graphItemTotalRows().length;
   countEl.textContent = `${hit} / ${total}`;
   countEl.classList.toggle("none", hit === 0);
 }
 async function applyGraphItemQuery(value) {
   graphItemQuery = value || "";
-  const keys = searchedResultRows().map(itemKey);
+  const keys = graphItemKeys();             // R-067
   // 보고 있던 항목이 검색어에 안 걸리면 첫 결과로 옮긴다 — 검색하자마자 그래프가
   // 바뀌는 쪽이, 목록에 없는 항목이 선택된 채 남는 것보다 덜 헷갈린다(Eden 님 확정).
   // 하나도 안 걸리면 그래프는 그대로 두고 드롭박스만 비운다.
@@ -4184,9 +4266,13 @@ function filteredResultRows() {
     .filter(itemMatchesTypeFilter);
 }
 function ensureSelectedItemVisible() {
+  // R-067: 드롭다운이 전체 항목을 담으므로, 판정에 안 걸린 항목을 고른 상태도
+  // 유효하다. 그 목록에 있으면 그대로 둔다.
+  const graphKeys = graphItemKeys();
+  if (graphKeys.includes(selectedItem)) return;
   const rows = filteredResultRows();
   if (!rows.length) {
-    selectedItem = "";
+    selectedItem = graphKeys.length ? graphKeys[0] : "";
     return;
   }
   if (!rows.some(row => itemKey(row) === selectedItem)) {
@@ -4389,7 +4475,7 @@ function setResultViewMode(view) {
   resultViewMode = view === "sample" ? "sample" : "item";
   /* R-050: 샘플 기준을 벗어나면 상세 표도 항목 기준으로 되돌린다. 항목 목록 아래에
      "어떤 샘플의 항목들" 표가 남아 있으면 위아래 두 표가 서로 맞지 않는다. */
-  if (resultViewMode !== "sample") detailSampleFocus = null;
+  if (resultViewMode !== "sample") { detailSampleFocus = null; itemSampleFocus = null; }
   updateResultTabButtons();
   updateResultTabVisibility();
   ensureSelectedItemVisibleForActiveTab();
@@ -4534,8 +4620,10 @@ function makeGraphCheckbox(labelText, checked, onChange) {
   return label;
 }
 function graphTabOptions() {
-  // Wafer Map 은 탭이 아니라 그래프 아래에 상시 표시한다
-  return [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"], ["scatter", "Scattered Plot"]];
+  // R-070: Wafer Map 도 탭 하나로 들어온다. 종전에는 그래프 아래에 상시 표시였고,
+  // 그 자리(2x2 격자의 우하단)는 그래프 패널이 세로로 내려받는다.
+  return [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"],
+          ["scatter", "Scattered Plot"], ["wafer", "Wafer Map"]];
 }
 function makeGraphTabButton(key, label) {
   const button = document.createElement("button");
@@ -4615,6 +4703,7 @@ function clearAnalysisDisplay(message = "") {
   detailSortState = { column: null, reverse: false };
   overSortState = { column: "sample", reverse: false };
   detailSampleFocus = null;
+  itemSampleFocus = null;                    // R-066
   graphItemQuery = "";                       // R-054
   resetAnalysisFilters();
   renderSummary();
@@ -4632,6 +4721,7 @@ function applyAnalysisPayload(data, remember = true) {
   detailSortState = { column: null, reverse: false };
   overSortState = { column: "sample", reverse: false };
   detailSampleFocus = null;
+  itemSampleFocus = null;                    // R-066
   graphItemQuery = "";                       // R-054
   resetAnalysisFilters();
   selectedItem = itemKey(analysis.results?.[0]) || "";
@@ -4728,6 +4818,7 @@ async function runAnalysis() {
   const displayMode = "fail";
   resultViewMode = "item";
   detailSampleFocus = null;
+  itemSampleFocus = null;                    // R-066
   activeAnalysisRunId = createAnalysisRunId();
   // 결과 새 창은 사용자가 "결과 새 창" 버튼을 눌렀을 때만 띄운다.
   // 예전에는 Analyze 를 누르면 매번 자동으로 팝업이 떠서 방해가 됐다.
@@ -5255,6 +5346,7 @@ function bindResultControls() {
     selectedItem = e.target.value;
     highlightSample = null;
     highlightMode = null;
+    itemSampleFocus = null;                      // R-066
     await refreshSelectedItem();
   });
   wireColumnToggleMenu("detailColumnToggleBtn", "detailColumnToggleMenu");   // R-023
@@ -5666,7 +5758,7 @@ async function refreshSelectedItem() {
 function renderItemSelect() {
   const sel = document.getElementById("itemSelect");
   sel.innerHTML = "";
-  const rows = searchedResultRows();        // R-054
+  const rows = graphItemRows();             // R-054 검색 + R-067 전체 항목
   if (!rows.length && graphItemQuery) {
     const opt = document.createElement("option");
     opt.value = "";
@@ -5698,9 +5790,29 @@ function gateQty(row, payload = analysis) {
   const kept = gateKeptSamples(itemKey(row), payload);
   return kept === null ? null : kept.length;
 }
+/* R-064 보완(3차): 한 항목에 유형이 섞여 있을 수 있다 — 실측(HAST 96hrs Room)에서
+   158개 항목 중 16개가 그랬다(예: BUCK_7V_4p6V_1mA = Excessive 3 / Separated 1).
+   표의 Fail Type 열은 항목의 "가장 심한 유형"(worst_fail_type)이라, Separated 를
+   눌러도 그 칸이 Excessive 로 찍혔다. 유형을 고른 동안에는 그 유형 기준으로 읽는다.
+   Q'ty 도 같이 따라가야 "Separated 인데 4대" 같은 모순이 안 생긴다 (R-038 의
+   gateQty 가 이미 같은 방식으로 Q'ty 를 게이트에 맞춘다). 배지 숫자는 그대로다. */
+function typeFilterUnitCount(row) {
+  const pairs = typeFilterPairSet();
+  if (!pairs) return null;
+  const key = itemKey(row);
+  let n = 0;
+  pairs.forEach(pair => { if (pair.slice(0, pair.indexOf("\u0000")) === key) n += 1; });
+  return n;
+}
 function summaryCellValue(row, key, payload = analysis) {
   const data = (payload?.items || itemCache)[itemKey(row)] || {};
+  const typeScoped = typeFilterOn() && payload === analysis && typeFilter !== TYPE_FILTER_KEPT;
+  if (key === "fail_type" && typeScoped && itemMatchesTypeFilter(row)) return typeFilter;
   if (key === "qty") {
+    if (typeScoped) {
+      const scoped = typeFilterUnitCount(row);
+      if (scoped !== null) return scoped;
+    }
     const kept = gateQty(row, payload);
     return kept === null ? row.qty : kept;
   }
@@ -5737,12 +5849,20 @@ function sortedResults() {
   return rows;
 }
 function sortedPayloadSummaryRows(payload) {
+  /* R-064 보완(3차): 화면의 항목 기준 표는 selected_summary 로 그린다.
+     R-064 1차에서 유형 필터를 filteredResultRows() 에만 얹었는데 그쪽은 드롭박스와
+     그래프가 쓰는 목록이라, **표 자체는 배지를 눌러도 전혀 걸러지지 않고 있었다**
+     (실측: Separated 를 눌러도 Excessive 항목이 그대로 남음). 여기에도 건다.
+     다른 모드 payload(결과 새 창의 Fail/Pass 목록)에는 걸지 않는다 — 필터 상태는
+     지금 보고 있는 분석에 매인 것이라 남의 목록에 적용하면 엉뚱하게 걸린다. */
+  const applyTypeFilter = typeFilterOn() && payload === analysis;
   const rows = [...(payload?.selected_summary || [])]
     .filter(row => rowMatchesPayloadFilters(row, payload))
     // R-026: SELECT 샘플이 모두 게이트에 걸린 항목만 뺀다. 하나라도 남으면 목록에 둔다.
     .filter(row => !(shiftGateOn(payload) && itemFoldedByGate(itemKey(row), payload)))
     // R-032: fail 상세가 전부 Marginal 인 항목을 뺀다. 같은 규칙(하나라도 남으면 유지).
-    .filter(row => !(failGateOn(payload) && failItemFolded(itemKey(row), payload)));
+    .filter(row => !(failGateOn(payload) && failItemFolded(itemKey(row), payload)))
+    .filter(row => !applyTypeFilter || itemMatchesTypeFilter(row));
   if (sortState.column) {
     rows.sort((a, b) => compareSummaryValues(a, b, sortState.column, payload) * (sortState.reverse ? -1 : 1));
   }
@@ -5780,8 +5900,12 @@ function sortedDetails(details) {
     const resultRow = selectedResultRow() || {};
     rows = rows.filter(row => !detailRowFolded(row, itemData, resultRow));
   }
-  // R-064: 배지 카드로 유형을 고르면 그 유닛의 행만 남긴다.
-  if (typeFilterOn()) rows = rows.filter(row => sampleMatchesTypeFilter(row.sample));
+  // R-064 보완(2차): 배지 유형은 "이 항목에서의 유형" 으로 본다.
+  // 유닛 대표 유형으로 거르면 같은 유닛의 다른 항목 판정이 끼어든다.
+  if (typeFilterOn()) rows = rows.filter(row => pairMatchesTypeFilter(selectedItem, row.sample));
+  // R-066: Samples 탭에서 Fail Item 을 눌러 고른 샘플이 있으면 그 행만 남긴다.
+  const focus = graphSampleFocus();
+  if (focus !== null) rows = rows.filter(row => String(row.sample) === String(focus));
   if (detailSortState.column) {
     rows.sort((a, b) => compareDetailValues(a, b, detailSortState.column) * (detailSortState.reverse ? -1 : 1));
   }
@@ -5796,10 +5920,23 @@ async function loadItemForPayload(payload, item, mode = "") {
   if (pendingItemLoads[requestKey]) return pendingItemLoads[requestKey];
   setStatus("Loading item...");
   pendingItemLoads[requestKey] = (async () => {
-    const params = new URLSearchParams({ name: item, mode: resultMode });
-    const res = await fetch(`/item?${params.toString()}`);
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || "Item load failed");
+    const fetchItem = async requestedMode => {
+      const params = new URLSearchParams({ name: item, mode: requestedMode });
+      const res = await fetch(`/item?${params.toString()}`);
+      const body = await res.json();
+      return { ok: res.ok && !body.error, body };
+    };
+    let attempt = await fetchItem(resultMode);
+    if (!attempt.ok && resultMode === "fail") {
+      /* R-067: 드롭다운이 전체 시험 항목을 담으면서, Fail 판정이 하나도 없는 항목도
+         고를 수 있게 됐다. Fail 분석의 app 은 Fail 유닛이 가진 항목만 들고 있어
+         "Unknown Test Item." 이 난다. 그런 항목은 Fail 표본이 0 이라 분포가 Pass
+         모집단과 같으므로 pass 쪽 결과를 그대로 쓴다 (마커는 그릴 것이 없다). */
+      const retry = await fetchItem("pass");
+      if (retry.ok) attempt = retry;
+    }
+    if (!attempt.ok) throw new Error(attempt.body.error || "Item load failed");
+    const data = attempt.body;
     payload.items[item] = data;
     if (payload === analysis || resultMode === (analysis?.analysis_mode || analysisMode)) {
       itemCache[item] = data;
@@ -6071,6 +6208,7 @@ function renderSummaryListTable(table, payload, mode) {
       highlightSample = null;
       highlightMode = null;
       detailSampleFocus = null;                    // R-050
+      itemSampleFocus = null;                      // R-066
       await refreshSelectedItem();
     };
     // 목록에서 뺀 Stdev./Min./Max. 와 Pre 쪽 분포는 여기서 본다. (R-021)
@@ -6092,8 +6230,16 @@ function renderSummaryListTable(table, payload, mode) {
 /* R-049: 표시 순서만 바꾼다 — 판정·집계가 쓰는 overSigmaRows() 자체는 건드리지 않는다.
    어느 열로 정렬하든 동점이면 Sample # 순서로 떨어져, 표가 매번 같은 모양이 된다. */
 function sortedOverRows() {
-  // R-064: 유형 필터는 유닛 단위라 샘플 기준 표에 그대로 적용된다.
-  const rows = overSigmaRows().filter(row => sampleMatchesTypeFilter(row.sample));
+  /* R-064 보완(2차): "그 유형 항목을 하나라도 가진 샘플" 로 거르고, Fail Items 열도
+     그 유형 항목만 남긴다. 유닛 대표 유형으로 거르면 Tail 항목을 가진 Excessive 유닛이
+     Tail 배지에서 통째로 사라졌다(실측 9행 -> 4행). */
+  const rows = typeFilterOn()
+    ? overSigmaRows().reduce((out, row) => {
+        const kept = (row.items || []).filter(item => item && pairMatchesTypeFilter(item, row.sample));
+        if (kept.length) out.push(Object.assign({}, row, { items: kept }));
+        return out;
+      }, [])
+    : overSigmaRows().slice();
   const dir = overSortState.reverse ? -1 : 1;
   const itemCount = row => (row.items || []).filter(Boolean).length;
   const firstItem = row => itemDisplayName((row.items || []).filter(Boolean)[0] || "");
@@ -6151,6 +6297,7 @@ function renderOverSampleTable(table) {
     sampleCell.classList.toggle("active", String(detailSampleFocus) === String(row.sample));
     sampleCell.onclick = async () => {
       detailSampleFocus = row.sample;
+      itemSampleFocus = null;                    // R-066: 항목 한정은 푼다
       highlightSample = row.sample;
       highlightMode = "sample";
       const keys = (row.items || []).filter(Boolean);
@@ -6178,7 +6325,8 @@ function renderOverSampleTable(table) {
           selectedItem = item;
           highlightSample = row.sample;
           highlightMode = "diff_s";
-          detailSampleFocus = null;              // R-050: 항목을 고르면 항목 기준 상세로
+          detailSampleFocus = null;              // 상세 표는 "항목" 모드로 (R-050)
+          itemSampleFocus = row.sample;          // R-066: 단 그 샘플 행만 본다
           document.getElementById("itemSelect").value = item;
           await refreshSelectedItem();
         };
@@ -6214,13 +6362,24 @@ function graphExcludeKey(row) {
 /** 이 샘플을 그래프에서 뺐는가. row 든 point 든 sample 만 있으면 된다. */
 function isGraphExcluded(entry) {
   if (!entry || entry.sample === undefined || entry.sample === null) return false;
+  /* R-066: 고른 샘플이 있으면 나머지는 그래프에서 뺀다. 수동 제외와 같은 통로를
+     쓰므로 마커·축 범위·CDF 위치가 한 번에 따라온다. 분포 곡선(모집단)은 그대로다 —
+     빼는 것은 "같은 항목으로 걸린 다른 샘플의 점" 이다. */
+  const focus = graphSampleFocus();
+  if (focus !== null && String(entry.sample) !== String(focus)) return true;
+  /* R-064 보완(4차): 유형 배지를 고르면 그 유형이 아닌 유닛의 점·마커도 뺀다.
+     상세 표는 걸러지는데 그래프에는 그대로 찍혀서, Tail 배지를 고른 화면에
+     Excessive 유닛의 점이 남아 축까지 늘려 놓았다(실측: 규격 -10.049~-9.951 인데
+     축이 0.79 까지 벌어짐). 축 계산도 이 통로를 쓰므로 한 번에 맞는다. */
+  if (typeFilterOn() && selectedItem && !pairMatchesTypeFilter(selectedItem, entry.sample)) return true;
   return !!graphExcludeState[graphExcludeKey(entry)];
 }
 /** 현재 항목에서 그래프에 안 그리기로 한 샘플 수 */
 function graphExcludedCount() {
   const data = itemCache[selectedItem];
   if (!data) return 0;
-  return (data.details || []).filter(isGraphExcluded).length;
+  // R-066: 샘플 한정은 "제외" 가 아니라 보기 좁히기라 이 수에 넣지 않는다.
+  return (data.details || []).filter(row => !!graphExcludeState[graphExcludeKey(row)]).length;
 }
 function clearGraphExcludes() {
   const data = itemCache[selectedItem];
@@ -6585,6 +6744,13 @@ function readoutDetailSeries(data) {
             diff: diffFromPre(preValue, postValue),
             mea_s: row[`m${n}`] ?? null,
             diff_s: row[`d${n}`] ?? null,
+            /* R-071: 상세 행을 같이 달고 간다.
+               drawFailReadoutMarkers 가 failCdfForValue(value, point.row, ...) 로 규격
+               이탈값을 0/1 끝에 붙이는데, 여기서 row 를 안 담아 보내 point.row 가
+               undefined 였다. 그래서 마커만 핀이 안 걸려 cdfFraction 의 하한 1/n 에
+               떠 있었고(실측 1/78 = 0.013), 같은 샘플을 선택하면 하이라이트는 d 를 받아
+               0 에 붙어 같은 점이 두 높이에 찍혔다. */
+            row,
           };
         })
         .filter(Boolean);
@@ -6813,32 +6979,39 @@ function failReadoutMarkerValues(readoutSeries) {
   return out;
 }
 function drawFailReadoutMarkers(ctx, readoutSeries, x, y) {
+  /* R-072: 선택된 샘플의 마커를 **맨 마지막에** 그린다.
+     점이 겹치면 나중에 그린 쪽이 위로 온다. 종전에는 목록 순서대로 그려서, 뒤에 오는
+     다른 샘플의 마커가 선택된 점을 덮어버렸다. 선택 표시 고리도 여기서 한 번만 그린다
+     (예전에는 여기서 검은 고리 r6.5, drawShift 에서 색 고리를 또 그려 두 겹이었다). */
   ctx.save();
-  readoutSeries.forEach(series => {
+  const drawOne = (series, point, highlighted) => {
+    const value = finiteNumber(point.post_value);
+    if (value === null) return;
+    const cx = x(value);
+    const cy = y(failCdfForValue(value, point.row, series.post_values || series.values || []));
     ctx.fillStyle = series.color || getCss("--red");
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (!highlighted) return;
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+  const deferred = [];
+  readoutSeries.forEach(series => {
     (series.points || []).forEach(point => {
       if (isGraphExcluded(point)) return;
-      const value = finiteNumber(point.post_value);
-      if (value === null) return;
-      const cx = x(value);
-      const cy = y(failCdfForValue(value, point.row, series.post_values || series.values || []));
-      ctx.beginPath();
-      ctx.arc(cx, cy, 4.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (String(point.sample) === String(highlightSample)) {
-        ctx.strokeStyle = "#111";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.4;
-      }
+      if (String(point.sample) === String(highlightSample)) deferred.push([series, point]);
+      else drawOne(series, point, false);
     });
   });
+  deferred.forEach(([series, point]) => drawOne(series, point, true));
   ctx.restore();
 }
 function drawChart() {
@@ -7264,9 +7437,12 @@ function waferTypeBySample() {
   });
   return out;
 }
-/** 지금 탭·필터 기준으로 걸린 유닛(샘플) 집합. 샘플 기준 표와 같은 목록이다. */
+/** 지금 탭·필터 기준으로 걸린 유닛(샘플) 집합. 샘플 기준 표와 같은 목록이다.
+    R-064 보완(4차): sortedOverRows() 를 쓴다 — 유형 배지를 고르면 웨이퍼 맵도
+    그 유형 유닛만 찍어야 표·그래프와 같은 화면이 된다. 필터가 꺼져 있으면
+    overSigmaRows() 와 같은 집합이라 종전 동작 그대로다. */
 function waferFailSamples() {
-  return overSigmaRows().map(row => String(row.sample));
+  return sortedOverRows().map(row => String(row.sample));
 }
 /** 좌표가 읽힌 샘플의 웨이퍼 번호 목록 + 그 웨이퍼의 Fail 유닛 수. */
 function waferNumbers() {
@@ -7685,14 +7861,14 @@ function drawDiffCdfChart() {
         if (!point || point.diff === null) return;
         if (isGraphExcluded(point)) return;   // R-016 후속
         const cdf = cdfFraction(series.diff_values, point.diff);
-        drawHighlightPoint(ctx, x(point.diff), y(cdf), series.color, `#${highlightSample} ${series.label || series.key} Diff ${fmt(point.diff)}`);
+        drawHighlightPoint(ctx, x(point.diff), y(cdf), series.color, `#${highlightSample} ${series.label || series.key} Diff ${fmt(point.diff)}`, "ring");
       });
     } else if (fallbackPostSelected) {
       const row = data.details.find(detail => String(detail.sample) === String(highlightSample));
       const diffValue = row ? finiteNumber(row.diff) : null;
       if (diffValue !== null && !isGraphExcluded(row) && sigmaOver3(row, "diff_s")) {   // R-016 후속
         const cdf = mode === "fail" ? failDirectionCdf(row) : cdfFraction(values, diffValue);
-        drawHighlightPoint(ctx, x(diffValue), y(cdf), "#b00020", `#${highlightSample} Diff ${fmt(diffValue)}`);
+        drawHighlightPoint(ctx, x(diffValue), y(cdf), "#b00020", `#${highlightSample} Diff ${fmt(diffValue)}`, "ring");
       }
     }
   }
@@ -7775,7 +7951,8 @@ function drawScatterPlot() {
     ctx.fillStyle = "#555";
     ctx.fillText(fmt(value), left - 8, y(value) + 4);
   });
-  rows.forEach(row => {
+  // R-072: 선택된 샘플은 맨 마지막에 그려 겹칠 때 맨 앞으로 오게 한다.
+  const drawScatterRow = row => {
     const px = x(Number(row.diff_s));
     const py = y(Number(row.mea_s));
     const fail = Math.abs(Number(row.diff_s)) > diffLimit || Math.abs(Number(row.mea_s)) > meaLimit;
@@ -7791,7 +7968,13 @@ function drawScatterPlot() {
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.stroke();
     }
+  };
+  const scatterDeferred = [];
+  rows.forEach(row => {
+    if (String(row.sample) === String(highlightSample)) scatterDeferred.push(row);
+    else drawScatterRow(row);
   });
+  scatterDeferred.forEach(drawScatterRow);
   if (hasReadoutSeries) drawReadoutLegend(ctx, readoutSeries, right + mr / 2, mt + 18, "center");
 }
 function uniqueTicks(values) {
@@ -7871,11 +8054,12 @@ function sigmaOver3(row, key) {
   return Math.abs(Number(row?.[key])) > flagLimit(key);
 }
 function drawFailDirectionMarkers(ctx, rows, valueKey, x, y) {
+  // R-072: 선택된 샘플은 맨 마지막에 그려 겹칠 때 위로 오게 한다.
   ctx.save();
   ctx.fillStyle = "#b00020";
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1.5;
-  rows.forEach(row => {
+  const drawOne = row => {
     const value = Number(row[valueKey]);
     if (!Number.isFinite(value)) return;
     const cy = y(failDirectionCdf(row));
@@ -7884,7 +8068,13 @@ function drawFailDirectionMarkers(ctx, rows, valueKey, x, y) {
     ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  };
+  const deferred = [];
+  rows.forEach(row => {
+    if (String(row.sample) === String(highlightSample)) deferred.push(row);
+    else drawOne(row);
   });
+  deferred.forEach(drawOne);
   ctx.restore();
 }
 function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRight = 0) {
@@ -7908,10 +8098,15 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
       const label = series.label || series.key;
       const px = x(postValue);
       const py = y(cdf);
+      /* R-072 후속: 선택 표시 고리를 누가 그리는지가 탭마다 다르다.
+         Fail 탭은 drawFailReadoutMarkers 가 마커와 함께 검은 고리까지 그리므로
+         여기서는 라벨만 얹는다. Pass 탭은 그 마커 자체가 없어서(그래프에 CDF 곡선만
+         그린다) 여기서 고리를 안 그리면 선택해도 라벨만 뜨고 점 표시가 사라진다. */
+      const postStyle = mode === "fail" ? "label" : "ring";
       const showMeasurement = forceSampleHighlight || (point ? Math.abs(Number(point.mea_s)) > flagLimit("mea_s") : sigmaOver3(d, "mea_s"));
       const showShift = forceSampleHighlight || (point ? Math.abs(Number(point.diff_s)) > flagLimit("diff_s") : sigmaOver3(d, "diff_s"));
       if (showMeasurement) {
-        drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`);
+        drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`, postStyle);
       }
       const preValue = point ? point.pre_value : finiteNumber(d.pre_value);
       if (!showShift || preValue === null || preValue === undefined) return;
@@ -7921,7 +8116,7 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
       const qx = x(preValue);
       const qy = y(preC);
       if (!showMeasurement) {
-        drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`);
+        drawHighlightPoint(ctx, px, py, color, `#${highlightSample} ${label} ${fmt(postValue)}`, postStyle);
       }
       drawHighlightPoint(ctx, qx, qy, "#004c99", `Pre ${fmt(preValue)}`);
       const top = y(1), bottom = y(0);
@@ -7950,7 +8145,7 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
   if (postC === null) return;
   const px = x(postValue), py = y(postC);
   if (showMeasurement) {
-    drawHighlightPoint(ctx, px, py, "#b00020", `#${highlightSample} Post ${fmt(postValue)}`);
+    drawHighlightPoint(ctx, px, py, "#b00020", `#${highlightSample} Post ${fmt(postValue)}`, "ring");
   }
   if (!showShift || d.pre_value === null || d.pre_value === undefined) return;
   const preValue = finiteNumber(d.pre_value);
@@ -7960,7 +8155,7 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
   const qx = x(preValue), qy = y(preC);
   drawHighlightPoint(ctx, qx, qy, "#004c99", `Pre ${fmt(preValue)}`);
   if (!showMeasurement) {
-    drawHighlightPoint(ctx, px, py, "#b00020", `#${highlightSample} Post ${fmt(postValue)}`);
+    drawHighlightPoint(ctx, px, py, "#b00020", `#${highlightSample} Post ${fmt(postValue)}`, "ring");
   }
   const top = y(1), bottom = y(0);
   const yLine = Math.min(Math.max(py - 28, top + 22), bottom - 22);
@@ -7970,11 +8165,32 @@ function drawShift(ctx, data, x, y, readoutSeries = null, plotLeft = 58, plotRig
   ctx.fillText(`Shift ${fmt(postValue - preValue)}`, Math.min(qx, px) + Math.abs(px - qx) / 2 + 6, yLine - 8);
   ctx.restore();
 }
-function drawHighlightPoint(ctx, x, y, color, label) {
+/* R-071: ringOnly 는 "이미 점이 찍혀 있는 자리" 에 쓴다.
+
+   종전에는 선택 표시가 바깥 테두리(r=7, 굵기 3) + 안쪽 채운 점(r=3) 이었다. 그런데
+   Fail 마커(r=4.2, 흰 테두리 1.4)가 이미 같은 자리에 있어서, 안쪽 점과 바깥 테두리
+   사이에 마커의 흰 테두리가 그대로 남았다. 결과적으로 "빨간 점 - 흰 고리 - 빨간
+   테두리" 가 되어 같은 점이 두 개로 보였다 (캡처 실측: 안쪽 덩어리 x44~52,
+   빈 구간 x40~43 / x53~55, 바깥 고리 x36~39 / x56~60).
+   그 자리에는 테두리만 그리고, 바탕에 점이 없는 Pre 쪽만 점을 같이 찍는다. */
+function drawHighlightPoint(ctx, x, y, color, label, style = "full") {
+  /* style
+       "full"  — 바탕에 점이 없는 자리(Pre). 색 점 + 색 테두리.
+       "ring"  — 바탕에 점이 있는 자리. 선택 테두리만.
+       "label" — 테두리까지 이미 그려진 자리(Fail 마커). 라벨만.
+
+     R-072 후속: 선택 테두리는 어느 탭·어느 그래프에서나 같은 모양이어야 한다.
+     Fail 탭은 drawFailReadoutMarkers 가 검은 테두리(r 6.5, 굵기 2)를 그리므로,
+     여기서 그리는 테두리도 같은 색·같은 크기로 맞춘다. 라벨만 계열 색을 쓴다. */
   ctx.save();
-  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = color;
+  if (style !== "label") {
+    ctx.strokeStyle = style === "ring" ? "#111" : color;
+    ctx.lineWidth = style === "ring" ? 2 : 3;
+    ctx.beginPath(); ctx.arc(x, y, style === "ring" ? 6.5 : 7, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (style === "full") { ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = color;
   ctx.fillText(label, x + 8, y - 8);
   ctx.restore();
 }
@@ -9228,6 +9444,24 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_
         row["reliability_item"] = reliability_item
         row["ft_temp"] = ft_temp
         row["readout"] = readout
+    # R-064 보완: 항목 단위 유형 행은 항목 키까지 다시 발급해야 itemKey(row) 와 맞는다.
+    for row in (payload.get("item_types") or {}).get("rows", []):
+        original_item = row.get("item", "")
+        row["item"] = key_by_item.get(original_item) or total_item_key(
+            reliability_item, ft_temp, readout, original_item
+        )
+        row["reliability_item"] = reliability_item
+        row["ft_temp"] = ft_temp
+        row["readout"] = readout
+    # R-067: 전체 항목 목록도 같은 규칙으로 키를 발급한다.
+    for row in payload.get("all_items", []):
+        original_item = row.get("item", "")
+        row["item_key"] = key_by_item.get(original_item) or total_item_key(
+            reliability_item, ft_temp, readout, original_item
+        )
+        row["reliability_item"] = reliability_item
+        row["ft_temp"] = ft_temp
+        row["readout"] = readout
     return payload
 
 
@@ -9292,6 +9526,13 @@ def merge_combo_payloads(combo_payloads, mode):
                 if name not in agg_types["order"]:
                     agg_types["order"].append(name)
             agg_types["rows"].extend(combo_types["rows"])
+        # R-064 보완 / R-067: 항목 단위 유형 행과 전체 항목 목록도 이어붙인다.
+        # R-061 때 excluded_types 를 여기서 빠뜨려 전체 분석 배지가 달라졌던 전례가 있다.
+        combo_item_types = payload.get("item_types") or {}
+        if combo_item_types.get("rows"):
+            merged.setdefault("item_types", {"rows": []})["rows"].extend(combo_item_types["rows"])
+        if payload.get("all_items"):
+            merged.setdefault("all_items", []).extend(payload["all_items"])
         for row in payload.get("results", []):
             rel = row.get("reliability_item", "")
             temp = row.get("ft_temp", "")
@@ -9727,6 +9968,97 @@ def fail_unit_types(item_payloads):
     return _unit_type_payload(worst, order)
 
 
+def fail_item_types(item_payloads):
+    """항목 x 유닛 단위 Fail Type 색인 (R-064 보완, 표시 전용).
+
+    unit_types 는 유닛마다 "가장 심한 유형 하나" 만 남긴다(R-053). 그래서 전체로는
+    Excessive 인 유닛이 어떤 항목에서는 Tail 로 걸렸어도 그 항목이 Excessive 필터에
+    딸려 올라왔다. 유형 필터가 항목 기준 표를 정확히 거르려면 항목 단위 유형이 필요하다.
+
+    최상위 키인 이유는 _unit_type_payload 주석과 같다 — 골든 스냅샷 비교 대상
+    (results / selected_summary / over_sigma / items[].details)에는 필드를 늘리지 않는다.
+    rows 의 item 은 전체 분석 태깅 단계에서 item_key 로 바뀐다(over_sigma 와 같은 규칙).
+    """
+    rows = []
+    for item, item_payload in item_payloads.items():
+        for detail in item_payload.get("details") or []:
+            fail_type = detail.get("fail_type")
+            if not fail_type:
+                continue
+            rows.append({"item": item, "sample": detail.get("sample"), "type": fail_type})
+    return {"rows": rows}
+
+
+def select_type_payloads(app):
+    """SELECT 유닛의 판정축을 유닛 단위(R-053)와 항목 단위(R-064 보완)로 한 번에 만든다.
+
+    item_analysis 는 항목마다 비싸다. 같은 루프를 두 번 돌지 않도록 한 번에 둘 다 낸다.
+    """
+    worst = {}
+    item_rows = []
+    order = SELECT_TYPE_ORDER + ["기타"]
+    for item in app.post_records:
+        entry = item_analysis(app, item)
+        result_row = entry["result_row"]
+        mea_threshold = result_row.get("mea_threshold")
+        diff_threshold = result_row.get("diff_threshold")
+        for detail in entry["details"]:
+            if detail.get("result") != "SELECT":
+                continue
+            mea_hit = _over_threshold(detail.get("mea_s"), mea_threshold)
+            diff_hit = _over_threshold(detail.get("diff_s"), diff_threshold)
+            if mea_hit and diff_hit:
+                name = "Measured + Delta"
+            elif mea_hit:
+                name = "Measured"
+            elif diff_hit:
+                name = "Delta"
+            else:
+                # 임계는 branch 마다 다를 수 있어 축을 못 가리는 SELECT 가 남을 수 있다.
+                # 조용히 버리면 카드 합이 안 맞으므로 따로 센다.
+                name = "기타"
+            sample = detail.get("sample")
+            item_rows.append({"item": item, "sample": sample, "type": name})
+            current = worst.get(sample)
+            if current is None or order.index(name) < order.index(current):
+                worst[sample] = name
+    return _unit_type_payload(worst, order), {"rows": item_rows}
+
+
+def all_item_rows_from_records(records):
+    """그래프 드롭다운용 전체 시험 항목 목록 (R-067, 표시 전용).
+
+    판정에 걸린 항목만 담는 results 와 달리, 측정된 모든 항목을 싣는다.
+    값은 싣지 않는다 — 실제 분포는 고를 때 /item 으로 따로 불러온다.
+    """
+    rows = []
+    for item in records:
+        rows.append({
+            "test_number": cell_text_from_records(records.get(item) or [], "test_number"),
+            "item": item,
+        })
+    rows.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
+    return rows
+
+
+def all_item_rows_from_states(sample_states):
+    """Fail 경로용 전체 시험 항목 목록 (R-067).
+
+    item_names 는 Fail 유닛이 가진 항목만 모은 것이라 전체가 아니다.
+    여기서는 Pass 유닛까지 포함한 모든 stage 의 항목을 훑는다.
+    """
+    seen = {}
+    for state in sample_states.values():
+        for stage in state.get("stages", []):
+            for item, record in (stage.get("items") or {}).items():
+                if item in seen:
+                    continue
+                seen[item] = str((record or {}).get("test_number") or "")
+    rows = [{"test_number": seen[item], "item": item} for item in seen]
+    rows.sort(key=lambda row: (natural_key(row["test_number"]), row["item"]))
+    return rows
+
+
 def select_unit_types(app):
     """SELECT 유닛을 판정축별로 묶는다 — Measured + Delta > Measured > Delta (R-053).
 
@@ -10149,6 +10481,8 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
     results = [{k: to_jsonable(v) for k, v in row.items()} for row in app.results]
     selected_summary = [{k: to_jsonable(v) for k, v in row.items()} for row in selected_summary_rows(app)]
     excluded_items = list(getattr(app, "excluded_items", []))
+    # R-053 + R-064 보완: item_analysis 루프를 두 번 돌지 않도록 한 번에 받는다.
+    select_unit_types_payload, select_item_types_payload = select_type_payloads(app)
     payload = {
         "results": results,
         "selected_summary": selected_summary,
@@ -10160,7 +10494,9 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "flag_mode": FLAG_MODE,
         "flag_alpha": FLAG_ALPHA,
         "shift_gate": shift_gate_summary(app),  # R-026 (표시 전용)
-        "unit_types": select_unit_types(app),  # R-053 (표시 전용)
+        "unit_types": select_unit_types_payload,  # R-053 (표시 전용)
+        "item_types": select_item_types_payload,  # R-064 보완 (표시 전용)
+        "all_items": all_item_rows_from_records(app.post_records),  # R-067 (표시 전용)
     }
     # R-038: 배지가 유닛(샘플) 기준으로 바뀐다. pass payload 에는 지금까지 항목 수만
     # 있어서 "총 샘플 수"를 낼 수 없었다. 최상위 키라 골든 비교 대상이 아니다.
@@ -10435,6 +10771,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "items": item_payloads,
         "fail_gate": marginal_gate,  # R-032 (표시 전용)
         "unit_types": fail_unit_types(item_payloads),  # R-053 (표시 전용)
+        "item_types": fail_item_types(item_payloads),  # R-064 보완 (표시 전용)
+        "all_items": all_item_rows_from_states(sample_states),  # R-067 (표시 전용)
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
@@ -10548,7 +10886,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 27  # 26->27: fail_gate 에 excluded_types / folded_by_type 추가 (R-061).
+CACHE_SCHEMA = 28  # 27->28: item_types / all_items 추가 (R-064 보완, R-067).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
