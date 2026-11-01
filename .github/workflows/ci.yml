@@ -57,6 +57,9 @@ jobs:
     needs: unit-tests
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    # v0.0.32 / v0.0.33 이 스모크 테스트에서 6시간(잡 최대치)을 태우고 잘렸다.
+    # 상한을 두어 같은 일이 반복되지 않게 한다 — 정상 빌드는 2분 안에 끝난다.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -94,24 +97,38 @@ jobs:
 
       - name: exe 스모크 테스트 (실제로 뜨는지)
         shell: bash
+        timeout-minutes: 5
         run: |
-          set -euo pipefail
+          set -uo pipefail
           exe="dist/${{ steps.ver.outputs.name }}.exe"
           size=$(stat -c%s "$exe")
           echo "크기: $((size/1024/1024)) MB"
           # PyInstaller 가 조용히 껍데기만 만드는 경우를 거른다
           if (( size < 5*1024*1024 )); then echo "::error::exe 가 비정상적으로 작습니다"; exit 1; fi
+
+          # 띄운 exe 는 어떤 경로로 끝나든 반드시 회수한다.
+          # 예전에는 배경(&)으로 띄우고 /shutdown 에만 맡겨서, 프로세스가 남으면
+          # 스크립트가 exit 해도 러너가 단계를 못 끝냈다 (실측: 6시간 뒤 강제 취소).
+          cleanup() { taskkill //F //IM "${{ steps.ver.outputs.name }}.exe" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
           "./$exe" &
+          ok=0
           for i in $(seq 1 60); do
-            if curl -sf -o /dev/null http://127.0.0.1:8765/; then
+            # --connect-timeout / --max-time 이 없으면 포트만 열리고 응답이 없을 때
+            # curl 이 무한정 기다려 60초 루프가 한 바퀴도 못 돈다.
+            if curl -sf --connect-timeout 2 --max-time 5 -o /dev/null http://127.0.0.1:8765/; then
               echo "HTTP 200 확인 ( ${i}초 )"
-              curl -sf -X POST http://127.0.0.1:8765/shutdown >/dev/null || true
-              exit 0
+              curl -sf --connect-timeout 2 --max-time 5 -X POST http://127.0.0.1:8765/shutdown >/dev/null 2>&1 || true
+              ok=1
+              break
             fi
             sleep 1
           done
-          echo "::error::exe 는 만들어졌지만 60초 안에 서버가 뜨지 않았습니다"
-          exit 1
+          if (( ok == 0 )); then
+            echo "::error::exe 는 만들어졌지만 60초 안에 서버가 뜨지 않았습니다"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
