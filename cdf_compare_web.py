@@ -2378,6 +2378,9 @@ HTML = r"""<!doctype html>
     #shiftGateNote{ font-size:11px; color:var(--ink3); white-space:nowrap;
       flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis }
     #shiftGateNote.is-on{ color:var(--acc-d) }
+    /* R-073: Post Only 안내 — 비어 있으면 자리를 차지하지 않는다. */
+    #postOnlyNote{ font-size:11px; color:#8a5a00; white-space:nowrap; display:none }
+    #postOnlyNote.is-on{ display:inline-flex; align-items:center; gap:4px }
     .gbtn{ height:28px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
       background:#fff; font-size:11.5px; font-weight:700; color:var(--ink2) }
     .gbtn:hover{ border-color:var(--acc-b); color:var(--acc-d); background:var(--acc-s) }
@@ -2487,6 +2490,15 @@ HTML = r"""<!doctype html>
       padding:0 10px; border-radius:999px; background:#1E3A2C; color:#8FE0B2;
       font-size:11.5px; font-weight:600 }
     .ab-state::before{ content:""; width:6px; height:6px; border-radius:50%; background:#49C97F }
+    /* R-074: 분석 중 문구가 바뀌어도 영역이 흔들리지 않게 폭을 고정한다.
+       tabular-nums 는 1% -> 2% 처럼 자릿수가 바뀔 때 글자가 밀리지 않게 한다. */
+    .ab-state{ min-width:206px; justify-content:flex-start }
+    .ab-state-text{ font-variant-numeric:tabular-nums; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis; flex:1 1 auto }
+    .ab-bar{ flex:0 0 auto; width:54px; height:4px; border-radius:2px; overflow:hidden;
+      background:rgba(255,255,255,.18); display:none }
+    .ab-bar.on{ display:block }
+    .ab-bar>i{ display:block; height:100%; width:0; background:#E0A33A; transition:width .12s linear }
     .ab-state.st-warn{ background:#3A3020; color:#E8C98A } .ab-state.st-warn::before{ background:#E0A33A }
     .ab-state.st-err{ background:#3A2322; color:#F0A6A1 } .ab-state.st-err::before{ background:#D9534F }
     .ab-actions{ margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto }
@@ -2598,12 +2610,30 @@ HTML = r"""<!doctype html>
     .item-tab{ height:36px; padding:0 13px; border-radius:8px; gap:7px;
       font-size:12.5px; font-weight:700; color:var(--r-ink2); background:none }
     .item-tab:hover:not(:disabled):not(.active){ background:var(--r-soft) }
-    .item-tab.active,.graph-tabs button.active{ background:var(--r-ink); color:#fff; border-radius:8px }
-    .item-tab.active::after,.graph-tabs button.active::after{ display:none }
+    /* R-076: 신뢰성 항목 탭의 선택 표시를 음영에서 밑줄로 바꾼다.
+       밑줄 색·모양은 배지 카드(.summary-card.picked::after)와 같게 맞춘다 —
+       아래 가장자리 전체(left/right 0), 높이 3px, var(--r-acc), 모서리 둥글림 없음.
+       그래프 탭(CDF·Diff. CDF…)은 요청 범위 밖이라 종전 알약 모양 그대로 둔다. */
+    .graph-tabs button.active{ background:var(--r-ink); color:#fff; border-radius:8px }
+    .graph-tabs button.active::after{ display:none }
+    /* R-076 후속: 선택 표시는 밑줄 하나로만 한다 — 항목명 색은 바꾸지 않는다.
+       (R-075 의 빨강/파랑이 선택했다고 사라지면 어느 항목에 Fail 이 있는지 놓친다.) */
+    .item-tab.active{ background:none; color:var(--r-ink2); border-radius:8px 8px 0 0 }
+    .item-tab.active::after{ content:""; position:absolute; left:0; right:0; bottom:0;
+      height:3px; background:var(--r-acc); border-radius:0 }
     .item-tab-badge{ font-size:11px; font-weight:600; font-family:var(--r-mono); color:var(--r-ink4);
       background:none; padding:0 }
-    .item-tab.active .item-tab-badge{ color:#C9CDD4 }
+    .item-tab.active .item-tab-badge{ color:var(--r-ink4); background:none }
+    /* R-075: 신뢰성 항목 탭 — 빨강(Fail 있음) / 노랑(데이터 없음) / 파랑(전부 Pass).
+       Fail Data Analysis 탭에서만 켠다(.tabs-colored). Pass 쪽은 종전 회색 그대로. */
     .item-tab-empty,.item-tab:disabled{ color:var(--r-ink4) }
+    .tabs-colored .item-tab-has-fail{ color:#B3261E }
+    .tabs-colored .item-tab-has-fail .item-tab-badge{ color:#B3261E; background:#FDECEA }
+    .tabs-colored .item-tab-all-pass{ color:#1F6FEB }
+    .tabs-colored .item-tab-all-pass .item-tab-badge{ color:#1F6FEB; background:#E8F1FD }
+    .tabs-colored .item-tab-empty,.tabs-colored .item-tab:disabled{ color:#9A6B00 }
+    .tabs-colored .item-tab-empty .item-tab-badge{ color:#9A6B00; background:#FFF4D6 }
+    /* 선택돼도 상태 색(빨/파)을 유지한다 — R-076 후속 */
     .temp-filter-group,.filter-chip{ font-family:inherit }
     /* FT TEMP. 은 라벨·Multi 체크가 같은 상자에 들어 있어 알약 배경을 씌우면
        라벨까지 칩처럼 보인다. 배경 없이 '밑줄 탭'으로 둔다. */
@@ -2696,10 +2726,13 @@ HTML = r"""<!doctype html>
     .summary-panel>.ptabs .pt:hover:not(.active){ color:var(--r-ink) }
     .summary-panel>.ptabs .pt.active{ color:var(--r-ink); border-bottom-color:var(--r-acc) }
     .ptool{ flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:8px;
-      padding:9px 12px; border-bottom:1px solid var(--r-line); background:var(--r-soft) }
+      min-height:52px; padding:9px 12px; border-bottom:1px solid var(--r-line);
+      background:var(--r-soft) }
     .ptool .r{ margin-left:auto; display:flex; align-items:center; gap:8px }
-    .pill{ display:inline-flex; align-items:center; gap:2px; padding:3px; background:var(--r-seg);
-      border:0; border-radius:8px }
+    /* R-077: 높이를 버튼에 맞춰 늘린다. 앞 블록의 .pill{height:26px} 이 그대로 남아
+       버튼(28px)이 알약 밖으로 삐져나와 Items/Samples 가 옆 요소와 선이 안 맞았다. */
+    .pill{ display:inline-flex; align-items:center; gap:2px; height:auto; padding:3px;
+      background:var(--r-seg); border:0; border-radius:8px }
     .pill button{ height:28px; padding:0 11px; border:0; border-radius:6px; background:none;
       font-family:inherit; font-size:12px; font-weight:600; color:var(--r-ink3); cursor:pointer }
     .pill button.active{ background:#fff; color:var(--r-ink); box-shadow:0 1px 2px rgba(20,22,27,.10) }
@@ -2829,7 +2862,7 @@ HTML = r"""<!doctype html>
           <span class="ab-logo"><svg viewBox="0 0 20 20" fill="none" stroke="#fff" stroke-width="1.5"><path d="M6 5.2h5.2a2.8 2.8 0 0 1 0 5.6H8.4v4"/></svg></span>
           <span class="ab-id"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></span>
           <span class="ab-crumb" id="conditionSummaryLine"></span>
-          <span class="ab-state" id="statusTop">Ready</span>
+          <span class="ab-state" id="statusTop"><span class="ab-state-text" id="statusTopText">Ready</span><span class="ab-bar" id="statusBar"><i></i></span></span>
           <span class="ab-actions">
             <button id="rawExportBtn" class="ab-btn" type="button" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10 3.5v9M6.4 9.3 10 12.9l3.6-3.6M3.8 15.6h12.4"/></svg> Raw Data Export</button>
             <button type="button" class="ab-btn light" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> 결과 새 창</button>
@@ -2856,7 +2889,7 @@ HTML = r"""<!doctype html>
                 <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
                 <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
               </div>
-              <label class="sp-check"><input id="includePreCheck" type="checkbox" checked><span>Including Pre</span></label>
+              <label class="sp-check" title="체크하면 Post 데이터만 분석합니다. Pre 비교가 필요한 기능은 감춰집니다."><input id="postOnlyCheck" type="checkbox"><span>Post Only</span></label>
               <section id="executionToolbar" class="sp-run">
                 <button id="analyzeBtn" class="sp-go"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 4.8v10.4L16 10z"/></svg> Analyze</button>
                 <div class="sp-runrow">
@@ -2865,7 +2898,6 @@ HTML = r"""<!doctype html>
                 </div>
               </section>
               <section class="sp-status">
-                <div class="sp-status-head"><span>Status</span><span class="status-pill" id="status">Ready</span></div>
                 <div class="sp-status-msg" id="summary"></div>
                 <div class="sp-status-foot"><span>Latest Analysis Date</span><span id="latestAnalysisDate">-</span></div>
               </section>
@@ -2921,7 +2953,7 @@ HTML = r"""<!doctype html>
             <button id="itemViewBtn" class="active" type="button" data-view="item">Items</button>
             <button id="sampleViewBtn" type="button" data-view="sample">Samples</button>
           </div>
-          <div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button></div><span id="shiftGateNote"></span>
+          <div class="pill" id="detailBasisBar" title="판정에 걸린 것 중 무엇을 보여줄지 고른다. 판정 자체는 바뀌지 않는다."><button id="basisShiftBtn" class="active" type="button" data-basis="shift">스펙 대비 기준</button><button id="basisSigmaBtn" type="button" data-basis="sigma">산포 기준</button></div><div class="pill" id="failBasisBar" title="Marginal = 규격은 벗어났지만 이동량이 집단의 일반적 범위 안인 건(Tail). 판정 자체는 바뀌지 않는다." hidden><button id="basisAllFailBtn" type="button" data-fail-basis="all">전체</button><button id="basisNoTailBtn" class="active" type="button" data-fail-basis="no-tail">Marginal 제외</button></div><span id="shiftGateNote"></span><span id="postOnlyNote"></span>
           <span id="flagAlphaLabel" class="flag-alpha-label"></span>
           <div class="r"><div class="column-toggle-wrap" id="columnToggleWrap"><button id="columnToggleBtn" class="gbtn column-toggle-btn" type="button">＋ 열</button><div id="columnToggleMenu" class="column-toggle-menu"></div></div></div>
         </div>
@@ -3106,9 +3138,11 @@ const passColumns = [
 // 판정축은 선택 항목 상세의 Fail Type / Reason 열에서 본다.
 const failColumns = passColumns;
 // 기본으로 보여줄 열. 두 탭이 같은 목록을 쓴다.
+/* R-078: 기본 표시 열 (Eden 님 지정) — Test No. · Item · Unit · LL · UL · Q'ty · Sample No.
+   Avg. 와 Delta Mean 은 기본에서 빼고 "＋ 열" 에서 켠다. Sample No. 는 기본으로 올린다. */
 const DEFAULT_COLUMN_KEYS = [
-  "test_number", "item", "unit", "lower_limit", "upper_limit", "avg",
-  "diff_mean", "qty"
+  "test_number", "item", "unit", "lower_limit", "upper_limit",
+  "qty", "sample_numbers"
 ];
 const DEFAULT_VISIBLE_COLUMNS_PASS = DEFAULT_COLUMN_KEYS;
 const DEFAULT_VISIBLE_COLUMNS_FAIL = DEFAULT_COLUMN_KEYS;
@@ -3141,16 +3175,26 @@ function normalizedAnalysisSelection(extra = {}) {
 }
 let dataRootPath = "";
 
-function setStatus(text) {
-  /* R-060: 상단 appbar 에도 같은 상태를 비춘다. 값/판정은 건드리지 않고 표시만 늘린다. */
+function setStatus(text, percent = null) {
+  /* R-074: 상태는 상단 appbar 한 곳에만 둔다. 조건 패널의 Status 줄은 없앴다.
+     예전 폴백(#status 가 없으면 #dataPath)은 그대로 두면 데이터 경로 글자가 상태
+     문구로 덮이므로 끊는다. */
   const top = document.getElementById("statusTop");
+  const textNode = document.getElementById("statusTopText");
+  if (textNode) textNode.textContent = text;
   if (top) {
-    top.textContent = text;
     top.classList.remove("st-warn", "st-err");
     if (/fail|error|실패/i.test(text)) top.classList.add("st-err");
     else if (/running|searching|initial|stopp|preparing|\d%/i.test(text)) top.classList.add("st-warn");
   }
-  const target = document.getElementById("status") || document.getElementById("dataPath");
+  const bar = document.getElementById("statusBar");
+  if (bar) {
+    const on = percent !== null && percent !== undefined;
+    bar.classList.toggle("on", on);
+    const fill = bar.firstElementChild;
+    if (fill) fill.style.width = on ? `${Math.max(0, Math.min(100, Math.round(percent)))}%` : "0%";
+  }
+  const target = document.getElementById("status");
   if (!target) return;
   target.textContent = text;
   if (!target.classList.contains("status-pill")) return;
@@ -3457,7 +3501,8 @@ function compareValues(a, b, col) {
 }
 function setAnalyzeProgress(percent, label) {
   const value = Math.max(0, Math.min(100, Math.round(percent || 0)));
-  setStatus(`${label || "Analyzing"} ${value}%`);
+  // R-074: 단계 이름(label)은 길이가 계속 바뀌어 영역을 흔든다 — 문구에 넣지 않는다.
+  setStatus(`Analyzing ${value}%`, value);
 }
 function emptyParallelProgressState() {
   return {
@@ -3479,7 +3524,10 @@ function setParallelAnalysisProgress(mode, percent, message = "Analyzing") {
   const pass = parallelAnalysisProgress.pass;
   const fail = parallelAnalysisProgress.fail;
   const total = Math.round((pass.progress + fail.progress) / 2);
-  setStatus(`Pass ${pass.progress}% / Fail ${fail.progress}% - ${modeDisplayName(key)} ${message || "Analyzing"} ${total}%`);
+  /* R-074: 「Pass 37% · Fail 12%」 고정 형식 + 진행 막대 (Eden 님 확정).
+     종전에는 뒤에 단계 이름까지 붙어("Pass Classifying Fail Types 38%") 항목이 바뀔
+     때마다 글자 길이가 달라져 영역 크기가 흔들렸다. */
+  setStatus(`Pass ${pass.progress}% · Fail ${fail.progress}%`, total);
 }
 function setAnalysisMode(mode, renderExisting = true) {
   // R-064: Fail 탭(Fail Type)과 Pass 탭(셀렉 유형)은 유형 이름 자체가 다르다. 그대로
@@ -3505,9 +3553,18 @@ function setAnalysisMode(mode, renderExisting = true) {
 function resultColumns() {
   return (analysis?.analysis_mode || analysisMode) === "fail" ? failColumns : passColumns;
 }
+/* R-073: Post Only 결과에서는 Pre 가 있어야 값이 나오는 열을 목록에서 뺀다.
+   값이 전부 N/A 인 열을 남겨두면 고장으로 오해한다. */
+const PRE_DEPENDENT_SUMMARY_COLS = ["diff_mean"];
+const PRE_DEPENDENT_DETAIL_COLS = ["pre_value", "diff", "diff_s"];
+function dropPreDependent(cols, keys, payload = analysis) {
+  if (preAvailable(payload)) return cols;
+  return cols.filter(([key]) => !keys.includes(key));
+}
 function resultColumnsForPayload(payload, mode = payload?.analysis_mode) {
   const resultMode = mode === "fail" ? "fail" : (payload?.analysis_mode || "pass");
-  return resultMode === "fail" ? failColumns : passColumns;
+  const cols = resultMode === "fail" ? failColumns : passColumns;
+  return dropPreDependent(cols, PRE_DEPENDENT_SUMMARY_COLS, payload);   // R-073
 }
 function readoutDetailColumns() {
   const labels = (itemCache[selectedItem]?.post_readout_labels || analysis?.post_readout_labels || []).slice(0, 3);
@@ -3665,12 +3722,13 @@ function detailColumns() {
   // 같은 열에 담기는 값의 성격이 탭마다 다르다 — Fail 탭은 이탈 유형(Excessive·Slight…),
   // Abnormal Pass 탭은 판정축(Measured·Delta). 한 이름으로 묶으면 같은 종류로 오해된다. (R-020)
   const specOutHeader = (analysis?.analysis_mode || analysisMode) === "fail" ? "Fail Type" : "Reason";
-  return [
+  const cols = [
     ["sample", "Sample No."], ["spec_out_type", specOutHeader],
     ["pre_value", "Pre"], ["post_t1", postReadoutHeader(1)], ["post_t2", postReadoutHeader(2)], ["post_t3", postReadoutHeader(3)],
     ["unit", "Unit"], ["mea_s", "Z-Score (Value)"], ["diff", "Delta"],
     ["diff_s", "Z-Score (Delta)"], ["graph_exclude", "Exclude"], ["need_bench", "Need Bench?"]
   ];
+  return dropPreDependent(cols, PRE_DEPENDENT_DETAIL_COLS);   // R-073
 }
   function updatePanelMode() {
     const mode = analysis?.analysis_mode || analysisMode;
@@ -3755,6 +3813,9 @@ function updateChartTitles() {
   renderGraphExcludeNote();
 }
 function updateGraphPanels() {
+  /* R-073: Post Only 결과로 바뀌면 Diff. CDF / Scattered Plot 탭이 사라진다.
+     보고 있던 탭이 그 둘이면 아무 패널도 안 켜져 빈 칸이 되므로 CDF 로 되돌린다. */
+  if (!graphTabOptions().some(([key]) => key === activeGraphTab)) activeGraphTab = "cdf";
   const panelMap = {
     cdf: "chart-panel",
     diff: "diff-cdf-panel",
@@ -3993,6 +4054,19 @@ function renderShiftGateNote() {
     ? `스펙 대비 미미 ${foldedSamples}건 제외 (항목 ${foldedItems}개 · 스펙폭의 ${pct}% 미만)`
     : `스펙 대비 미미 제외 없음 (기준 ${pct}%)`;
 }
+/* R-073: Post Only 로 돌린 결과인가. 체크박스가 아니라 **분석 결과**를 본다 —
+   분석 뒤에 체크박스만 바꿔도 화면이 따라 바뀌면 보고 있는 결과와 어긋난다.
+   옛 캐시에는 include_pre 가 없으므로 없으면 Pre 가 있는 것으로 본다. */
+function preAvailable(payload = analysis) {
+  return (payload?.include_pre ?? true) !== false;
+}
+function renderPostOnlyNote() {
+  const node = document.getElementById("postOnlyNote");
+  if (!node) return;
+  const on = !!analysis && !preAvailable();
+  node.classList.toggle("is-on", on);
+  node.textContent = on ? "Post Only — Pre 비교 항목(Delta · Diff. CDF · Scattered Plot · T0)은 제외됐습니다" : "";
+}
 function updateBasisBars() {
   // R-032: pass 모드는 "스펙 대비/산포", fail 모드는 "Marginal 제외/전체" — 성격이 달라 바를 나눈다.
   const isFail = (analysis?.analysis_mode || analysisMode) === "fail";
@@ -4000,6 +4074,20 @@ function updateBasisBars() {
   const failBar = document.getElementById("failBasisBar");
   if (passBar) passBar.hidden = isFail;
   if (failBar) failBar.hidden = !isFail;
+  /* R-073: 산포(Delta) 축은 Pre 가 있어야 성립한다. Post Only 면 그 축으로 걸린 건이
+     하나도 없으므로 탭을 감추고 스펙 대비 기준으로 고정한다. */
+  const sigmaBtn = document.getElementById("basisSigmaBtn");
+  if (sigmaBtn) {
+    const hideSigma = !preAvailable();
+    sigmaBtn.hidden = hideSigma;
+    if (hideSigma && detailBasis === "sigma") {
+      detailBasis = "shift";
+      document.querySelectorAll("#detailBasisBar button").forEach(button => {
+        button.classList.toggle("active", button.dataset.basis === detailBasis);
+      });
+    }
+  }
+  renderPostOnlyNote();
   document.querySelectorAll("#failBasisBar button").forEach(button => {
     button.classList.toggle("active", button.dataset.failBasis === failBasis);
   });
@@ -4469,7 +4557,13 @@ function updateResultTabVisibility() {
   const showOver = resultViewMode === "sample";
   if (resultWrap) resultWrap.style.display = showOver ? "none" : "";
   if (overWrap) overWrap.style.display = showOver ? "block" : "none";
-  if (toggleWrap) toggleWrap.style.display = showOver ? "none" : "";
+  /* R-077: display:none 으로 빼면 이 줄에서 가장 큰 요소가 사라져 나머지가
+     위로 4px 올라간다(실측 y 148 -> 144). 자리는 남기고 보이기만 감춘다. */
+  if (toggleWrap) {
+    toggleWrap.style.display = "";
+    toggleWrap.style.visibility = showOver ? "hidden" : "";
+    toggleWrap.setAttribute("aria-hidden", showOver ? "true" : "false");
+  }
 }
 function setResultViewMode(view) {
   resultViewMode = view === "sample" ? "sample" : "item";
@@ -4519,7 +4613,11 @@ function renderAnalysisFilterBar() {
     return button;
   };
   const reliabilityGroup = document.createElement("div");
-  reliabilityGroup.className = "item-tabs";
+  /* R-075 후속: 탭 색(빨/노/파)은 Fail 유무가 기준이라 Pass Data Analysis 탭에서는
+     의미가 없다. 그쪽에서는 색을 켜지 않는다 — 클래스는 그대로 두고 색만 범위를 건다.
+     비활성(데이터 없음) 동작은 두 탭 모두 종전대로 유지된다. */
+  const colorTabs = (analysis?.analysis_mode || analysisMode) === "fail";
+  reliabilityGroup.className = colorTabs ? "item-tabs tabs-colored" : "item-tabs";
   reliabilityGroup.setAttribute("role", "tablist");
   reliabilityGroup.setAttribute("aria-label", "시험 항목");
   /* R-039: 칩은 "Select 수 / 총 수량" 이다. 두 숫자 모두 유닛(샘플) 기준이고,
@@ -4535,13 +4633,42 @@ function renderAnalysisFilterBar() {
   const hasUnitInfo = !!analysis?.unit_counts?.by_reliability;
   const itemCounts = {};
   (analysis?.item_counts || []).forEach(entry => { itemCounts[entry.reliability_item] = entry; });
+  /* R-075: 신뢰성 항목 탭을 세 가지로 나눈다 (Eden 님 확정).
+       빨강  Fail 있는 항목        — 볼 것이 있다
+       노랑  데이터가 아예 없는 항목 — 시험 자체가 없다 (누를 수 없다)
+       파랑  전부 Pass 인 항목      — 분석은 됐고 Fail 이 0 이다
+     판정은 unit_counts 인구조사(total/pass/fail)로 한다 — 탭(Fail/Pass)이나 기준 탭에
+     따라 색이 흔들리면 안 되기 때문이다. */
+  const tabState = value => {
+    if (!hasUnitInfo) {
+      /* 단일 조건 분석에는 항목별 인구조사(by_reliability)가 없다 — unit_counts 가
+         조건 하나의 {total,fail,pass} 뿐이다. 정보가 없으면 색을 입히지 않고
+         예전처럼 평범한 탭으로 둔다 (누를 수 있어야 한다). */
+      const c = count0(value);
+      if (!c) return "unknown";
+      if (!c.total) return "none";
+      return (c.select || 0) > 0 ? "fail" : "pass";
+    }
+    const totals = unitTotals[value];
+    if (!(totals?.total || 0)) return "none";
+    return (totals.fail || 0) > 0 ? "fail" : "pass";
+  };
+  const count0 = value => itemCounts[value] || null;
   const makeItemTab = (value, label, count) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "item-tab";
     button.dataset.item = value;
-    const isEmpty = hasUnitInfo ? !(unitTotals[value]?.total || 0) : (count && count.total === 0);
-    button.classList.toggle("item-tab-empty", !!isEmpty);
+    const state = tabState(value);
+    const isEmpty = state === "none";
+    button.dataset.state = state;
+    button.classList.toggle("item-tab-empty", isEmpty);
+    button.classList.toggle("item-tab-has-fail", state === "fail");
+    button.classList.toggle("item-tab-all-pass", state === "pass");
+    button.title = isEmpty ? "데이터가 없는 시험 항목입니다"
+      : !colorTabs ? ""
+      : state === "pass" ? "분석됐고 Fail 이 없습니다 (전부 Pass)"
+      : state === "fail" ? "Fail 이 있는 시험 항목입니다" : "";
     if (isEmpty) button.disabled = true;
     button.classList.toggle("active", (analysisFilters.reliability_item || "") === value);
     const labelSpan = document.createElement("span");
@@ -4622,8 +4749,12 @@ function makeGraphCheckbox(labelText, checked, onChange) {
 function graphTabOptions() {
   // R-070: Wafer Map 도 탭 하나로 들어온다. 종전에는 그래프 아래에 상시 표시였고,
   // 그 자리(2x2 격자의 우하단)는 그래프 패널이 세로로 내려받는다.
-  return [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"],
-          ["scatter", "Scattered Plot"], ["wafer", "Wafer Map"]];
+  const tabs = [["cdf", "CDF"], ["diff", "Diff. CDF"], ["ppf", "PPF"],
+                ["scatter", "Scattered Plot"], ["wafer", "Wafer Map"]];
+  // R-073: Diff. CDF 는 Pre 대비 변화량 분포이고 Scattered Plot 은 X축이 Diff_S 다.
+  // Post Only 면 둘 다 그릴 값이 없어 탭에서 뺀다.
+  if (preAvailable()) return tabs;
+  return tabs.filter(([key]) => key !== "diff" && key !== "scatter");
 }
 function makeGraphTabButton(key, label) {
   const button = document.createElement("button");
@@ -4666,7 +4797,11 @@ function renderGraphFilterBar() {
   const readoutGroup = document.createElement("div");
   readoutGroup.className = "graph-filter-group";
   readoutGroup.innerHTML = "<strong>Read-out</strong>";
-  [["pre_t0", "T0"], ["post_t1", "T1"], ["post_t2", "T2"], ["post_t3", "T3"]].forEach(([key, label]) => {
+  // R-073: T0 은 Pre 곡선이다. Post Only 면 뺀다.
+  const readoutKeys = preAvailable()
+    ? [["pre_t0", "T0"], ["post_t1", "T1"], ["post_t2", "T2"], ["post_t3", "T3"]]
+    : [["post_t1", "T1"], ["post_t2", "T2"], ["post_t3", "T3"]];
+  readoutKeys.forEach(([key, label]) => {
     readoutGroup.appendChild(makeGraphCheckbox(label, analysisFilters.readouts[key] !== false, checked => {
       analysisFilters.readouts[key] = checked;
       drawCharts();
@@ -4782,7 +4917,7 @@ async function waitForJob(jobId, label = "", mode = "") {
 async function requestAnalysisMode(mode) {
   if (stopAnalysisRequested) throw new Error("Analysis stopped.");
   setParallelAnalysisProgress(mode, 0, "Preparing");
-  const includePre = document.getElementById("includePreCheck").checked ? "1" : "0";
+  const includePre = document.getElementById("postOnlyCheck").checked ? "0" : "1";
   const payload = normalizedAnalysisSelection({ analysis_mode: mode, include_pre: includePre, analysis_run_id: activeAnalysisRunId });
   const res = await fetch("/analyze-selection", {
     method: "POST",
@@ -4867,7 +5002,7 @@ async function initializeAnalysis() {
   btn.disabled = true;
   setStatus("Initializing...");
   try {
-    const includePre = document.getElementById("includePreCheck").checked ? "1" : "0";
+    const includePre = document.getElementById("postOnlyCheck").checked ? "0" : "1";
     const payload = normalizedAnalysisSelection({ include_pre: includePre });
     const res = await fetch("/initialize-analysis", {
       method: "POST",
@@ -5431,11 +5566,11 @@ function renderConditionSummaryLine() {
   parts.push(lookupState.item ? lookupState.item : "전체 시험 항목");
   if (lookupState.readout && lookupState.readout !== AUTO_LATEST_READOUT) parts.push(lookupState.readout);
   if (lookupState.ft_temp) parts.push(lookupState.ft_temp);
-  const includePre = document.getElementById("includePreCheck")?.checked;
+  const includePre = !document.getElementById("postOnlyCheck")?.checked;
   if (!lookupState.device) { line.textContent = ""; return; }
   /* R-060: appbar 빵조각. 첫 토막(Device)만 강조하고 나머지는 그대로 이어 붙인다. */
   const head = parts.shift();
-  const rest = parts.concat([includePre ? "Pre 포함" : "Pre 제외"]).join(" · ");
+  const rest = parts.concat([includePre ? "Pre 포함" : "Post Only"]).join(" · ");
   line.innerHTML = "";
   const b = document.createElement("b");
   b.textContent = head;
@@ -5751,6 +5886,18 @@ async function refreshSelectedItem() {
     drawCharts();
     if (analysis) setStatus("Done");
   } catch (err) {
+    /* R-075: 전부 Pass 인(= 이 탭에 볼 행이 없는) 시험 항목을 누르면, 띄울 항목이
+       없어 /item 이 실패하고 팝업이 떴다. 결과가 없는 것은 오류가 아니므로 조용히
+       빈 화면으로 둔다. 진짜 실패(볼 행이 있는데 못 읽은 경우)만 팝업을 띄운다. */
+    if (!filteredResultRows().length) {
+      selectedItem = "";
+      setDetailLoading(false);
+      renderDetailTable();
+      renderGraphExcludeNote();
+      drawCharts();
+      if (analysis) setStatus("Done");
+      return;
+    }
     setStatus("Failed");
     alert(err.message);
   }
@@ -8502,21 +8649,22 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
             progress(percent, message)
 
     app = object.__new__(CdfCompareApp)
+    update(1, "Starting")
     app.include_pre = include_pre
     if include_pre:
-        update(25, "Reading Pre")
+        update(6, "Reading Pre")
         app.pre_records = cached_item_records(pre_path)
     else:
         app.pre_records = {}
-    update(38, "Reading Post")
+    update(12, "Reading Post")
     app.post_records = cached_item_records(post_path, last_sample=True)
     if bin1_only:
-        update(70, "Filtering Pass Samples")
+        update(16, "Filtering Pass Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
         app.excluded_items = excluded_items_by_unit(app.pre_records, app.post_records)
         app.pre_records, app.post_records = filter_records_by_allowed_units(app.pre_records, app.post_records)
     else:
-        update(70, "Excluding Fail Samples")
+        update(16, "Excluding Fail Samples")
         app.pre_records, app.post_records = filter_pass_analysis_records(app.pre_records, app.post_records)
         app.excluded_items = []
     # pre_cdf_values_for_item() 의 PASS_SAMPLE_IDS_AUTO 센티널을 여기서 한 번만 실제 값으로
@@ -8525,12 +8673,14 @@ def make_app(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     # payload_with_items 866s/921s = 94%). None 은 "bin 데이터 없음 = 필터 안 함"이라는 유효한
     # 결과이므로 센티널과 구분해 그대로 저장한다.
     app.pre_pass_samples = pass_sample_ids_from_records(app.pre_records) if include_pre else None
-    update(76, "Preparing Items")
+    update(20, "Preparing Items")
     app.pre_items = {item: [record["value"] for record in records] for item, records in app.pre_records.items()}
     app.post_items = {item: [record["value"] for record in records] for item, records in app.post_records.items()}
     app.item_analysis_cache = {}
-    update(84, "Calculating")
-    app.results = calculate_results_vectorized(app)
+    update(24, "Calculating")
+    # R-074: 긴 구간이라 여기에 폭을 몰아준다 (24 -> 90, 항목마다 1%씩).
+    app.results = calculate_results_vectorized(
+        app, step_reporter(update, 24, 90, len(app.post_items), "Calculating"))
     return app
 
 
@@ -8809,8 +8959,32 @@ def item_analysis(app, item):
     return entry
 
 
-def calculate_results_vectorized(app):
-    return [item_analysis(app, item)["result_row"] for item in sorted(app.post_items)]
+def step_reporter(update, lo, hi, total, message):
+    """항목 루프에서 1% 단위로 진행률을 올리는 보고기 (R-074).
+
+    종전에는 단계마다 28/46/70/92/98 로만 보고해서, 항목이 500개든 5개든 같은 계단으로
+    튀었다. 정수 퍼센트가 바뀔 때만 실제로 보고해 호출 비용을 줄인다.
+    """
+    state = {"last": -1}
+
+    def report(index):
+        if not total:
+            return
+        value = lo + int((hi - lo) * index / total)
+        if value != state["last"]:
+            state["last"] = value
+            update(value, message)
+    return report
+
+
+def calculate_results_vectorized(app, report=None):
+    items = sorted(app.post_items)
+    rows = []
+    for index, item in enumerate(items):
+        if report:
+            report(index)
+        rows.append(item_analysis(app, item)["result_row"])
+    return rows
 
 
 def calculate_post_only_results(app):
@@ -9533,6 +9707,11 @@ def merge_combo_payloads(combo_payloads, mode):
             merged.setdefault("item_types", {"rows": []})["rows"].extend(combo_item_types["rows"])
         if payload.get("all_items"):
             merged.setdefault("all_items", []).extend(payload["all_items"])
+        # R-073: 조합 중 하나라도 Pre 없이 돌았으면 Pre 비교 기능을 쓸 수 없다.
+        if not payload.get("include_pre", True):
+            merged["include_pre"] = False
+        else:
+            merged.setdefault("include_pre", True)
         for row in payload.get("results", []):
             rel = row.get("reliability_item", "")
             temp = row.get("ft_temp", "")
@@ -10471,7 +10650,7 @@ def compute_summary_counts(results, excluded_items):
 def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=True):
     app = make_app(pre_path, post_path, bin1_only, progress, include_pre)
     if progress:
-        progress(92, "Building Summary")
+        progress(92, "Building Summary")   # R-074: 뒤 집계 구간
     over = items_over_sigma_by_sample_cached(app)
     over_rows = [
         {"sample": sample, "items": sorted(items, key=lambda item: item_sort_key(app, item))}
@@ -10497,6 +10676,7 @@ def analyze_to_json(pre_path, post_path, bin1_only, progress=None, include_pre=T
         "unit_types": select_unit_types_payload,  # R-053 (표시 전용)
         "item_types": select_item_types_payload,  # R-064 보완 (표시 전용)
         "all_items": all_item_rows_from_records(app.post_records),  # R-067 (표시 전용)
+        "include_pre": bool(include_pre),  # R-073 (표시 전용) — 화면이 Pre 의존 기능을 감출 때 본다
     }
     # R-038: 배지가 유닛(샘플) 기준으로 바뀐다. pass payload 에는 지금까지 항목 수만
     # 있어서 "총 샘플 수"를 낼 수 없었다. 최상위 키라 골든 비교 대상이 아니다.
@@ -10523,7 +10703,8 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         if progress:
             progress(percent, message)
 
-    update(28, "Reading Pre")
+    update(1, "Starting")
+    update(8, "Reading Pre")
     pre_records = cached_item_records(pre_path) if include_pre else {}
     pre_rows = rows_from_records(pre_records, sort_by_sample=True) if include_pre else []
     pre_by_sample = {
@@ -10531,7 +10712,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         for index, row in enumerate(pre_rows, start=1)
     } if include_pre else {}
     pre_pass_samples = pass_sample_ids_from_records(pre_records) if include_pre else None
-    update(46, "Merging Retest")
+    update(16, "Merging Retest")
     sample_states, merged_files = merged_fail_rows(post_files)
     pass_sample_states = sample_states
     fail_samples = [
@@ -10553,11 +10734,14 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         },
         key=lambda item: item_sort_key_for_records(sample_states, item),
     )
-    update(70, "Classifying Fail Types")
+    update(20, "Classifying Fail Types")
     item_payloads = {}
     summary_rows = []
     results = []
-    for item in item_names:
+    # R-074: 긴 구간이라 여기에 폭을 몰아준다 (20 -> 90, 항목마다 1%씩).
+    report_item = step_reporter(update, 20, 90, len(item_names), "Classifying Fail Types")
+    for loop_index, item in enumerate(item_names):
+        report_item(loop_index)
         post_records = []
         pre_values_by_sample = {}
         # R-043: 형상 판정의 Core 는 "그 항목의 전 유닛" 이다. post_records 는 규격을
@@ -10773,6 +10957,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
         "unit_types": fail_unit_types(item_payloads),  # R-053 (표시 전용)
         "item_types": fail_item_types(item_payloads),  # R-064 보완 (표시 전용)
         "all_items": all_item_rows_from_states(sample_states),  # R-067 (표시 전용)
+        "include_pre": bool(include_pre),  # R-073 (표시 전용)
         "message": message,
         "flag_limit": FLAG_LIMIT,  # mode="fixed" 일 때만 쓰이는 값. grubbs 모드에서는 항목별 mea_threshold/diff_threshold 를 쓴다.
         "flag_mode": FLAG_MODE,
@@ -10886,7 +11071,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 28  # 27->28: item_types / all_items 추가 (R-064 보완, R-067).
+CACHE_SCHEMA = 29  # 28->29: include_pre 추가 (R-073 Post Only).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
