@@ -119,6 +119,17 @@ fixed(3.0) 와 grubbs(4.299) 가 거의 동일한 결과를 냈다.
   `CLAUDE.md` §11, `docs/verdict_reports/FINAL.md`.
 - **Reliability Type 제거** — 폴더명 규칙이 `순번_Ver_Lot_Purpose` 4토막으로 확정.
   드롭다운 삭제. `Reliability Items`(고정 9종)는 유지. → 0단계 이전 작업으로 수행.
+  **2026-11-06 R-079 로 되살렸다.** 사내에서 ERT / Qual. / Qual. (Q100) / ORT 네 구분을
+  쓰기 시작해 `Test Data/SM3502Q/00_MVT0-0_1111_111` 이 `00_MVT0-0_ERT_123456_Tool 검증용`
+  으로 바뀌었고, 4토막 파서가 이를 `Lot=ERT, Purpose=123456_Tool 검증용` 으로 잘못 읽고 있었다.
+  (덤으로 골든 회귀 게이트가 폴더명 불일치로 FAIL 상태였다 — 발견 당시 `regression_check`
+  legacy/shape 둘 다 "Matching reliability data folder was not found.")
+  되살릴 때 c4958dd 가 고친 버그를 다시 들이지 않으려고 **type 을 필수가 아닌 선택 축**으로
+  넣었다: 비면 필터를 안 걸고, 4·5토막 폴더가 한 루트 안에 섞여 있어도 둘 다 보인다.
+  골든은 **내용을 한 글자도 고치지 않고** 파일명과 index.json 의 식별 칸만 새 폴더명에 맞췄다.
+  판정 숫자 불변은 그 상태로 게이트 5건 PASS 가 증명한다.
+  남은 것: `tests/verdict_base*/` 의 파일명도 옛 폴더명이다. 게이트가 쓰지 않는
+  수동 비교용(`tools/verdict_diff.py`)이라 그대로 뒀다. 쓸 일이 생기면 그때 맞춰야 한다.
 - **재시험 대표값** — 마지막 회차 사용 (현재 동작 유지).
 - **회복 유닛** — `Intermittent` 로 분류 (§S6/S6b 로 구현 완료, 위 항목 참조).
 - **§U2(e77440c) 이후 fail_type `Tail` → `Slight` 로 바뀐 2건 (2026-08-04, 골든 재생성 시점)**

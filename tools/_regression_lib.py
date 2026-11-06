@@ -24,7 +24,8 @@ def set_data_root(web, data_root):
     web.DATA_ROOT = os.path.abspath(data_root)
 
 
-SELECTION_KEYS = ("device", "ver", "lot", "purpose", "item", "readout", "ft_temp")
+# R-079: 폴더명 5토막의 신뢰성 시험 구분(type)도 선택 키에 포함한다. 4토막 조건은 "" 가 들어간다.
+SELECTION_KEYS = ("device", "ver", "type", "lot", "purpose", "item", "readout", "ft_temp")
 
 
 def iter_selections(web):
@@ -46,6 +47,7 @@ def iter_selections(web):
                         yield {
                             "device": device,
                             "ver": folder["ver"],
+                            "type": folder["type"],
                             "lot": folder["lot"],
                             "purpose": folder["purpose"],
                             "folder": folder["name"],

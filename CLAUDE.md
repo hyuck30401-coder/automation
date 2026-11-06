@@ -75,18 +75,33 @@ ThreadingHTTPServer
 ## 3. 데이터 구조 — 실측으로 확인한 사실
 
 > 아래는 전부 실제 파일을 열어 확인한 내용이다. 추측이 아니다.
-> 샘플 데이터: `Test Data/SM3502Q/00_MVT0-0_1111_111/`
+> 샘플 데이터: `Test Data/SM3502Q/00_MVT0-0_ERT_123456_Tool 검증용/`
 
 ### 3-1. 폴더 규약
 
 ```
 DATA_ROOT/
-└── <Device>/                                ← 예) SM3502Q
-    └── <숫자>_<Ver>_<Lot>_<Purpose>/         ← '_' 3개.  예) 00_MVT0-0_1111_111
-        ├── ...pre... /                       ← 이름에 'pre' 포함 (부분 일치)
+└── <Device>/                                        ← 예) SM3502Q
+    └── <숫자>_<Ver>[_<구분>]_<Lot>_<Purpose>/        ← 구분은 선택. 아래 R-079 참조
+        ├── ...pre... /                               ← 이름에 'pre' 포함 (부분 일치)
         └── ...post.../
              └── <..>_<온도코드>_..._<신뢰성항목>_<리드아웃>.csv|CSV|xlsx
 ```
+
+**R-079 — 조건 폴더명은 4토막과 5토막을 모두 받는다.**
+
+```
+4토막  <숫자>_<Ver>_<Lot>_<Purpose>              예) 01_MVT1-3_1111_111
+5토막  <숫자>_<Ver>_<구분>_<Lot>_<Purpose>        예) 00_MVT0-0_ERT_123456_Tool 검증용
+```
+
+- 5토막으로 읽는 조건은 **3번째 토막이 코드 상수 `RELIABILITY_TYPES` 에 있을 때** 하나뿐이다.
+  언더바 개수만으로 가르면 Purpose 에 언더바가 들어간 4토막 폴더를 5토막으로 오인한다.
+- `RELIABILITY_TYPES = ["ERT", "Qual.", "Qual. (Q100)", "ORT"]`.
+  **새 구분값이 생기면 이 상수에 한 줄 추가해야 한다.** 목록에 없는 값은 Lot 으로 읽힌다.
+- 구분 토막에 언더바(`_`)는 쓸 수 없다. Purpose 에는 써도 된다 (남은 토막을 되붙인다).
+- Reliability Type 은 **선택 축이다.** 비워두면 필터를 걸지 않고 전체 폴더를 본다.
+  필수로 만들면 4토막 폴더가 선택 불가가 된다 — 2026-08-02 `c4958dd` 가 고친 버그다.
 
 - 온도코드: `RR`/`ER`=Room, `RH`/`EH`=Hot, `RC`/`EC`=Cold. **`RT` 는 인식 안 됨**
 - 확장자 대문자(`.CSV`)는 정상 처리됨
@@ -188,20 +203,24 @@ history 에서 pass 를 찾는데 history 가 비어 있어 **원리적으로 �
 
 ---
 
-## 4. 화면 입력 필드 (Reliability Type 제거 후 7개)
+## 4. 화면 입력 필드 (8개)
 
 | # | 라벨 | 값의 출처 |
 |---|---|---|
 | 1 | Device | `DATA_ROOT` 바로 아래 폴더 이름 |
-| 2 | Ver. | 조건 폴더명 2번째 토막 |
-| 3 | Lot No. | 조건 폴더명 3번째 토막 |
-| 4 | Purpose | 조건 폴더명 4번째 토막 |
-| 5 | Reliability Items | **코드 상수 `RELIABILITY_ITEMS` 고정 9종** (파일을 보지 않음) |
-| 6 | Read-out | Post 파일명 마지막 토막 |
-| 7 | FT Temp. | Post 파일명 온도코드 |
+| 2 | Reliability Type | 조건 폴더명 3번째 토막 — **5토막일 때만.** 선택 사항(R-079) |
+| 3 | Ver. | 조건 폴더명 2번째 토막 |
+| 4 | Lot No. | 조건 폴더명 Lot 토막 |
+| 5 | Purpose | 조건 폴더명 Purpose 토막 |
+| 6 | Reliability Items | **코드 상수 `RELIABILITY_ITEMS` 고정 9종** (파일을 보지 않음) |
+| 7 | Read-out | Post 파일명 마지막 토막 |
+| 8 | FT Temp. | Post 파일명 온도코드 |
 
-**1~4번이 조건 폴더 하나를 확정하고, 5~7번이 그 폴더 안 `01_Post` 의 파일을 고른다.
+**1~5번이 조건 폴더 하나를 확정하고, 6~8번이 그 폴더 안 `01_Post` 의 파일을 고른다.
 두 축은 서로 참조하지 않는다.**
+
+> 2번 Reliability Type 만 필수가 아니다. `has_base_analysis_selection` 과
+> `selected_data_path` 의 필수 목록에 넣지 마라 — 4토막 폴더가 통째로 막힌다.
 
 ---
 

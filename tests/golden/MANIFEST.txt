@@ -7,16 +7,20 @@ git commit: f72582612c1b46ff79aa9a93f7d445579f2c273e
 
 ## 골든 파일
 파일명                                                          sha256                                                                  바이트
-SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__pass.json  ff40223050caf6931caf41512a98c16aa764b179f1aa808f700623f1e3f9e6c9    3486351
-SM3502Q__00_MVT0-0_1111_111__HTOL__1000hrs__Room__fail.json  bc2d4c2f27c22a897a30bc78a70f0a73f2e7c0b68d36c9f66a3a4cdd2653846f      14978
+SM3502Q__00_MVT0-0_ERT_123456_Tool___HTOL__1000hrs__Room__pass.json  ff40223050caf6931caf41512a98c16aa764b179f1aa808f700623f1e3f9e6c9    3486351
+SM3502Q__00_MVT0-0_ERT_123456_Tool___HTOL__1000hrs__Room__fail.json  bc2d4c2f27c22a897a30bc78a70f0a73f2e7c0b68d36c9f66a3a4cdd2653846f      14978
 index.json                                                   f53285a63d243be03a95c7c2bec3f5fd75bc2bc4aa767ddaf909fb73e1a6a457        884
 
 ## 조합별 요약
 조합                                                              항목수  SELECT수   detail행수  fail_type 분포
-SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[pass]              138      138       7866  {'': 7866}
-SM3502Q/00_MVT0-0_1111_111/HTOL/1000hrs/Room[fail]                5        5         24  {'Excessive': 3, 'Slight': 2, 'Tail': 17, 'Unstable': 2}
+SM3502Q/00_MVT0-0_ERT_123456_Tool 검증용/HTOL/1000hrs/Room[pass]              138      138       7866  {'': 7866}
+SM3502Q/00_MVT0-0_ERT_123456_Tool 검증용/HTOL/1000hrs/Room[fail]                5        5         24  {'Excessive': 3, 'Slight': 2, 'Tail': 17, 'Unstable': 2}
 
 ## 직전 재생성 대비 변경 사유 (사람이 적는 칸)
 - W1/W2 payload 변경 반영: selected_summary 에 fail_type 및 조건 필드(reliability_item,
   ft_temp, readout) 추가로 fail.json 해시 변경 (35a4d138… → bc2d4c2f…).
 - pass.json 해시는 불변 — 판정 수치에는 변화 없음.
+- 2026-11-06 R-079: 조건 폴더가 `00_MVT0-0_1111_111` -> `00_MVT0-0_ERT_123456_Tool 검증용` 로 바뀌었다.
+  골든 JSON 본문은 한 글자도 고치지 않고 파일명과 index.json 의 folder/lot/purpose/type
+  칸만 새 이름에 맞췄다. 그래서 sha256 은 전부 그대로다 — 판정 숫자가 움직이지 않았다는
+  뜻이고, 고친 코드로 다시 계산한 값이 이 골든과 일치한다는 것은 게이트 5건 PASS 로 확인했다.

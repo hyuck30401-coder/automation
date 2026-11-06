@@ -2878,6 +2878,7 @@ HTML = r"""<!doctype html>
               <div class="sp-label">PRODUCT</div>
               <div class="sp-grid">
                 <div class="field wide"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
+                <div class="field wide"><label>Reliability Type</label><select id="typeSelect" title="비워두면 구분 없이 전체 폴더를 봅니다. 폴더명이 4토막인 조건은 구분값이 없습니다."></select></div>
                 <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
                 <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
                 <div class="field wide"><label>Purpose</label><select id="purposeSelect"></select></div>
@@ -3153,6 +3154,7 @@ const columnVisibility = {
 const reliabilityItems = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"];
 const AUTO_LATEST_READOUT = "__latest__";
 const lookupOrder = [
+  ["type", "typeSelect"],
   ["ver", "verSelect"],
   ["lot", "lotSelect"],
   ["purpose", "purposeSelect"],
@@ -3160,7 +3162,10 @@ const lookupOrder = [
   ["readout", "readoutSelect"],
   ["ft_temp", "ftTempSelect"]
 ];
-const lookupState = { device: "", ver: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
+const lookupState = { device: "", type: "", ver: "", purpose: "", lot: "", item: "", readout: "", ft_temp: "" };
+/* R-079: Reliability Type 은 필터이지 필수 선택이 아니다. 빈 항목 문구를 "Select" 가
+   아니라 "전체" 로 둬서, 안 고르면 구분 없이 전부 본다는 뜻이 드러나게 한다. */
+const LOOKUP_PLACEHOLDER = { type: "전체" };
 let pendingLookup = null;   // 진행 중인 refreshLookup 체인
 function normalizedAnalysisSelection(extra = {}) {
   const payload = { ...lookupState, ...extra };
@@ -3325,7 +3330,7 @@ function resetLookupControls() {
     } else if (key === "ft_temp") {
       setFtTempOptions([], "Select");
     } else {
-      setSelectOptions(selectId, [], "Select");
+      setSelectOptions(selectId, [], LOOKUP_PLACEHOLDER[key] || "Select");
     }
   });
 }
@@ -3338,7 +3343,7 @@ function clearLookupAfter(field) {
     } else if (key === "ft_temp") {
       setFtTempOptions([], "Select");
     } else {
-      setSelectOptions(selectId, [], "Select");
+      setSelectOptions(selectId, [], LOOKUP_PLACEHOLDER[key] || "Select");
     }
   });
 }
@@ -3374,7 +3379,7 @@ async function _refreshLookupInner(field) {
         } else if (field === "ft_temp") {
           setFtTempOptions(data.options || [], (data.options || []).length ? "Select" : "No data");
         } else {
-          setSelectOptions(entry[1], data.options || [], "Select");
+          setSelectOptions(entry[1], data.options || [], LOOKUP_PLACEHOLDER[field] || "Select");
         }
       }
     }
@@ -3436,6 +3441,10 @@ function bindLookupControls() {
         setSelectOptions(selectId, [], "Select");
       }
     });
+    /* R-079: type 은 선택 사항이라, 안 골라도 Ver. 로 바로 넘어갈 수 있어야 한다.
+       그래서 Device 를 고르면 type 목록과 ver 목록을 같이 채운다. type 만 채우면
+       4토막 폴더(구분값 없음)를 쓰는 사람이 Ver. 에서 막힌다 (c4958dd 가 고친 버그). */
+    await refreshLookup("type");
     await refreshLookup("ver");
   });
   device.addEventListener("focus", async () => {
@@ -3450,7 +3459,7 @@ function bindLookupControls() {
     } else if (key === "ft_temp") {
       setFtTempOptions([], "Select");
     } else {
-      setSelectOptions(selectId, [], "Select");
+      setSelectOptions(selectId, [], LOOKUP_PLACEHOLDER[key] || "Select");
     }
     sel.addEventListener("change", async () => {
       clearAnalyzeError();
@@ -3459,7 +3468,9 @@ function bindLookupControls() {
       clearAnalysisDisplay("");
       clearLookupAfter(key);
       const next = lookupOrder[index + 1];
-      if (next && lookupState[key]) await refreshLookup(next[0]);
+      /* R-079: type 은 "전체"(빈 값)로 되돌려도 Ver. 를 다시 채워야 한다.
+         다른 축은 값이 비면 전진하지 않는 기존 동작을 그대로 둔다. */
+      if (next && (lookupState[key] || key === "type")) await refreshLookup(next[0]);
     });
   });
 }
@@ -5560,6 +5571,7 @@ function renderConditionSummaryLine() {
   if (!line) return;
   const parts = [];
   if (lookupState.device) parts.push(lookupState.device);
+  if (lookupState.type) parts.push(lookupState.type);   /* R-079 */
   if (lookupState.ver) parts.push(lookupState.ver);
   if (lookupState.lot) parts.push(`Lot ${lookupState.lot}`);
   if (lookupState.purpose) parts.push(lookupState.purpose);
@@ -11071,7 +11083,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 29  # 28->29: include_pre 추가 (R-073 Post Only).
+CACHE_SCHEMA = 30  # 29->30: 선택 키에 type 복원 (R-079 Reliability Type).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
@@ -11251,6 +11263,7 @@ def cache_key_for(selection, pre_path, post_path, mode, post_paths=None):
         "post_stamps": [file_stamp(p) for p in stamp_paths],
         "device": selection.get("device", "").strip(),
         "ver": selection.get("ver", "").strip(),
+        "type": selection.get("type", "").strip(),
         "purpose": selection.get("purpose", "").strip(),
         "lot": selection.get("lot", "").strip(),
         "item": selection.get("item", "").strip(),
@@ -11575,8 +11588,15 @@ def payload_with_items(app, payload, mode, cache_status):
     return enriched
 
 
-LOOKUP_FIELDS = ["device", "ver", "purpose", "lot", "item", "readout", "ft_temp"]
+LOOKUP_FIELDS = ["device", "type", "ver", "purpose", "lot", "item", "readout", "ft_temp"]
 RELIABILITY_ITEMS = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM", "LU"]
+
+# R-079: 조건 폴더명의 신뢰성 시험 구분 토막. 폴더명은 4토막(순번_Ver_Lot_Purpose)과
+# 5토막(순번_Ver_구분_Lot_Purpose)을 모두 허용하는데, 3번째 토막이 이 목록에 있을
+# 때만 구분으로 읽는다. 언더바 개수만으로 가르면 Purpose 에 언더바가 들어간 4토막
+# 폴더(예: 06_MVT1-3_1111_111_추가메모)를 5토막으로 오인한다.
+# 새 구분값이 생기면 여기 한 줄만 추가한다. 토막에 언더바는 쓸 수 없다.
+RELIABILITY_TYPES = ["ERT", "Qual.", "Qual. (Q100)", "ORT"]
 
 # R-037: 파일명 표기와 화면 표기가 다른 신뢰성 항목의 별칭 (키·값 모두 대문자 기준).
 # 실데이터에서 UHAST(대소문자만 다름)와 HTS(약어가 다름)가 화면 목록과 어긋나
@@ -11910,28 +11930,46 @@ def browse_data_root():
 
 
 def parse_data_folder_name(name):
-    parts = name.split("_", 3)
-    if len(parts) != 4:
+    """조건 폴더명을 읽는다. R-079 로 4토막과 5토막을 모두 받는다.
+
+      4토막  순번_Ver_Lot_Purpose                 -> type = ""
+      5토막  순번_Ver_구분_Lot_Purpose             -> type = 그 구분값
+
+    5토막으로 읽는 조건은 "3번째 토막이 RELIABILITY_TYPES 에 있다" 하나뿐이다.
+    Purpose 에 언더바가 들어갈 수 있으므로 남은 토막은 전부 Purpose 로 되붙인다.
+    """
+    parts = name.split("_")
+    if len(parts) < 4:
         return None
     sequence = parts[0].strip().rstrip(".")
     if not sequence.isdigit():
         return None
-    _, ver, lot, purpose = parts
+    if len(parts) >= 5 and parts[2].strip() in RELIABILITY_TYPES:
+        ver, rel_type, lot = parts[1], parts[2], parts[3]
+        purpose = "_".join(parts[4:])
+    else:
+        ver, lot = parts[1], parts[2]
+        rel_type = ""
+        purpose = "_".join(parts[3:])
     return {
         "name": name,
         "ver": ver.strip(),
+        "type": rel_type.strip(),
         "lot": lot.strip(),
         "purpose": purpose.strip(),
     }
 
 
-def device_data_folders(device_path, ver=None, purpose=None, lot=None):
+def device_data_folders(device_path, ver=None, purpose=None, lot=None, rel_type=None):
     matches = []
     for name in child_dirs(device_path):
         parsed = parse_data_folder_name(name)
         if not parsed:
             continue
         if ver and parsed["ver"] != ver:
+            continue
+        # R-079: rel_type 이 비어 있으면 필터를 걸지 않는다 (4토막 폴더 호환).
+        if rel_type and parsed["type"] != rel_type:
             continue
         if purpose and parsed["purpose"] != purpose:
             continue
@@ -11946,10 +11984,13 @@ def selected_data_path(selection):
     ver = selection.get("ver", "").strip()
     purpose = selection.get("purpose", "").strip()
     lot = selection.get("lot", "").strip()
+    # R-079: Reliability Type 은 선택 축이다 — 필수에 넣지 않는다. 값이 있을 때만
+    # 폴더를 좁히는 데 쓴다. 필수로 만들면 4토막 폴더가 선택 불가가 된다(c4958dd).
+    rel_type = selection.get("type", "").strip()
     if not all([device, ver, purpose, lot]):
         raise ValueError("Device, Ver., Purpose, and Lot No. are required.")
     device_path = safe_child(DATA_ROOT, device)
-    matches = device_data_folders(device_path, ver, purpose, lot)
+    matches = device_data_folders(device_path, ver, purpose, lot, rel_type)
     if not matches:
         raise ValueError("Matching reliability data folder was not found.")
     return safe_child(device_path, matches[0]["name"])
@@ -12129,7 +12170,7 @@ def resolve_selection_file_set(selection):
 
 
 def lookup_options(query):
-    field = query.get("field", ["ver"])[0]
+    field = query.get("field", ["type"])[0]
     if field not in LOOKUP_FIELDS:
         raise ValueError("Invalid lookup field.")
     if field == "device":
@@ -12138,23 +12179,29 @@ def lookup_options(query):
     if not device:
         return {"path": DATA_ROOT, "options": []}
     device_path = safe_child(DATA_ROOT, device)
+    # R-079: rel_type 이 비어 있어도 아래 단계를 막지 않는다. 옛 구조는 type 이 비면
+    # ver/lot/purpose 를 전부 빈 목록으로 돌려보내 4토막 폴더가 선택 불가였다.
+    rel_type = query.get("type", [""])[0].strip()
+    if field == "type":
+        options = sorted({entry["type"] for entry in device_data_folders(device_path) if entry["type"]})
+        return {"path": device_path, "options": options}
     if field == "ver":
-        options = sorted({entry["ver"] for entry in device_data_folders(device_path)})
+        options = sorted({entry["ver"] for entry in device_data_folders(device_path, rel_type=rel_type)})
         return {"path": device_path, "options": options}
     ver = query.get("ver", [""])[0].strip()
     if not ver:
         return {"path": device_path, "options": []}
     if field == "lot":
-        options = sorted({entry["lot"] for entry in device_data_folders(device_path, ver=ver)})
+        options = sorted({entry["lot"] for entry in device_data_folders(device_path, ver=ver, rel_type=rel_type)})
         return {"path": device_path, "options": options}
     lot = query.get("lot", [""])[0].strip()
     if not lot:
         return {"path": device_path, "options": []}
     if field == "purpose":
-        options = sorted({entry["purpose"] for entry in device_data_folders(device_path, ver=ver, lot=lot)})
+        options = sorted({entry["purpose"] for entry in device_data_folders(device_path, ver=ver, lot=lot, rel_type=rel_type)})
         return {"path": device_path, "options": options}
     purpose = query.get("purpose", [""])[0].strip()
-    matches = device_data_folders(device_path, ver, purpose, lot)
+    matches = device_data_folders(device_path, ver, purpose, lot, rel_type)
     data_path = safe_child(device_path, matches[0]["name"]) if matches else device_path
     if field == "item":
         return {"path": data_path, "options": RELIABILITY_ITEMS}
