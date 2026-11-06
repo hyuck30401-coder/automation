@@ -5,6 +5,7 @@ import math
 import os
 import pickle
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -2573,6 +2574,56 @@ HTML = r"""<!doctype html>
     .sp-sub:hover:not(:disabled){ background:var(--r-soft) }
     .sp-sub:disabled{ color:var(--r-ink4); background:var(--r-soft); cursor:default }
     .sp-sub.sm{ height:28px; font-size:11.5px; padding:0 10px; flex:0 0 auto }
+    /* ---- R-080 데이터 저장 창 ---- */
+    .sv-mask{ position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center;
+      background:rgba(15,20,32,.45); padding:24px }
+    .sv-mask[hidden]{ display:none }
+    .sv-box{ display:flex; flex-direction:column; width:min(720px,100%); max-height:100%;
+      background:#fff; border-radius:12px; box-shadow:0 18px 48px rgba(15,20,32,.3); overflow:hidden }
+    .sv-head{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--r-line) }
+    .sv-head b{ font-size:14px; color:var(--r-ink) }
+    .sv-head .sv-sub{ font-size:12px; color:var(--r-ink3); font-weight:500 }
+    .sv-x{ margin-left:auto; width:28px; height:28px; border:0; border-radius:7px; background:none;
+      color:var(--r-ink3); font-size:19px; line-height:1; cursor:pointer }
+    .sv-x:hover{ background:var(--r-soft) }
+    .sv-body{ padding:14px 16px; overflow:auto; display:flex; flex-direction:column; gap:10px }
+    .sv-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+    .sv-grid .field{ display:flex; flex-direction:column; gap:5px; min-width:0 }
+    .sv-grid .field.wide{ grid-column:1 / -1 }
+    .sv-grid label{ font-size:12px; font-weight:600; color:var(--r-ink2) }
+    .sv-grid input,.sv-grid select{ height:36px; width:100%; min-width:0; padding:0 10px;
+      border:1px solid var(--r-line-in); border-radius:8px; background:#fff; color:var(--r-ink);
+      font-family:inherit; font-size:13px }
+    .sv-grid input:focus,.sv-grid select:focus{ outline:none; border-color:var(--r-acc);
+      box-shadow:0 0 0 3px rgba(39,71,212,.12) }
+    .sv-filehead{ display:flex; align-items:center; gap:8px }
+    .sv-filehead .sp-label{ margin:0 }
+    .sv-fileacts{ margin-left:auto; display:flex; gap:6px }
+    .sv-files{ display:flex; flex-direction:column; gap:6px; min-height:56px; max-height:230px; overflow:auto;
+      padding:8px; border:1px dashed var(--r-line-in); border-radius:8px; background:var(--r-soft) }
+    .sv-empty{ margin:auto; font-size:12px; color:var(--r-ink4) }
+    /* 한 줄에 Pre/Post · 파일명 · 해석 · 빼기 네 칸. 칸 수가 모자라면 빼기 버튼이
+       다음 줄로 넘어가 줄 높이가 두 배가 된다. */
+    .sv-file{ display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center;
+      gap:4px 10px; padding:7px 8px; border:1px solid var(--r-line-in); border-radius:7px; background:#fff }
+    .sv-kind{ display:inline-flex; border:1px solid var(--r-line-in); border-radius:6px; overflow:hidden }
+    .sv-kind button{ height:24px; padding:0 9px; border:0; background:#fff; color:var(--r-ink3);
+      font-family:inherit; font-size:11px; font-weight:700; cursor:pointer }
+    .sv-kind button.active{ background:var(--r-acc); color:#fff }
+    .sv-fname{ min-width:0; font-size:12px; color:var(--r-ink); word-break:break-all }
+    .sv-fnote{ font-size:11.5px; color:var(--r-ink3); white-space:nowrap }
+    .sv-warn{ grid-column:2 / -1; font-size:11.5px; color:#b26b00 }
+    .sv-del{ width:24px; height:24px; border:0; border-radius:6px; background:none; color:var(--r-ink4);
+      font-size:16px; line-height:1; cursor:pointer }
+    .sv-del:hover{ background:var(--r-soft); color:var(--r-ink2) }
+    .sv-plan{ padding:10px 12px; border:1px solid var(--r-line-in); border-radius:8px;
+      background:var(--r-soft); font-size:12px; color:var(--r-ink2); line-height:1.6 }
+    .sv-plan b{ color:var(--r-ink) }
+    .sv-plan .sv-path{ color:var(--r-ink3); font-size:11.5px; word-break:break-all }
+    .sv-plan .sv-err{ color:#c0392b; font-weight:600 }
+    .sv-foot{ display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--r-line) }
+    .sv-foot .sv-msg{ margin-right:auto; font-size:12px; color:var(--r-ink3) }
+    .sv-foot .sp-go{ width:auto; height:38px; padding:0 20px; font-size:13px }
     .sp-status{ border:1px solid #CDEBD8; background:var(--r-ok-s); border-radius:10px; padding:11px 12px;
       display:flex; flex-direction:column; gap:8px }
     .sp-status-head{ display:flex; align-items:center; justify-content:space-between;
@@ -2905,6 +2956,7 @@ HTML = r"""<!doctype html>
               <div class="sp-gap"></div>
               <div class="sp-label sp-pathlabel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.8 6.2a1.4 1.4 0 0 1 1.4-1.4h3.1l1.5 1.8h6.3a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H4.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg> DATA PATH</div>
               <div class="sp-path"><span class="pathtxt" id="dataPath">-</span><button type="button" class="sp-sub sm" id="browseDataPathBtn">경로 변경</button></div>
+              <button type="button" class="sp-sub" id="saveDataBtn" title="데이터 파일을 폴더 규칙대로 저장합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.6 3.5h8l3 3v9.3a.7.7 0 0 1-.7.7H4.6a.7.7 0 0 1-.7-.7V4.2a.7.7 0 0 1 .7-.7z"/><path d="M6.6 3.5v4.2h5.3V3.5M6.6 16.5v-4.6h6.8v4.6"/></svg> 데이터 저장</button>
             </div>
           </aside>
         <section id="managerView" class="view">
@@ -3033,6 +3085,39 @@ HTML = r"""<!doctype html>
       </div>
     </section>
   </main>
+
+  <!-- R-080: 데이터 저장 창. 미리보기와 실제 저장이 같은 /save-plan 결과를 쓴다. -->
+  <div class="sv-mask" id="saveDataModal" hidden>
+    <div class="sv-box" role="dialog" aria-modal="true" aria-labelledby="svTitle">
+      <div class="sv-head"><b id="svTitle">데이터 저장</b><span class="sv-sub">폴더 규칙대로 저장합니다</span><button type="button" class="sv-x" id="svCloseBtn" title="닫기">&times;</button></div>
+      <div class="sv-body">
+        <div class="sp-label">PRODUCT</div>
+        <div class="sv-grid">
+          <div class="field wide"><label>Device</label><input id="svDevice" type="text" list="deviceOptions" placeholder="SM3502Q"></div>
+          <div class="field wide"><label>Reliability Type</label><select id="svType"></select></div>
+          <div class="field"><label>Ver.</label><input id="svVer" type="text" placeholder="MVT1-3"></div>
+          <div class="field"><label>Lot No.</label><input id="svLot" type="text" placeholder="1111"></div>
+          <div class="field wide"><label>Purpose</label><input id="svPurpose" type="text" placeholder="111"></div>
+        </div>
+        <div class="sv-filehead">
+          <div class="sp-label">DATA FILES</div>
+          <div class="sv-fileacts">
+            <button type="button" class="sp-sub sm" id="svAllPreBtn">전체 Pre</button>
+            <button type="button" class="sp-sub sm" id="svAllPostBtn">전체 Post</button>
+            <button type="button" class="sp-sub sm" id="svPickBtn">파일 선택</button>
+          </div>
+        </div>
+        <div class="sv-files" id="svFiles"></div>
+        <label class="sp-check"><input id="svOverwrite" type="checkbox"><span>같은 이름이 있으면 덮어쓰기</span></label>
+        <div class="sv-plan" id="svPlan"></div>
+      </div>
+      <div class="sv-foot">
+        <span class="sv-msg" id="svMsg"></span>
+        <button type="button" class="sp-sub" id="svCancelBtn">취소</button>
+        <button type="button" class="sp-go" id="svSaveBtn" disabled>저장</button>
+      </div>
+    </div>
+  </div>
 <script>
 let analysis = null;
 let itemCache = {};
@@ -5553,6 +5638,292 @@ function bindParentControls() {
   document.getElementById("openResultsWindowBtn").addEventListener("click", () => openAnalysisResultsWindow());
   bindLookupControls();
   bindConditionToggle();
+  bindSaveData();                                   /* R-080 */
+}
+
+/* ====================== R-080 데이터 저장 창 ======================
+   저장할 곳을 계산하는 책임은 전부 서버(/save-plan)에 있다. 화면은 그 결과를
+   그리기만 한다 — 미리보기에 보이는 경로와 실제로 파일이 들어가는 경로가
+   어긋날 수 없게 하려는 것이다.                                        */
+const RELIABILITY_TYPES = __RELIABILITY_TYPES__;
+let saveFiles = [];          // [{path, name, kind}]
+let savePlan = null;
+let savePlanTimer = 0;
+let savePlanSeq = 0;
+
+function svEl(id) { return document.getElementById(id); }
+
+function openSaveDataModal() {
+  const typeSel = svEl("svType");
+  typeSel.innerHTML = "";
+  [["", "(없음 — 폴더명 4토막)"]].concat(RELIABILITY_TYPES.map(t => [t, t])).forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value; opt.textContent = label;
+    typeSel.appendChild(opt);
+  });
+  /* 지금 보고 있는 조건을 기본값으로 — 그 조건에 파일을 더 넣는 경우가 제일 흔하다. */
+  svEl("svDevice").value = lookupState.device || "";
+  typeSel.value = RELIABILITY_TYPES.includes(lookupState.type) ? lookupState.type : "";
+  svEl("svVer").value = lookupState.ver || "";
+  svEl("svLot").value = lookupState.lot || "";
+  svEl("svPurpose").value = lookupState.purpose || "";
+  svEl("svOverwrite").checked = false;
+  saveFiles = [];
+  savePlan = null;
+  svEl("svMsg").textContent = "";
+  renderSaveFiles();
+  svEl("saveDataModal").hidden = false;
+  svEl("svDevice").focus();
+  requestSavePlan();
+}
+
+function closeSaveDataModal() {
+  svEl("saveDataModal").hidden = true;
+  savePlanSeq += 1;                     // 날아오던 응답을 버린다
+}
+
+function saveSelectionFromForm() {
+  return {
+    device: svEl("svDevice").value.trim(),
+    type: svEl("svType").value,
+    ver: svEl("svVer").value.trim(),
+    lot: svEl("svLot").value.trim(),
+    purpose: svEl("svPurpose").value.trim(),
+  };
+}
+
+function renderSaveFiles() {
+  const box = svEl("svFiles");
+  box.innerHTML = "";
+  if (!saveFiles.length) {
+    const empty = document.createElement("div");
+    empty.className = "sv-empty";
+    empty.textContent = "저장할 데이터 파일을 선택하세요.";
+    box.appendChild(empty);
+    return;
+  }
+  const byPath = {};
+  (savePlan?.files || []).forEach(f => { byPath[f.path] = f; });
+  saveFiles.forEach((file, index) => {
+    const info = byPath[file.path];
+    const row = document.createElement("div");
+    row.className = "sv-file";
+
+    const kind = document.createElement("div");
+    kind.className = "sv-kind";
+    [["pre", "Pre"], ["post", "Post"]].forEach(([value, label]) => {
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.textContent = label; btn.dataset.kind = value;
+      if (file.kind === value) btn.classList.add("active");
+      btn.addEventListener("click", () => {
+        if (saveFiles[index].kind === value) return;
+        saveFiles[index].kind = value;
+        renderSaveFiles();
+        requestSavePlan();
+      });
+      kind.appendChild(btn);
+    });
+    row.appendChild(kind);
+
+    const name = document.createElement("div");
+    name.className = "sv-fname";
+    name.textContent = file.name;
+    name.title = file.path;
+    row.appendChild(name);
+
+    const note = document.createElement("div");
+    note.className = "sv-fnote";
+    if (info?.parsed) {
+      note.textContent = [info.parsed.item, info.parsed.readout, info.parsed.ft_temp || "온도 ?"].join(" / ");
+    } else if (info?.conflict) {
+      note.textContent = "이미 있음";
+    }
+    row.appendChild(note);
+
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "sv-del"; del.textContent = "\u00d7"; del.title = "목록에서 빼기";
+    del.addEventListener("click", () => {
+      saveFiles.splice(index, 1);
+      renderSaveFiles();
+      requestSavePlan();
+    });
+    row.appendChild(del);
+
+    (info?.warnings || []).forEach(text => {
+      const warn = document.createElement("div");
+      warn.className = "sv-warn";
+      warn.textContent = "! " + text;
+      row.appendChild(warn);
+    });
+    box.appendChild(row);
+  });
+}
+
+function renderSavePlan(plan) {
+  const box = svEl("svPlan");
+  box.innerHTML = "";
+  const line = (text, cls) => {
+    const div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.textContent = text;
+    box.appendChild(div);
+    return div;
+  };
+  if (!plan) { line("입력하는 대로 저장 위치를 보여줍니다."); return; }
+  if (plan.folder) {
+    const head = document.createElement("div");
+    head.appendChild(document.createTextNode(plan.folder_exists ? "기존 폴더에 추가 · " : "새 폴더 생성 · "));
+    const b = document.createElement("b");
+    b.textContent = plan.folder;
+    head.appendChild(b);
+    if (!plan.device_exists) head.appendChild(document.createTextNode("  (새 Device 폴더도 만듭니다)"));
+    box.appendChild(head);
+    ["pre", "post"].forEach(kind => {
+      const count = plan.files.filter(f => f.kind === kind).length;
+      if (!count) return;
+      const sub = plan.subdirs[kind];
+      const conflict = plan.files.filter(f => f.kind === kind && f.conflict).length;
+      let text = "   " + sub.name + (sub.exists ? " (기존)" : " (신규)") + " \u2190 " + count + "개";
+      if (conflict) text += plan.overwrite ? "  · " + conflict + "개 덮어씀" : "  · " + conflict + "개 건너뜀";
+      line(text);
+    });
+    if (plan.base) line(plan.base, "sv-path");
+  }
+  (plan.errors || []).forEach(text => line("! " + text, "sv-err"));
+}
+
+function requestSavePlan() {
+  clearTimeout(savePlanTimer);
+  savePlanTimer = setTimeout(async () => {
+    const seq = ++savePlanSeq;
+    const body = {
+      selection: saveSelectionFromForm(),
+      files: saveFiles.map(f => ({ path: f.path, kind: f.kind })),
+      overwrite: svEl("svOverwrite").checked,
+    };
+    try {
+      const res = await fetch("/save-plan", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (seq !== savePlanSeq) return;
+      if (!res.ok || data.error) throw new Error(data.error || "저장 위치를 계산하지 못했습니다.");
+      savePlan = data;
+      renderSavePlan(data);
+      renderSaveFiles();
+      svEl("svSaveBtn").disabled = !data.can_save;
+    } catch (err) {
+      if (seq !== savePlanSeq) return;
+      savePlan = null;
+      renderSavePlan(null);
+      svEl("svSaveBtn").disabled = true;
+      svEl("svMsg").textContent = err.message;
+    }
+  }, 220);
+}
+
+async function pickSaveFiles() {
+  const btn = svEl("svPickBtn");
+  btn.disabled = true;
+  svEl("svMsg").textContent = "파일 선택창에서 고르세요...";
+  try {
+    const res = await fetch("/browse-data-files", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "파일 선택에 실패했습니다.");
+    const known = new Set(saveFiles.map(f => f.path));
+    (data.files || []).forEach(f => { if (!known.has(f.path)) saveFiles.push({ ...f }); });
+    svEl("svMsg").textContent = "";
+    renderSaveFiles();
+    requestSavePlan();
+  } catch (err) {
+    svEl("svMsg").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function commitSaveData() {
+  const btn = svEl("svSaveBtn");
+  btn.disabled = true;
+  svEl("svMsg").textContent = "저장 중...";
+  try {
+    const res = await fetch("/save-data-files", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selection: saveSelectionFromForm(),
+        files: saveFiles.map(f => ({ path: f.path, kind: f.kind })),
+        overwrite: svEl("svOverwrite").checked,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "저장에 실패했습니다.");
+    closeSaveDataModal();
+    const skipped = (data.skipped || []).length;
+    setStatus("저장 완료 — " + data.copied.length + "건" + (skipped ? " (건너뜀 " + skipped + "건)" : ""));
+    await applySavedSelection(data.selection);
+  } catch (err) {
+    svEl("svMsg").textContent = err.message;
+    btn.disabled = false;
+  }
+}
+
+/* 저장한 조건을 조건 패널에 그대로 꽂아, 바로 Analyze 할 수 있게 한다. */
+async function applySavedSelection(selection) {
+  const device = document.getElementById("deviceInput");
+  device.value = selection.device;
+  lookupState.device = selection.device;
+  modePayloads = {};
+  clearAnalysisDisplay("");
+  lookupOrder.forEach(([key, selectId]) => {
+    lookupState[key] = "";
+    if (key === "readout") setReadoutOptions([], "Select");
+    else if (key === "ft_temp") setFtTempOptions([], "Select");
+    else setSelectOptions(selectId, [], LOOKUP_PLACEHOLDER[key] || "Select");
+  });
+  await refreshLookup("device");
+  await refreshLookup("type");
+  lookupState.type = selection.type || "";
+  document.getElementById("typeSelect").value = lookupState.type;
+  await refreshLookup("ver");
+  lookupState.ver = selection.ver;
+  document.getElementById("verSelect").value = selection.ver;
+  await refreshLookup("lot");
+  lookupState.lot = selection.lot;
+  document.getElementById("lotSelect").value = selection.lot;
+  await refreshLookup("purpose");
+  lookupState.purpose = selection.purpose;
+  document.getElementById("purposeSelect").value = selection.purpose;
+  await refreshLookup("item");
+  renderConditionSummaryLine();
+}
+
+function bindSaveData() {
+  const open = svEl("saveDataBtn");
+  if (!open) return;
+  open.addEventListener("click", openSaveDataModal);
+  svEl("svCloseBtn").addEventListener("click", closeSaveDataModal);
+  svEl("svCancelBtn").addEventListener("click", closeSaveDataModal);
+  svEl("saveDataModal").addEventListener("mousedown", event => {
+    if (event.target === svEl("saveDataModal")) closeSaveDataModal();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !svEl("saveDataModal").hidden) closeSaveDataModal();
+  });
+  ["svDevice", "svVer", "svLot", "svPurpose"].forEach(id => {
+    svEl(id).addEventListener("input", requestSavePlan);
+  });
+  svEl("svType").addEventListener("change", requestSavePlan);
+  svEl("svOverwrite").addEventListener("change", requestSavePlan);
+  svEl("svPickBtn").addEventListener("click", pickSaveFiles);
+  svEl("svAllPreBtn").addEventListener("click", () => {
+    saveFiles.forEach(f => { f.kind = "pre"; });
+    renderSaveFiles(); requestSavePlan();
+  });
+  svEl("svAllPostBtn").addEventListener("click", () => {
+    saveFiles.forEach(f => { f.kind = "post"; });
+    renderSaveFiles(); requestSavePlan();
+  });
+  svEl("svSaveBtn").addEventListener("click", commitSaveData);
 }
 
 function setConditionCollapsed(collapsed) {
@@ -11598,6 +11969,11 @@ RELIABILITY_ITEMS = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM",
 # 새 구분값이 생기면 여기 한 줄만 추가한다. 토막에 언더바는 쓸 수 없다.
 RELIABILITY_TYPES = ["ERT", "Qual.", "Qual. (Q100)", "ORT"]
 
+# R-080: 저장 창의 Reliability Type 드롭다운은 이 상수 하나만 본다. 프론트에 같은 목록을
+# 또 적어두면 구분값이 늘어날 때 한쪽만 고쳐 조용히 어긋난다. HTML 은 위에서 이미
+# 만들어졌으므로, 상수가 생긴 이 자리에서 한 번 더 치환한다.
+HTML = HTML.replace("__RELIABILITY_TYPES__", json.dumps(RELIABILITY_TYPES, ensure_ascii=False))
+
 # R-037: 파일명 표기와 화면 표기가 다른 신뢰성 항목의 별칭 (키·값 모두 대문자 기준).
 # 실데이터에서 UHAST(대소문자만 다름)와 HTS(약어가 다름)가 화면 목록과 어긋나
 # 두 항목 2,264건이 필터 바에서 통째로 사라지고, 항목별 합이 전체와 안 맞았다.
@@ -11927,6 +12303,262 @@ def browse_data_root():
         raise ValueError("Selected data path was not found.")
     DATA_ROOT = selected
     return {"path": DATA_ROOT, "changed": True, "options": child_dirs(DATA_ROOT)}
+
+
+# ---- R-080 데이터 파일 저장 -------------------------------------------------
+# 분석 조건 패널에서 바로 데이터를 받아 폴더 규칙(§3-1)대로 저장한다.
+# 미리보기와 실제 저장이 같은 계획 함수(build_save_plan)를 쓴다 — 화면에 보이는
+# 경로와 실제로 파일이 들어가는 경로가 어긋날 수 없게 하려는 것이다.
+
+SAVE_PRE_DEFAULT = "00_Pre"
+SAVE_POST_DEFAULT = "01_Post"
+# 윈도우에서 폴더명에 못 쓰는 문자. '_' 는 토막을 가르는 글자라 따로 본다.
+_FORBIDDEN_NAME_CHARS = set('<>:"/\\|?*') | {chr(c) for c in range(32)}
+
+
+def browse_data_files():
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        selected = filedialog.askopenfilenames(
+            title="저장할 데이터 파일 선택",
+            filetypes=[("데이터 파일", "*.csv *.CSV *.xlsx"), ("All files", "*.*")],
+            initialdir=DATA_ROOT if os.path.isdir(DATA_ROOT) else os.getcwd(),
+        )
+    finally:
+        root.destroy()
+    files = []
+    for path in selected or ():
+        path = os.path.abspath(path)
+        files.append({"path": path, "name": os.path.basename(path), "kind": guess_file_kind(path)})
+    return {"files": files}
+
+
+def safe_new_child(parent, name):
+    """아직 없어도 되는 경로를 만든다. safe_child 와 달리 존재 검사를 하지 않고,
+    DATA_ROOT 밖으로 나가는 것만 막는다 (저장 대상은 아직 없는 폴더다)."""
+    if not name:
+        raise ValueError("Empty folder name.")
+    candidate = os.path.abspath(os.path.join(parent, name))
+    root = os.path.abspath(DATA_ROOT)
+    if os.path.commonpath([root, candidate]) != root:
+        raise ValueError("Invalid data path.")
+    return candidate
+
+
+def validate_name_token(label, value, allow_underscore=False, required=True):
+    text = (value or "").strip()
+    errors = []
+    if not text:
+        if required:
+            errors.append("%s 을(를) 입력하세요." % label)
+        return text, errors
+    if not allow_underscore and "_" in text:
+        errors.append("%s 에는 언더바(_)를 쓸 수 없습니다 — 폴더명 토막이 밀립니다." % label)
+    bad = sorted({ch for ch in text if ch in _FORBIDDEN_NAME_CHARS})
+    if bad:
+        shown = " ".join(ch if ch.isprintable() else "\\x%02x" % ord(ch) for ch in bad)
+        errors.append("%s 에 폴더명으로 쓸 수 없는 문자가 있습니다: %s" % (label, shown))
+    if text.endswith("."):
+        errors.append("%s 은(는) 마침표로 끝날 수 없습니다." % label)
+    return text, errors
+
+
+def find_condition_folder(device_path, ver, rel_type, lot, purpose):
+    """조건 네 가지가 '정확히' 같은 폴더를 찾는다. 구분이 빈 값이면 4토막 폴더만 맞는다 —
+    device_data_folders 의 필터(비면 전체)와 의미가 다르다. 저장은 전체가 아니라
+    '바로 이 조건' 하나를 가리켜야 하므로 따로 둔다."""
+    for name in child_dirs(device_path):
+        parsed = parse_data_folder_name(name)
+        if not parsed:
+            continue
+        if (parsed["ver"] == ver and parsed["type"] == rel_type
+                and parsed["lot"] == lot and parsed["purpose"] == purpose):
+            return parsed
+    return None
+
+
+def next_folder_sequence(device_path):
+    """같은 Device 폴더 안에서 파서가 인정한 폴더들의 최대 순번 + 1 (두 자리)."""
+    best = -1
+    for name in child_dirs(device_path):
+        if not parse_data_folder_name(name):
+            continue
+        head = name.split("_", 1)[0].strip().rstrip(".")
+        if head.isdigit():
+            best = max(best, int(head))
+    return "%02d" % (best + 1)
+
+
+def condition_folder_name(sequence, ver, rel_type, lot, purpose):
+    parts = [sequence, ver] + ([rel_type] if rel_type else []) + [lot, purpose]
+    return "_".join(parts)
+
+
+def guess_file_kind(path):
+    """파일명만 보고 Pre/Post 를 추측한다. 항목 토막이 RELIABILITY_ITEMS 에 걸리면 Post.
+    실데이터 54개(Test Data/SM3502Q 네 조건)에 돌려 54/54 맞았다. 틀리면 화면에서 고친다."""
+    parsed = parse_post_file_name(path)
+    if not parsed:
+        return "pre"
+    if any(reliability_item_equal(parsed["item"], item) for item in RELIABILITY_ITEMS):
+        return "post"
+    return "pre"
+
+
+def describe_post_file(path):
+    """Post 로 저장했을 때 Reliability Items / Read-out / FT Temp. 에 어떻게 잡히는지
+    미리 보여준다. 저장은 막지 않고 경고만 한다 — 판정에 쓰이지 않을 뿐이다."""
+    parsed = parse_post_file_name(path)
+    if not parsed:
+        return None, ["파일명을 해석할 수 없습니다 — 드롭다운에 뜨지 않습니다."]
+    warnings = []
+    item = canonical_reliability_item(parsed["item"])
+    if not any(reliability_item_equal(item, known) for known in RELIABILITY_ITEMS):
+        warnings.append("신뢰성 항목 '%s' 은(는) 목록 9종에 없어 Reliability Items 에 뜨지 않습니다."
+                        % parsed["item"])
+    temps = file_ft_temps(path)
+    if not temps:
+        warnings.append("온도코드를 못 읽어 FT Temp. 에 뜨지 않습니다 "
+                        "(RR/ER=Room, RH/EH=Hot, RC/EC=Cold. RT 는 인식 안 됩니다).")
+    if parsed["readout_missing"]:
+        warnings.append("리드아웃 토막이 없어 Read-out 이 'Post' 하나로 잡힙니다.")
+    return {"item": item, "readout": parsed["readout"],
+            "ft_temp": temps[0] if temps else None}, warnings
+
+
+def build_save_plan(payload):
+    """입력값을 검증하고 '어디에 무엇이 들어가는지'를 통째로 계산한다.
+    errors 가 비어야만 저장할 수 있다 (can_save)."""
+    sel = payload.get("selection") or {}
+    errors = []
+    device, errs = validate_name_token("Device", sel.get("device")); errors += errs
+    ver, errs = validate_name_token("Ver.", sel.get("ver")); errors += errs
+    rel_type, errs = validate_name_token("Reliability Type", sel.get("type"), required=False); errors += errs
+    lot, errs = validate_name_token("Lot No.", sel.get("lot")); errors += errs
+    purpose, errs = validate_name_token("Purpose", sel.get("purpose"), allow_underscore=True); errors += errs
+    if rel_type and rel_type not in RELIABILITY_TYPES:
+        errors.append("Reliability Type 은 %s 중 하나이거나 비어 있어야 합니다."
+                      % " · ".join(RELIABILITY_TYPES))
+
+    device_path = base = folder = None
+    device_exists = folder_exists = False
+    if device and not errors:
+        device_path = safe_new_child(os.path.abspath(DATA_ROOT), device)
+        device_exists = os.path.isdir(device_path)
+        found = find_condition_folder(device_path, ver, rel_type, lot, purpose) if device_exists else None
+        if found:
+            folder, folder_exists = found["name"], True
+        else:
+            sequence = next_folder_sequence(device_path) if device_exists else "00"
+            folder = condition_folder_name(sequence, ver, rel_type, lot, purpose)
+        # 되읽기 검증 — 만들 이름을 파서에 다시 넣어 같은 값으로 돌아오는지 본다.
+        # 예) 구분을 비우고 Lot 에 'ERT' 를 넣으면 5토막으로 읽혀 Lot 과 Purpose 가 밀린다.
+        back = parse_data_folder_name(folder)
+        if not back or (back["ver"], back["type"], back["lot"], back["purpose"]) != (ver, rel_type, lot, purpose):
+            errors.append("폴더명 '%s' 이(가) 규칙대로 되읽히지 않습니다 — "
+                          "Lot No. 나 Purpose 가 구분 토막으로 읽히고 있지 않은지 확인하세요." % folder)
+        else:
+            base = os.path.join(device_path, folder)
+
+    subdirs = {}
+    for kind, keyword, default in (("pre", "pre", SAVE_PRE_DEFAULT), ("post", "post", SAVE_POST_DEFAULT)):
+        name, exists = default, False
+        if base and os.path.isdir(base):
+            # 이미 00_Pre 가 아닌 이름(Pre_old 등)을 쓰고 있으면 그 폴더를 그대로 쓴다.
+            try:
+                name = os.path.basename(child_dir_containing(base, keyword))
+                exists = True
+            except ValueError:
+                pass
+        subdirs[kind] = {"name": name, "exists": exists,
+                         "path": os.path.join(base, name) if base else None}
+
+    files_out = []
+    seen = set()
+    for entry in payload.get("files") or []:
+        path = (entry.get("path") or "").strip()
+        name = os.path.basename(path)
+        kind = (entry.get("kind") or "").strip().lower()
+        if kind not in ("pre", "post"):
+            kind = guess_file_kind(path)
+        info = {"path": path, "name": name, "kind": kind, "guess": guess_file_kind(path),
+                "parsed": None, "conflict": False, "size": None, "warnings": []}
+        if not path or not os.path.isfile(path):
+            errors.append("파일을 찾을 수 없습니다: %s" % (name or path))
+            info["warnings"].append("파일을 찾을 수 없습니다.")
+        else:
+            info["size"] = os.path.getsize(path)
+        if os.path.splitext(name)[1].lower() not in (".csv", ".xlsx"):
+            info["warnings"].append("확장자가 .csv / .xlsx 가 아니라 분석에서 읽지 않습니다.")
+        if kind == "post":
+            parsed, warns = describe_post_file(path)
+            info["parsed"] = parsed
+            info["warnings"] += warns
+        key = (kind, name.casefold())
+        if key in seen:
+            errors.append("같은 이름의 파일을 같은 위치에 두 번 넣을 수 없습니다: %s" % name)
+        seen.add(key)
+        target_dir = subdirs[kind]["path"]
+        if target_dir:
+            destination = os.path.join(target_dir, name)
+            if os.path.isfile(destination):
+                info["conflict"] = True
+                info["warnings"].append("같은 이름의 파일이 이미 있습니다.")
+            if path and os.path.normcase(os.path.abspath(path)) == os.path.normcase(destination):
+                errors.append("원본과 저장 위치가 같습니다: %s" % name)
+        files_out.append(info)
+    if not files_out:
+        errors.append("저장할 파일을 하나 이상 고르세요.")
+
+    overwrite = bool(payload.get("overwrite"))
+    conflicts = sum(1 for f in files_out if f["conflict"])
+    if files_out and conflicts == len(files_out) and not overwrite:
+        # 전부 충돌이면 저장을 눌러도 0건이 복사된다. 성공처럼 보이는 빈 저장을 막는다.
+        errors.append("고른 파일이 전부 같은 이름으로 이미 있습니다 — 덮어쓰기를 선택하거나 파일을 바꾸세요.")
+    return {
+        "selection": {"device": device, "type": rel_type, "ver": ver, "lot": lot, "purpose": purpose},
+        "data_root": os.path.abspath(DATA_ROOT),
+        "device_exists": device_exists,
+        "folder": folder,
+        "folder_exists": folder_exists,
+        "base": base,
+        "subdirs": subdirs,
+        "files": files_out,
+        "overwrite": overwrite,
+        "errors": errors,
+        "can_save": not errors,
+        "counts": {
+            "pre": sum(1 for f in files_out if f["kind"] == "pre"),
+            "post": sum(1 for f in files_out if f["kind"] == "post"),
+            "conflict": conflicts,
+            "to_copy": len(files_out) - (0 if overwrite else conflicts),
+        },
+    }
+
+
+def save_data_files(payload):
+    plan = build_save_plan(payload)
+    if not plan["can_save"]:
+        raise ValueError(plan["errors"][0])
+    os.makedirs(plan["base"], exist_ok=True)          # Device 폴더도 같이 만들어진다
+    for kind in {f["kind"] for f in plan["files"]}:
+        os.makedirs(plan["subdirs"][kind]["path"], exist_ok=True)
+    copied, skipped = [], []
+    for info in plan["files"]:
+        destination = os.path.join(plan["subdirs"][info["kind"]]["path"], info["name"])
+        if info["conflict"] and not plan["overwrite"]:
+            skipped.append(info["name"])
+            continue
+        shutil.copy2(info["path"], destination)
+        copied.append({"name": info["name"], "kind": info["kind"], "path": destination})
+    return {"selection": plan["selection"], "folder": plan["folder"], "base": plan["base"],
+            "subdirs": plan["subdirs"], "copied": copied, "skipped": skipped,
+            "folder_created": not plan["folder_exists"]}
 
 
 def parse_data_folder_name(name):
@@ -12833,6 +13465,28 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/browse-data-root":
             try:
                 self.send_json(browse_data_root())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/browse-data-files":                     # R-080
+            try:
+                self.send_json(browse_data_files())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/save-plan":                             # R-080
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                self.send_json(build_save_plan(body))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/save-data-files":                       # R-080
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                self.send_json(save_data_files(body))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return

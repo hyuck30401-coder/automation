@@ -67,8 +67,32 @@ ThreadingHTTPServer
    ├ GET  /progress?id=        250ms 폴링
    ├ GET  /latest-analysis     완성된 payload
    ├ GET  /item?name=&mode=    항목별 상세 (지연 로딩)
-   └ GET  /export-raw-data     수기 OOXML xlsx
+   ├ GET  /export-raw-data     수기 OOXML xlsx
+   ├ POST /browse-data-files   저장할 파일 고르기 (네이티브 선택창)   ← R-080
+   ├ POST /save-plan           저장 계획 (검증·폴더 확정·파일 해석)   ← R-080
+   └ POST /save-data-files     계획대로 폴더 생성 + 복사              ← R-080
 ```
+
+### 데이터 저장 (R-080)
+
+조건 패널의 `데이터 저장` 버튼이 여는 창에서, 데이터를 폴더 규칙(§3-1)대로 넣는다.
+
+- **계획은 서버가 세운다.** 미리보기와 실제 저장이 같은 `build_save_plan()` 결과를 쓴다 —
+  화면에 보이는 경로와 파일이 들어가는 경로가 어긋날 수 없게 한 것이다. 화면에 저장 규칙을
+  다시 구현하지 마라.
+- 조건 네 가지가 정확히 같은 폴더가 있으면 그 폴더에 넣고, 없으면 순번(기존 최대+1, 두 자리)을
+  붙여 새로 만든다. 조건 일치는 `find_condition_folder()` — 구분이 빈 값이면 4토막 폴더만
+  맞는다. `device_data_folders()` 의 필터(비면 전체)와 의미가 다르니 섞어 쓰지 마라.
+- 만들 폴더명은 **되읽기 검증**을 거친다. `parse_data_folder_name()` 에 다시 넣어 같은 값이
+  돌아오지 않으면 거부한다 (예: 구분을 비우고 Lot 에 `ERT`, Purpose 에 언더바 → 5토막으로
+  읽혀 토막이 밀린다).
+- Pre/Post 는 파일마다 고른다. 기본값은 `guess_file_kind()` 의 추측 — 항목 토막이
+  `RELIABILITY_ITEMS` 에 걸리면 Post. 실데이터 54개에 54/54 맞았지만 추측은 추측이라
+  화면에서 바꿀 수 있다.
+- Pre/Post 하위 폴더는 이미 있으면 그 이름을 쓰고(`child_dir_containing`), 없을 때만
+  `00_Pre` / `01_Post` 를 만든다.
+- 같은 이름 파일은 기본 건너뜀. 전부 충돌이면 저장 자체를 막는다 — 0건 복사가 성공처럼
+  보이면 안 된다.
 
 ---
 
