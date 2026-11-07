@@ -68,10 +68,30 @@ ThreadingHTTPServer
    ├ GET  /latest-analysis     완성된 payload
    ├ GET  /item?name=&mode=    항목별 상세 (지연 로딩)
    ├ GET  /export-raw-data     수기 OOXML xlsx
+   ├ GET  /summary-template    Summary 템플릿이 자리에 있는지            ← R-082
    ├ POST /browse-data-files   저장할 파일 고르기 (네이티브 선택창)   ← R-080
    ├ POST /save-plan           저장 계획 (검증·폴더 확정·파일 해석)   ← R-080
    └ POST /save-data-files     계획대로 폴더 생성 + 복사              ← R-080
 ```
+
+### Summary 템플릿 (R-082, 2단계 미구현)
+
+조건 패널 맨 아래 `Analysis Result` / `Summary` 두 버튼. 상단 appbar 의 `결과 새 창` 은
+`Analysis Result` 로 내려왔다 — **id 는 `openResultsWindowBtn` 그대로**라
+`setResultPanelsVisible()` 의 활성/비활성 처리를 그대로 쓴다.
+
+- 템플릿 자리: `app_base_dir()/docs/RT_Summary_Template.xlsx` (상수 `SUMMARY_TEMPLATE_NAME`).
+  exe 옆 `docs/` 를 가리키므로 소스로 돌리든 exe 로 돌리든 같은 자리다.
+- **암호가 걸린 xlsx 는 열 수 없다.** `docs/` 의 기존 두 템플릿은 CDFV2 Encrypted 라 못 읽는다.
+- 1단계는 템플릿이 있는지만 확인해 알려준다. 값을 채워 내보내는 2단계는 템플릿을 받은 뒤.
+- 2단계에서 쓸 자리표시자 약속 (Eden 님께 전달한 규칙):
+  - 단일 값 `{{device}} {{type}} {{ver}} {{lot}} {{purpose}} {{item}} {{readout}} {{ft_temp}}`
+    `{{analysis_date}} {{revision}} {{data_path}}`
+    `{{total_units}} {{fail_units}} {{pass_units}} {{fail_items}}` `{{type.<유형>}}`
+  - 표는 첫 데이터 행에만 `{{row.<열이름>}}` — 열이름은 `selected_summary` 의 키를 쓴다
+    (`test_number item unit lower_limit upper_limit qty sample_numbers fail_type` …)
+  - **행은 코드로 끼워 넣지 않는다.** 템플릿에 빈 행을 미리 만들어 두고 그 안만 채운다 —
+    행을 삽입하면 병합 셀·행 높이·테두리가 틀어진다.
 
 ### 데이터 저장 (R-080)
 

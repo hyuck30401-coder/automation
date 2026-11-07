@@ -1189,8 +1189,8 @@ HTML = r"""<!doctype html>
     body.results-window .toolbar-mode,
     body.results-window .toolbar > label,
     body.results-window #initializeBtn,
-    body.results-window #summary,
-    body.results-window #openResultsWindowBtn {
+    body.results-window #openResultsWindowBtn,
+    body.results-window #summaryBtn {
       display: none !important;
     }
     body.results-window {
@@ -2568,6 +2568,8 @@ HTML = r"""<!doctype html>
     .sp-go:hover:not(:disabled){ background:var(--r-acc-d) }
     .sp-go:disabled{ opacity:.5; cursor:default }
     .sp-runrow{ display:grid; grid-template-columns:1fr 1.45fr; gap:8px }
+    /* R-082: 패널 맨 아래 결과물 버튼 줄. sp-gap 뒤에 있어 패널 바닥에 붙는다. */
+    .sp-outrow{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px }
     .sp-sub{ display:inline-flex; align-items:center; justify-content:center; gap:6px; height:38px;
       padding:0 10px; border:1px solid var(--r-line-in); border-radius:8px; background:#fff;
       color:var(--r-ink2); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer;
@@ -2907,7 +2909,6 @@ HTML = r"""<!doctype html>
           <span class="ab-last" title="마지막 분석 시각">Last <b id="latestAnalysisDate">-</b></span>
           <span class="ab-actions">
             <button id="rawExportBtn" class="ab-btn" type="button" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10 3.5v9M6.4 9.3 10 12.9l3.6-3.6M3.8 15.6h12.4"/></svg> Raw Data Export</button>
-            <button type="button" class="ab-btn light" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> 결과 새 창</button>
           </span>
         </header>
         <div class="workspace" id="workspace">
@@ -2943,6 +2944,12 @@ HTML = r"""<!doctype html>
                 </div>
               </section>
               <div class="sp-gap"></div>
+              <!-- R-082: 결과물 버튼은 패널 제일 아래에 모은다. id 는 상단에 있던 것을 그대로 가져와
+                   활성/비활성 처리(setResultPanelsVisible)를 다시 쓴다. -->
+              <div class="sp-outrow">
+                <button type="button" class="sp-sub" id="openResultsWindowBtn" title="분석 결과를 새 창으로 엽니다" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> Analysis Result</button>
+                <button type="button" class="sp-sub" id="summaryBtn" title="템플릿 양식에 맞춰 Summary 를 만듭니다" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 3.5h7.2L15.5 7v9.5a.8.8 0 0 1-.8.8H5a.8.8 0 0 1-.8-.8V4.3a.8.8 0 0 1 .8-.8z"/><path d="M7.2 9.4h5.6M7.2 12.2h5.6M7.2 6.6h2.8"/></svg> Summary</button>
+              </div>
             </div>
           </aside>
         <section id="managerView" class="view">
@@ -4907,6 +4914,8 @@ function setResultPanelsVisible(visible) {
   if (resultsWindowBtn) resultsWindowBtn.disabled = !visible;
   const rawExportBtn = document.getElementById("rawExportBtn");
   if (rawExportBtn) rawExportBtn.disabled = !visible;
+  const summaryBtn = document.getElementById("summaryBtn");      /* R-082 */
+  if (summaryBtn) summaryBtn.disabled = !visible;
   updatePanelMode();
 }
 function clearAnalysisDisplay(message = "") {
@@ -5620,6 +5629,7 @@ function bindParentControls() {
   });
   document.getElementById("initializeBtn").addEventListener("click", initializeAnalysis);
   document.getElementById("openResultsWindowBtn").addEventListener("click", () => openAnalysisResultsWindow());
+  document.getElementById("summaryBtn")?.addEventListener("click", openSummary);   /* R-082 */
   bindLookupControls();
   bindConditionToggle();
   bindSaveData();                                   /* R-080 */
@@ -5908,6 +5918,25 @@ function bindSaveData() {
     renderSaveFiles(); requestSavePlan();
   });
   svEl("svSaveBtn").addEventListener("click", commitSaveData);
+}
+
+/* R-082 1단계: 템플릿이 자리에 있는지만 확인해서 알려준다.
+   값을 채워 xlsx 로 내보내는 것은 템플릿을 받은 뒤 2단계에서 붙인다. */
+async function openSummary() {
+  try {
+    const res = await fetch("/summary-template");
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "템플릿을 확인하지 못했습니다.");
+    if (!data.exists) {
+      alert("Summary 템플릿이 없습니다.\n\n" + data.path +
+            "\n\n이 자리에 템플릿 xlsx 를 넣어주세요. 암호는 걸지 마세요 — 암호가 걸린 파일은 열 수 없습니다.");
+      return;
+    }
+    alert("템플릿을 찾았습니다.\n\n" + data.path +
+          "\n\n값을 채워 내보내는 기능은 아직 붙이지 않았습니다 (2단계).");
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 function setConditionCollapsed(collapsed) {
@@ -12300,6 +12329,20 @@ SAVE_POST_DEFAULT = "01_Post"
 _FORBIDDEN_NAME_CHARS = set('<>:"/\\|?*') | {chr(c) for c in range(32)}
 
 
+# R-082: Summary 템플릿은 docs/ 아래 이 이름 하나만 본다. 실행 파일(exe) 옆의 docs/ 를
+# 가리키므로, 소스로 돌리든 exe 로 돌리든 같은 자리다.
+SUMMARY_TEMPLATE_NAME = "RT_Summary_Template.xlsx"
+
+
+def summary_template_path():
+    return os.path.join(app_base_dir(), "docs", SUMMARY_TEMPLATE_NAME)
+
+
+def summary_template_state():
+    path = summary_template_path()
+    return {"path": path, "exists": os.path.isfile(path), "name": SUMMARY_TEMPLATE_NAME}
+
+
 def browse_data_files():
     import tkinter as tk
     from tkinter import filedialog
@@ -13346,6 +13389,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(HTML.encode("utf-8"))
+            return
+        if parsed.path == "/summary-template":                    # R-082
+            try:
+                self.send_json(summary_template_state())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
             return
         if parsed.path == "/export-raw-data":
             try:
