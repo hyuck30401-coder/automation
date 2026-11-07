@@ -231,8 +231,8 @@ history 에서 pass 를 찾는데 history 가 비어 있어 **원리적으로 �
 
 | # | 라벨 | 값의 출처 |
 |---|---|---|
-| 1 | Device | `DATA_ROOT` 바로 아래 폴더 이름 |
-| 2 | Reliability Type | 조건 폴더명 3번째 토막 — **5토막일 때만.** 선택 사항(R-079) |
+| 1 | Product | `DATA_ROOT` 바로 아래 폴더 이름 (R-081 전 라벨은 `Device`, id 는 그대로 `deviceInput`) |
+| 2 | Rel. Type | 조건 폴더명 3번째 토막 — **5토막일 때만.** 선택 사항(R-079) |
 | 3 | Ver. | 조건 폴더명 2번째 토막 |
 | 4 | Lot No. | 조건 폴더명 Lot 토막 |
 | 5 | Purpose | 조건 폴더명 Purpose 토막 |
@@ -243,7 +243,7 @@ history 에서 pass 를 찾는데 history 가 비어 있어 **원리적으로 �
 **1~5번이 조건 폴더 하나를 확정하고, 6~8번이 그 폴더 안 `01_Post` 의 파일을 고른다.
 두 축은 서로 참조하지 않는다.**
 
-> 2번 Reliability Type 만 필수가 아니다. `has_base_analysis_selection` 과
+> 2번 Rel. Type 만 필수가 아니다. `has_base_analysis_selection` 과
 > `selected_data_path` 의 필수 목록에 넣지 마라 — 4토막 폴더가 통째로 막힌다.
 
 ---

@@ -2502,6 +2502,11 @@ HTML = r"""<!doctype html>
     .ab-bar>i{ display:block; height:100%; width:0; background:#E0A33A; transition:width .12s linear }
     .ab-state.st-warn{ background:#3A3020; color:#E8C98A } .ab-state.st-warn::before{ background:#E0A33A }
     .ab-state.st-err{ background:#3A2322; color:#F0A6A1 } .ab-state.st-err::before{ background:#D9534F }
+    /* R-081: 조건 패널의 초록 상자를 없애면서 마지막 분석 시각만 상태바 옆으로 옮겼다. */
+    .ab-last{ flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+      font-size:11.5px; font-weight:600; color:#9AA1AC }
+    .ab-last b{ font-family:var(--r-mono); font-weight:600; color:#C9CDD4;
+      font-variant-numeric:tabular-nums }
     .ab-actions{ margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto }
     .ab-btn{ display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 14px;
       border-radius:8px; border:1px solid #3A3D45; background:transparent; color:#E8EAED;
@@ -2519,8 +2524,7 @@ HTML = r"""<!doctype html>
     .workspace.folded{ grid-template-columns:48px minmax(0,1fr) }
     .workspace.folded .sp-body{ display:none }
     .workspace.folded .sp-head{ flex-direction:column; height:auto; gap:10px; padding:12px 0 }
-    .workspace.folded .sp-title{ display:none }
-    .workspace.folded .sp-fold{ margin-left:0 }
+    .workspace.folded .sp-fold{ margin:0 auto }
     .workspace.folded .sp-fold svg{ transform:scaleX(-1) }
     .sidepanel{ background:#fff; border-right:1px solid var(--r-line); display:flex;
       flex-direction:column; min-height:0; overflow:auto }
@@ -2530,10 +2534,8 @@ HTML = r"""<!doctype html>
     #rdaView.view.active{ display:flex }
 
     /* ── 왼쪽 조건 패널 ────────────────────────────────────── */
-    .sp-head{ flex:0 0 auto; display:flex; align-items:center; gap:9px; height:56px; padding:0 16px }
-    .sp-num{ width:22px; height:22px; border-radius:50%; background:var(--r-acc); color:#fff;
-      font-size:11.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center }
-    .sp-title{ font-size:14.5px; font-weight:700; color:var(--r-ink) }
+    /* R-081: 제목 줄을 없애고 접기 버튼만 남겼다 — 줄 높이도 56 -> 44px 로 줄인다. */
+    .sp-head{ flex:0 0 auto; display:flex; align-items:center; gap:9px; height:44px; padding:0 16px }
     .sp-fold{ margin-left:auto; width:30px; height:30px; display:inline-flex; align-items:center;
       justify-content:center; border:1px solid var(--r-line); border-radius:8px; background:#fff;
       color:var(--r-ink3); cursor:pointer; padding:0 }
@@ -2624,22 +2626,13 @@ HTML = r"""<!doctype html>
     .sv-foot{ display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--r-line) }
     .sv-foot .sv-msg{ margin-right:auto; font-size:12px; color:var(--r-ink3) }
     .sv-foot .sp-go{ width:auto; height:38px; padding:0 20px; font-size:13px }
-    .sp-status{ border:1px solid #CDEBD8; background:var(--r-ok-s); border-radius:10px; padding:11px 12px;
-      display:flex; flex-direction:column; gap:8px }
-    .sp-status-head{ display:flex; align-items:center; justify-content:space-between;
-      font-size:12.5px; font-weight:700; color:var(--r-ink) }
-    .sp-status-msg{ font-size:12px; line-height:1.5; color:var(--r-ink2) }
-    .sp-status-msg:empty{ display:none }
-    .sp-status-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px;
-      border-top:1px solid #CDEBD8; padding-top:8px; font-size:11.5px; color:var(--r-ink3) }
-    .sp-status-foot span:last-child{ font-family:var(--r-mono); color:var(--r-ink2) }
     .status-pill{ display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px;
       border-radius:999px; background:var(--r-ok-b); color:var(--r-ok-t);
       font-size:11.5px; font-weight:700; border:0 }
     .status-pill.st-warn{ background:var(--r-warn-s); color:var(--r-warn-t) }
     .status-pill.st-err{ background:#FDE8E7; color:#9B2C22 }
     .sp-gap{ flex:1 1 auto; min-height:8px }
-    .sp-pathlabel{ margin-top:4px }
+    .sp-pathlabel{ margin-top:0 }
     .sp-path{ display:flex; align-items:flex-start; gap:8px; padding:9px 10px; border-radius:8px;
       background:var(--r-soft); border:1px solid var(--r-line) }
     .sp-path .pathtxt{ flex:1 1 auto; min-width:0; font-family:var(--r-mono); font-size:11.5px;
@@ -2863,7 +2856,6 @@ HTML = r"""<!doctype html>
     /* 왼쪽 패널 버튼: 예전 고정 폭(84/64/126px)을 패널 폭에 맞춘다 */
     #analyzeBtn.sp-go{ width:100%; min-height:44px; padding:0 12px }
     #stopAnalyzeBtn.sp-sub,#initializeBtn.sp-sub{ width:auto; min-height:38px; padding:0 8px }
-    .sp-status .status-pill{ font-size:11.5px; padding:0 9px; height:22px }
     .sp-path #dataPath{ white-space:normal; overflow:visible; text-overflow:clip;
       max-height:48px; overflow-y:auto }
 
@@ -2901,8 +2893,6 @@ HTML = r"""<!doctype html>
     /* 오류 띠 */
     .analyze-error{ border-radius:10px; font-size:12.5px }
 
-    /* 접힌 레일의 번호 배지는 가운데로 */
-    .workspace.folded .sp-num{ margin:0 auto }
   </style>
 </head>
 <body>
@@ -2914,6 +2904,7 @@ HTML = r"""<!doctype html>
           <span class="ab-id"><b>Reliability Data Analysis</b><small>__APP_REVISION__</small></span>
           <span class="ab-crumb" id="conditionSummaryLine"></span>
           <span class="ab-state" id="statusTop"><span class="ab-state-text" id="statusTopText">Ready</span><span class="ab-bar" id="statusBar"><i></i></span></span>
+          <span class="ab-last" title="마지막 분석 시각">Last <b id="latestAnalysisDate">-</b></span>
           <span class="ab-actions">
             <button id="rawExportBtn" class="ab-btn" type="button" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10 3.5v9M6.4 9.3 10 12.9l3.6-3.6M3.8 15.6h12.4"/></svg> Raw Data Export</button>
             <button type="button" class="ab-btn light" id="openResultsWindowBtn" title="Open Analysis Results in a new window" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> 결과 새 창</button>
@@ -2922,20 +2913,22 @@ HTML = r"""<!doctype html>
         <div class="workspace" id="workspace">
           <aside class="sidepanel" id="conditionCard">
             <div class="sp-head">
-              <span class="sp-num">1</span><b class="sp-title">분석 조건</b>
               <button type="button" class="sp-fold" id="conditionSecBtn" aria-expanded="true" title="패널 접기"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M8 3.5v13M14.5 7.5 12 10l2.5 2.5"/></svg></button>
             </div>
             <div class="sp-body" id="conditionBody">
-              <div class="sp-label">PRODUCT</div>
+              <!-- R-081: 데이터 경로와 저장을 맨 위로. 조건을 고르기 전에 먼저 정하는 것들이다. -->
+              <div class="sp-label sp-pathlabel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.8 6.2a1.4 1.4 0 0 1 1.4-1.4h3.1l1.5 1.8h6.3a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H4.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg> DATA PATH</div>
+              <div class="sp-path"><span class="pathtxt" id="dataPath">-</span><button type="button" class="sp-sub sm" id="browseDataPathBtn">경로 변경</button></div>
+              <button type="button" class="sp-sub" id="saveDataBtn" title="데이터 파일을 폴더 규칙대로 저장합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.6 3.5h8l3 3v9.3a.7.7 0 0 1-.7.7H4.6a.7.7 0 0 1-.7-.7V4.2a.7.7 0 0 1 .7-.7z"/><path d="M6.6 3.5v4.2h5.3V3.5M6.6 16.5v-4.6h6.8v4.6"/></svg> 데이터 저장</button>
+              <div class="sp-div"></div>
               <div class="sp-grid">
-                <div class="field wide"><label>Device</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
-                <div class="field wide"><label>Reliability Type</label><select id="typeSelect" title="비워두면 구분 없이 전체 폴더를 봅니다. 폴더명이 4토막인 조건은 구분값이 없습니다."></select></div>
+                <div class="field wide"><label>Product</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
+                <div class="field"><label>Rel. Type</label><select id="typeSelect" title="비워두면 구분 없이 전체 폴더를 봅니다. 폴더명이 4토막인 조건은 구분값이 없습니다."></select></div>
                 <div class="field"><label>Ver.</label><select id="verSelect"></select></div>
-                <div class="field"><label>Lot No.</label><select id="lotSelect"></select></div>
+                <div class="field wide"><label>Lot No.</label><select id="lotSelect"></select></div>
                 <div class="field wide"><label>Purpose</label><select id="purposeSelect"></select></div>
               </div>
               <div class="sp-div"></div>
-              <div class="sp-label">TEST SCOPE</div>
               <div class="sp-grid">
                 <div class="field wide"><label>Reliability Items</label><select id="reliabilityItemSelect"></select></div>
                 <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
@@ -2949,14 +2942,7 @@ HTML = r"""<!doctype html>
                   <button id="initializeBtn" class="sp-sub" type="button"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M16 10a6 6 0 1 1-1.9-4.4"/><path d="M16.3 3.4v3.1h-3.1"/></svg> Analysis Initialization</button>
                 </div>
               </section>
-              <section class="sp-status">
-                <div class="sp-status-msg" id="summary"></div>
-                <div class="sp-status-foot"><span>Latest Analysis Date</span><span id="latestAnalysisDate">-</span></div>
-              </section>
               <div class="sp-gap"></div>
-              <div class="sp-label sp-pathlabel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.8 6.2a1.4 1.4 0 0 1 1.4-1.4h3.1l1.5 1.8h6.3a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H4.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg> DATA PATH</div>
-              <div class="sp-path"><span class="pathtxt" id="dataPath">-</span><button type="button" class="sp-sub sm" id="browseDataPathBtn">경로 변경</button></div>
-              <button type="button" class="sp-sub" id="saveDataBtn" title="데이터 파일을 폴더 규칙대로 저장합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.6 3.5h8l3 3v9.3a.7.7 0 0 1-.7.7H4.6a.7.7 0 0 1-.7-.7V4.2a.7.7 0 0 1 .7-.7z"/><path d="M6.6 3.5v4.2h5.3V3.5M6.6 16.5v-4.6h6.8v4.6"/></svg> 데이터 저장</button>
             </div>
           </aside>
         <section id="managerView" class="view">
@@ -4941,7 +4927,7 @@ function clearAnalysisDisplay(message = "") {
   renderDetailTable();
   drawCharts();
   updateReliabilityTabs();
-  document.getElementById("summary").textContent = message;
+  /* R-081: 조건 패널의 상태 상자를 없앴다. 진행/완료 문구는 상단 상태바만 쓴다. */
 }
 function applyAnalysisPayload(data, remember = true) {
   analysis = data || emptyAnalysisPayload();
@@ -5073,12 +5059,10 @@ async function runAnalysis() {
     await refreshSelectedItem();
     const loaded = [passData, failData].every(data => data.cache_status === "loaded");
     setStatus(loaded ? "Loaded" : "Done");
-    document.getElementById("summary").textContent = displayData.message || `Pass/Fail analysis completed. Showing ${displayMode === "fail" ? "Fail" : "Pass"} results.`;
     if (!isResultsWindow) setConditionCollapsed(true);
   } catch (err) {
     if (stopAnalysisRequested || err.message === "Analysis stopped.") {
       setStatus("Stopped");
-      document.getElementById("summary").textContent = "Analysis stopped.";
       await reportAnalysisResultsRunStatus("stopped", "Analysis stopped.");
     } else {
       setStatus("Failed");
