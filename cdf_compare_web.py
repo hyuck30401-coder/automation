@@ -6003,8 +6003,9 @@ function renderSummaryWindow(data, params) {
 
   const note = doc.createElement("p"); note.className = "note";
   const lines = [];
-  lines.push("신뢰성 항목 하나가 한 줄입니다. Result 는 " +
+  lines.push("신뢰성 항목 하나가 한 줄입니다. Result 는 온도별로 '불량 유닛 수 / 투입 유닛 수' 이고, " +
              (data.excluded_types || []).join(" · ") + " 를 뺀 기준입니다 — 화면의 'Marginal 제외' 와 같습니다.");
+  lines.push("빈 칸은 그 온도로 시험하지 않았다는 뜻입니다.");
   lines.push("Condition · Judgement · Remark 는 비워둡니다. 내보낸 엑셀에서 직접 적으세요.");
   if (!data.total_analysis) {
     lines.push("※ 지금은 항목 하나만 분석한 결과입니다. 표 전체를 채우려면 Reliability Items 를 '전체 (미선택)' 으로 두고 분석하세요.");
@@ -6021,21 +6022,44 @@ function renderSummaryWindow(data, params) {
   });
   wrap.appendChild(note);
 
+  /* R-084: 헤더가 두 줄이다 — Result 만 가로 3칸(Room/Hot/Cold), 나머지는 세로 2줄. */
   const table = doc.createElement("table");
   const thead = doc.createElement("thead");
-  const hr = doc.createElement("tr");
-  (data.columns || []).forEach(label => {
-    const th = doc.createElement("th"); th.textContent = label; hr.appendChild(th);
+  const topRow = doc.createElement("tr");
+  (data.head || []).forEach(cell => {
+    const th = doc.createElement("th");
+    th.textContent = cell.label;
+    if (cell.colspan > 1) th.colSpan = cell.colspan;
+    if (cell.rowspan > 1) th.rowSpan = cell.rowspan;
+    topRow.appendChild(th);
   });
-  thead.appendChild(hr); table.appendChild(thead);
+  thead.appendChild(topRow);
+  if ((data.subhead || []).length) {
+    const subRow = doc.createElement("tr");
+    data.subhead.forEach(label => {
+      const th = doc.createElement("th"); th.textContent = label; subRow.appendChild(th);
+    });
+    thead.appendChild(subRow);
+  }
+  table.appendChild(thead);
+
+  /* 조건 네 칸(Product/Ver./Rel. Type/Lot ID)은 줄마다 같은 값이라 세로로 합친다.
+     엑셀과 같은 모양이어야 화면에서 본 것을 그대로 보고서로 쓸 수 있다. */
+  const mergeCols = new Set((data.merge_columns || []).map(n => n - 1));
+  const rows = data.rows || [];
   const tbody = doc.createElement("tbody");
-  (data.rows || []).forEach(row => {
+  rows.forEach((row, rowIndex) => {
     const tr = doc.createElement("tr");
-    (data.keys || []).forEach(key => {
+    (data.keys || []).forEach((key, colIndex) => {
+      if (mergeCols.has(colIndex) && rowIndex) return;
       const td = doc.createElement("td");
       const value = row[key];
       td.textContent = value == null ? "" : String(value);
-      if (key === "result") td.className = value === "Fail" ? "fail" : "pass";
+      if (mergeCols.has(colIndex) && rows.length > 1) td.rowSpan = rows.length;
+      if (key.indexOf("result_") === 0) {
+        if (!value) td.className = "blank";                 /* 그 온도로 시험 안 함 */
+        else td.className = /^0F\//.test(String(value)) ? "pass" : "fail";
+      }
       if (key === "fail_item") {
         td.className = "l";
         const all = row.fail_items_all || [];
@@ -12473,13 +12497,24 @@ def summary_template_state():
 # 화면이 보내주는 값을 믿지 않는다. 조건(Product/Ver./Lot) 만 화면에서 받는다.
 
 SUMMARY_SHEET_NAME = "Summary Table"
+# R-084: Result 를 온도 3칸으로 쪼갰다. 한 항목이 Room/Hot/Cold 로 나뉘어 시험되고
+# 온도마다 Fail 수가 다르다 — 실측 HTOL 은 Room 9 / Hot 1 / Cold 13 이었다.
+# 한 칸으로 합치면 어느 온도를 고르느냐에 따라 보고서 숫자가 1에서 13까지 흔들린다.
+SUMMARY_TEMPS = ["Room", "Hot", "Cold"]
 SUMMARY_COLUMNS = [
     ("product", "Product"), ("ver", "Ver."), ("rel_type", "Rel. Type"),
     ("lot", "Lot ID"), ("rel_item", "Rel. Item"), ("condition", "Condition"),
-    ("duration", "Duration"), ("result", "Result"), ("fail_item", "Fail Item"),
-    ("judgement", "Judgement"), ("remark", "Remark"),
+    ("duration", "Duration"),
+    ("result_room", "Room"), ("result_hot", "Hot"), ("result_cold", "Cold"),
+    ("fail_item", "Fail Item"), ("judgement", "Judgement"), ("remark", "Remark"),
 ]
-SUMMARY_FIRST_DATA_ROW = 2
+# 헤더는 2줄이다 — Result 만 가로 3칸, 나머지는 세로 2줄 병합.
+SUMMARY_HEAD = ([(label, 1, 2) for _, label in SUMMARY_COLUMNS[:7]]
+                + [("Result", 3, 1)]
+                + [(label, 1, 2) for _, label in SUMMARY_COLUMNS[10:]])
+SUMMARY_FIRST_DATA_ROW = 3
+# 조건 네 칸(Product/Ver./Rel. Type/Lot ID)은 줄마다 같은 값이라 세로로 병합한다.
+SUMMARY_MERGE_COLUMNS = [1, 2, 3, 4]
 
 
 def summary_fail_item_text(names):
@@ -12517,22 +12552,40 @@ def summary_table_rows(selection, run_id=""):
         if item and item not in readouts and combo.get("readout"):
             readouts[item] = combo["readout"]
 
+    default_temp = (selection.get("ft_temp") or "").strip()
     fail_counts = {}       # 신뢰성 항목 -> {테스트 항목명: Fail 유닛 수}
+    fail_units = {}        # (신뢰성 항목, 온도) -> Fail 유닛 번호 집합
     for row in fail.get("selected_summary") or []:
-        if str(row.get("fail_type") or "") in excluded:
-            continue
         item = (row.get("reliability_item") or default_item).strip()
         name = str(row.get("item") or "").strip()
         if not item or not name:
             continue
         if item not in order:
             order.append(item)
-        bucket = fail_counts.setdefault(item, {})
-        bucket[name] = bucket.get(name, 0) + (row.get("qty") or 0)
         # 전체 분석은 readout, 단일 조건은 judged_readout 을 단다 — 둘 다 본다.
         readouts.setdefault(item, row.get("judged_readout") or row.get("readout") or fallback_readout)
+        if str(row.get("fail_type") or "") in excluded:
+            continue
+        bucket = fail_counts.setdefault(item, {})
+        bucket[name] = bucket.get(name, 0) + (row.get("qty") or 0)
+        temp = (row.get("ft_temp") or default_temp).strip()
+        units = fail_units.setdefault((item, temp), set())
+        for sample in str(row.get("sample_numbers") or "").split(","):
+            sample = sample.strip()
+            if sample:
+                units.add(sample)
     if not order and default_item:
         order = [default_item]
+
+    # 분모는 그 (항목, 온도) 파일의 유닛 수다. 분자와 같은 파일에서 나온 수라야
+    # "몇 대 중 몇 대" 가 성립한다 — 온도를 섞으면 분모와 분자가 다른 집합이 된다.
+    by_condition = (fail.get("unit_counts") or {}).get("by_condition") or {}
+
+    def result_text(item, temp):
+        counts = by_condition.get("%s||%s" % (item, temp))
+        if not counts:
+            return ""                      # 그 온도로는 시험하지 않았다
+        return "%dF/%d" % (len(fail_units.get((item, temp)) or ()), counts.get("total", 0) or 0)
 
     rows = []
     for item in order:
@@ -12546,7 +12599,9 @@ def summary_table_rows(selection, run_id=""):
             "rel_item": item,
             "condition": "",          # R-084 Stress 조건 입력이 붙으면 그 값이 들어온다
             "duration": readouts.get(item) or fallback_readout,
-            "result": "Fail" if names else "Pass",
+            "result_room": result_text(item, "Room"),
+            "result_hot": result_text(item, "Hot"),
+            "result_cold": result_text(item, "Cold"),
             "fail_item": summary_fail_item_text(names),
             "fail_items_all": names,  # 화면 전용 — 템플릿에는 안 들어간다
             "judgement": "",
@@ -12555,6 +12610,10 @@ def summary_table_rows(selection, run_id=""):
     return {
         "columns": [label for _, label in SUMMARY_COLUMNS],
         "keys": [key for key, _ in SUMMARY_COLUMNS],
+        "head": [{"label": label, "colspan": colspan, "rowspan": rowspan}
+                 for label, colspan, rowspan in SUMMARY_HEAD],
+        "subhead": list(SUMMARY_TEMPS),
+        "merge_columns": list(SUMMARY_MERGE_COLUMNS),
         "rows": rows,
         "excluded_types": sorted(excluded),
         "total_analysis": bool(fail.get("total_analysis")),
@@ -12567,32 +12626,86 @@ def _xml_escape(text):
     return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def fill_summary_sheet_xml(sheet_xml, rows):
-    """템플릿 시트 XML 의 빈 셀에 값만 꽂는다.
+def set_sheet_cell(sheet_xml, ref, value):
+    """시트 XML 의 셀 하나에 문자열 값을 꽂는다. 못 찾으면 None 을 돌려준다.
 
-    템플릿은 데이터 행의 모든 칸이 <c r="A2" s="3"/> 로 이미 들어 있고 s(서식)를 달고 있다.
-    그 자리에 t="inlineStr" 로 값을 넣으면 sharedStrings 를 건드리지 않아도 되고,
-    테두리·열 너비·행 높이가 그대로 남는다. 행을 새로 끼워 넣지 않는 것이 핵심이다 —
-    행을 삽입하면 병합 셀과 행 높이가 틀어진다.
+    빈 셀은 엑셀이 쓴 <c r="A3" s="3"/> 와 openpyxl 이 쓴 <c r="A3" s="3" t="n"></c> 두
+    모양으로 온다. 둘 다 받아야 한다 — 템플릿을 어느 도구로 저장했느냐에 따라 달라진다.
+    s(서식) 속성은 그대로 두고 t 만 inlineStr 로 바꾼다.
+    """
+    start = sheet_xml.find('<c r="%s"' % ref)
+    if start < 0:
+        return None
+    gt = sheet_xml.find(">", start)
+    if gt < 0:
+        return None
+    head = sheet_xml[start:gt + 1]
+    if head.endswith("/>"):
+        end = gt + 1
+    else:
+        close = sheet_xml.find("</c>", gt)
+        if close < 0:
+            return None
+        end = close + 4
+    attrs = head[len('<c r="%s"' % ref):].rstrip(">").rstrip("/")
+    attrs = re.sub(r'\s+t="[^"]*"', "", attrs)
+    filled = '<c r="%s"%s t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (
+        ref, attrs, _xml_escape(value))
+    return sheet_xml[:start] + filled + sheet_xml[end:]
+
+
+def add_sheet_merges(sheet_xml, refs):
+    """<mergeCells> 에 병합 범위를 더한다. 없으면 만들어 넣는다."""
+    if not refs:
+        return sheet_xml
+    added = "".join('<mergeCell ref="%s"/>' % ref for ref in refs)
+    block = re.search(r'<mergeCells count="(\d+)">(.*?)</mergeCells>', sheet_xml, re.S)
+    if block:
+        count = int(block.group(1)) + len(refs)
+        return (sheet_xml[:block.start()]
+                + '<mergeCells count="%d">%s%s</mergeCells>' % (count, block.group(2), added)
+                + sheet_xml[block.end():])
+    # mergeCells 는 sheetData 바로 뒤에 와야 한다 (OOXML 순서가 틀리면 엑셀이 거부한다).
+    anchor = sheet_xml.find("</sheetData>")
+    if anchor < 0:
+        return sheet_xml
+    anchor += len("</sheetData>")
+    return (sheet_xml[:anchor]
+            + '<mergeCells count="%d">%s</mergeCells>' % (len(refs), added)
+            + sheet_xml[anchor:])
+
+
+def fill_summary_sheet_xml(sheet_xml, rows):
+    """템플릿 시트의 빈 데이터 칸에 값만 꽂고, 조건 네 칸을 세로로 병합한다.
+
+    행을 새로 끼워 넣지 않는 것이 핵심이다 — 행을 삽입하면 병합 셀과 행 높이가 틀어진다.
+    병합한 칸은 맨 윗줄만 값을 갖는다(엑셀 규칙). 그래서 조건 칸은 첫 줄에만 쓴다.
     """
     written = 0
     skipped = 0
+    merge_set = set(SUMMARY_MERGE_COLUMNS)
     for index, row in enumerate(rows):
         excel_row = SUMMARY_FIRST_DATA_ROW + index
-        for column, (key, _label) in enumerate(SUMMARY_COLUMNS):
+        for column, (key, _label) in enumerate(SUMMARY_COLUMNS, start=1):
+            if column in merge_set and index:
+                continue                      # 병합 범위의 아래쪽 칸은 비워 둔다
             value = row.get(key)
             if value is None or str(value) == "":
                 continue
-            ref = "%s%d" % (xlsx_col_name(column + 1), excel_row)
-            empty = re.search(r'<c r="%s"([^>]*?)/>' % re.escape(ref), sheet_xml)
-            if not empty:
+            ref = "%s%d" % (xlsx_col_name(column), excel_row)
+            updated = set_sheet_cell(sheet_xml, ref, value)
+            if updated is None:
                 skipped += 1
                 continue
-            attrs = empty.group(1)
-            filled = '<c r="%s"%s t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (
-                ref, attrs, _xml_escape(value))
-            sheet_xml = sheet_xml[:empty.start()] + filled + sheet_xml[empty.end():]
+            sheet_xml = updated
             written += 1
+    if len(rows) > 1:
+        last = SUMMARY_FIRST_DATA_ROW + len(rows) - 1
+        sheet_xml = add_sheet_merges(sheet_xml, [
+            "%s%d:%s%d" % (xlsx_col_name(column), SUMMARY_FIRST_DATA_ROW,
+                           xlsx_col_name(column), last)
+            for column in SUMMARY_MERGE_COLUMNS
+        ])
     return sheet_xml, written, skipped
 
 
@@ -12629,17 +12742,28 @@ def build_summary_workbook(selection, run_id=""):
 def summary_sheet_path(payloads):
     """workbook.xml 에서 'Summary Table' 시트의 실제 XML 경로를 찾는다.
     시트 순서가 바뀌어도 sheet1.xml 로 못 박지 않기 위해서다."""
+    # 속성 순서를 가정하지 않는다 — 엑셀은 Id 를 먼저, openpyxl 은 Target 을 먼저 쓴다.
+    def attr(tag, name):
+        found = re.search(r'\b%s="([^"]*)"' % re.escape(name), tag)
+        return found.group(1) if found else ""
+
     workbook = payloads["xl/workbook.xml"].decode("utf-8")
-    match = re.search(r'<sheet[^>]*name="%s"[^>]*r:id="([^"]+)"' % re.escape(SUMMARY_SHEET_NAME),
-                      workbook)
-    if not match:
+    rel_id = ""
+    for tag in re.findall(r"<sheet\b[^>]*/?>", workbook):
+        if attr(tag, "name") == SUMMARY_SHEET_NAME:
+            rel_id = attr(tag, "r:id") or attr(tag, "id")
+            break
+    if not rel_id:
         raise ValueError("템플릿에 '%s' 시트가 없습니다." % SUMMARY_SHEET_NAME)
     rels = payloads["xl/_rels/workbook.xml.rels"].decode("utf-8")
-    target = re.search(r'<Relationship[^>]*Id="%s"[^>]*Target="([^"]+)"' % re.escape(match.group(1)),
-                       rels)
+    target = ""
+    for tag in re.findall(r"<Relationship\b[^>]*/?>", rels):
+        if attr(tag, "Id") == rel_id:
+            target = attr(tag, "Target")
+            break
     if not target:
         raise ValueError("템플릿의 시트 관계를 읽지 못했습니다.")
-    path = target.group(1).lstrip("/")
+    path = target.lstrip("/")
     return path if path.startswith("xl/") else "xl/" + path
 
 

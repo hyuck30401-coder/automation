@@ -88,22 +88,37 @@ ThreadingHTTPServer
 **R-083 — `Summary Table` 시트를 신뢰성 항목별 한 줄로 채운다.** (`ESD Result` 시트는 손대지 않고
 그대로 복사된다. 자리표시자 방식은 쓰지 않았다 — 템플릿의 열이 고정이라 열 순서로 바로 쓴다.)
 
+**열은 13개, 헤더는 2줄이다 (R-084).** Result 만 가로 3칸(Room/Hot/Cold), 나머지는 세로 2줄 병합.
+
 | 열 | 값 |
 |---|---|
-| A Product · B Ver. · C Rel. Type · D Lot ID | 화면이 보낸 분석 조건 |
+| A Product · B Ver. · C Rel. Type · D Lot ID | 화면이 보낸 분석 조건. **데이터 행 전체를 세로 병합**하므로 첫 줄에만 쓴다 |
 | E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 |
-| F Condition | **빈칸** — R-084 Stress 조건 입력이 붙으면 그 값이 들어온다 |
+| F Condition | **빈칸** — Stress 조건 입력이 붙으면 그 값이 들어온다 |
 | G Duration | 판정에 쓴 Read-out (`total_conditions` / 행의 `judged_readout`) |
-| H Result | `fail_gate.excluded_types`(Tail·Unstable)를 뺀 Fail 행이 있으면 Fail |
-| I Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
-| J Judgement · K Remark | **빈칸** — 사람이 적는다 |
+| H·I·J Result (Room/Hot/Cold) | `"%dF/%d" % (불량 유닛, 투입 유닛)`. **빈칸이면 그 온도로 시험하지 않은 것** |
+| K Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
+| L Judgement · M Remark | **빈칸** — 사람이 적는다 |
+
+**Result 를 온도별로 쪼갠 이유 (R-084).** 한 항목이 Room/Hot/Cold 로 나뉘어 시험되는데
+온도마다 Fail 수가 다르다 — 실측 HTOL 은 Room 9 / Hot 1 / Cold 13 이었다. 한 칸으로 합치면
+어느 온도를 대표로 삼느냐에 따라 보고서 숫자가 1에서 13까지 흔들린다. **유닛 수는 온도 간
+합집합을 쓰면 안 된다** (§3-3: Post 파일의 DEVICE_ID 품질이 고르지 않아 같은 유닛이 온도마다
+다른 id 로 잡힐 수 있다). 분모와 분자를 같은 (항목, 온도) 파일에서 뽑아야 "몇 대 중 몇 대" 가
+성립한다 — `unit_counts.by_condition["항목||온도"]` 가 분모다.
 
 - 행은 **서버(`summary_table_rows`)가 만든다.** 화면은 받은 행을 그리기만 한다 — 판정 기준이
   화면과 엑셀에서 갈라지지 않게 하려는 것이다.
-- **행을 새로 끼워 넣지 않는다.** 템플릿의 빈 행(2~12행)에 값만 꽂는다. 모자라면 저장을 거부하고
+- **행을 새로 끼워 넣지 않는다.** 템플릿의 빈 행(3~13행)에 값만 꽂는다. 모자라면 저장을 거부하고
   "빈 행을 더 만들어 달라"고 알린다 — 행을 삽입하면 병합 셀·행 높이·테두리가 틀어진다.
 - 문자열은 `t="inlineStr"` 로 넣어 `sharedStrings.xml` 을 건드리지 않는다. 셀의 `s`(서식) 속성은
   그대로 두므로 테두리·열 너비가 살아남는다. zip 안의 파일 순서도 원본대로 다시 쓴다.
+- **빈 셀은 두 모양으로 온다** — 엑셀이 저장하면 `<c r="A3" s="3"/>`, openpyxl 이 저장하면
+  `<c r="A3" s="3" t="n"></c>`. `set_sheet_cell()` 이 둘 다 받는다. 시트 경로를 찾는
+  `summary_sheet_path()` 도 속성 순서를 가정하지 않는다 (엑셀은 `Id` 먼저, openpyxl 은
+  `Target` 먼저 쓴다). 템플릿을 어느 도구로 저장했느냐에 따라 깨지면 안 된다.
+- 조건 네 칸의 세로 병합은 `<mergeCells>` 에 범위를 더해서 만든다. 병합한 칸은 맨 윗줄만
+  값을 갖는 것이 엑셀 규칙이라, 그 칸은 첫 데이터 행에만 쓴다.
 - 화면 출력은 템플릿이 없어도 된다. 내보내기만 템플릿을 탄다.
 
 ### 데이터 저장 (R-080)
