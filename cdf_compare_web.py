@@ -5920,23 +5920,135 @@ function bindSaveData() {
   svEl("svSaveBtn").addEventListener("click", commitSaveData);
 }
 
-/* R-082 1단계: 템플릿이 자리에 있는지만 확인해서 알려준다.
-   값을 채워 xlsx 로 내보내는 것은 템플릿을 받은 뒤 2단계에서 붙인다. */
+/* R-083: Summary Table 을 새 창에 그리고, 그 창에서 템플릿 서식대로 xlsx 를 받는다.
+   행을 만드는 책임은 전부 서버(/summary-data)에 있다 — 화면은 받은 행을 그리기만 한다.
+   화면 출력은 템플릿이 없어도 되고, 내보내기만 템플릿을 탄다. */
+function summarySelectionParams() {
+  const params = new URLSearchParams();
+  params.set("run", activeAnalysisRunId || analysis?.analysis_run_id || "");
+  ["device", "type", "ver", "lot", "purpose", "item", "readout", "ft_temp"]
+    .forEach(key => params.set(key, lookupState[key] || ""));
+  return params;
+}
+
 async function openSummary() {
+  if (!analysis || !analysis.analysis_mode) {
+    alert("Analysis Results are not available.");
+    return;
+  }
+  const params = summarySelectionParams();
+  let data;
   try {
-    const res = await fetch("/summary-template");
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || "템플릿을 확인하지 못했습니다.");
-    if (!data.exists) {
-      alert("Summary 템플릿이 없습니다.\n\n" + data.path +
-            "\n\n이 자리에 템플릿 xlsx 를 넣어주세요. 암호는 걸지 마세요 — 암호가 걸린 파일은 열 수 없습니다.");
-      return;
-    }
-    alert("템플릿을 찾았습니다.\n\n" + data.path +
-          "\n\n값을 채워 내보내는 기능은 아직 붙이지 않았습니다 (2단계).");
+    const res = await fetch("/summary-data?" + params.toString());
+    data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Summary 를 만들지 못했습니다.");
   } catch (err) {
     alert(err.message);
+    return;
   }
+  renderSummaryWindow(data, params);
+}
+
+function renderSummaryWindow(data, params) {
+  const win = window.open("", "rtSummary", "width=1360,height=760");
+  if (!win) { alert("새 창이 브라우저에서 차단됐습니다."); return; }
+  const doc = win.document;
+  doc.open(); doc.write("<!doctype html><html lang='ko'><head><meta charset='utf-8'></head><body></body></html>"); doc.close();
+  doc.title = "Summary Table";
+  const style = doc.createElement("style");
+  style.textContent = [
+    "body{margin:0;padding:20px;background:#F4F5F7;color:#1B1E23;",
+    "  font-family:'맑은 고딕','Malgun Gothic',system-ui,sans-serif;font-size:13px}",
+    ".wrap{max-width:1300px;margin:0 auto}",
+    ".head{display:flex;align-items:flex-end;gap:12px;margin-bottom:10px}",
+    ".head h1{margin:0;font-size:18px}",
+    ".head .cond{color:#5B6270;font-size:12.5px}",
+    ".head .acts{margin-left:auto;display:flex;gap:8px}",
+    "button{height:34px;padding:0 14px;border:1px solid #D4D7DD;border-radius:8px;background:#fff;",
+    "  font-family:inherit;font-size:12.5px;font-weight:600;color:#2B3038;cursor:pointer}",
+    "button.go{background:#2747D4;border-color:#2747D4;color:#fff}",
+    "button:disabled{color:#9AA1AC;background:#EDEFF2;cursor:default}",
+    ".note{margin:0 0 10px;color:#5B6270;font-size:12px;line-height:1.6}",
+    ".note b{color:#1B1E23}",
+    ".warn{color:#8A5A00}",
+    "table{border-collapse:collapse;background:#fff;width:100%}",
+    "th,td{border:1px solid #C9CDD4;padding:6px 8px;text-align:center;vertical-align:middle}",
+    "th{background:#EDEFF2;font-weight:700;white-space:nowrap}",
+    "td.l{text-align:left}",
+    "td.fail{color:#C0392B;font-weight:700} td.pass{color:#1E6FBF;font-weight:700}",
+    "td.blank{background:#FAFBFC}",
+  ].join("");
+  doc.head.appendChild(style);
+
+  const wrap = doc.createElement("div"); wrap.className = "wrap";
+  const head = doc.createElement("div"); head.className = "head";
+  const h1 = doc.createElement("h1"); h1.textContent = "Summary Table";
+  const cond = doc.createElement("span"); cond.className = "cond";
+  cond.textContent = [params.get("device"), params.get("type"), params.get("ver"),
+                      params.get("lot") ? "Lot " + params.get("lot") : "", params.get("purpose")]
+                     .filter(Boolean).join(" · ") + (data.analysis_date ? "   " + data.analysis_date : "");
+  const acts = doc.createElement("div"); acts.className = "acts";
+  const exportBtn = doc.createElement("button");
+  exportBtn.className = "go";
+  exportBtn.textContent = "엑셀로 내보내기";
+  if (!data.template?.exists) {
+    exportBtn.disabled = true;
+    exportBtn.title = "템플릿이 없습니다: " + (data.template?.path || "");
+  } else {
+    exportBtn.addEventListener("click", () => { win.location.href = "/export-summary?" + params.toString(); });
+  }
+  acts.appendChild(exportBtn);
+  head.appendChild(h1); head.appendChild(cond); head.appendChild(acts);
+  wrap.appendChild(head);
+
+  const note = doc.createElement("p"); note.className = "note";
+  const lines = [];
+  lines.push("신뢰성 항목 하나가 한 줄입니다. Result 는 " +
+             (data.excluded_types || []).join(" · ") + " 를 뺀 기준입니다 — 화면의 'Marginal 제외' 와 같습니다.");
+  lines.push("Condition · Judgement · Remark 는 비워둡니다. 내보낸 엑셀에서 직접 적으세요.");
+  if (!data.total_analysis) {
+    lines.push("※ 지금은 항목 하나만 분석한 결과입니다. 표 전체를 채우려면 Reliability Items 를 '전체 (미선택)' 으로 두고 분석하세요.");
+  }
+  if (!data.template?.exists) {
+    lines.push("※ 템플릿이 없어 내보내기를 쓸 수 없습니다: " + (data.template?.path || ""));
+  }
+  lines.forEach((text, index) => {
+    if (index) note.appendChild(doc.createElement("br"));
+    const span = doc.createElement("span");
+    if (text.startsWith("※")) span.className = "warn";
+    span.textContent = text;
+    note.appendChild(span);
+  });
+  wrap.appendChild(note);
+
+  const table = doc.createElement("table");
+  const thead = doc.createElement("thead");
+  const hr = doc.createElement("tr");
+  (data.columns || []).forEach(label => {
+    const th = doc.createElement("th"); th.textContent = label; hr.appendChild(th);
+  });
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = doc.createElement("tbody");
+  (data.rows || []).forEach(row => {
+    const tr = doc.createElement("tr");
+    (data.keys || []).forEach(key => {
+      const td = doc.createElement("td");
+      const value = row[key];
+      td.textContent = value == null ? "" : String(value);
+      if (key === "result") td.className = value === "Fail" ? "fail" : "pass";
+      if (key === "fail_item") {
+        td.className = "l";
+        const all = row.fail_items_all || [];
+        if (all.length > 1) td.title = all.join("\n");   /* 전체 목록은 여기서 본다 */
+      }
+      if (key === "condition" || key === "judgement" || key === "remark") td.className = "blank";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  doc.body.appendChild(wrap);
 }
 
 function setConditionCollapsed(collapsed) {
@@ -9953,6 +10065,9 @@ def decorate_combo_payload(payload, reliability_item, ft_temp, readout, readout_
     # R-038/R-040: 병합에서 조합(신뢰성 항목 x 온도) 단위로 인구조사를 묶는 키.
     payload["reliability_item"] = reliability_item
     payload["ft_temp"] = ft_temp
+    # R-083: 판정에 쓴 Read-out 을 payload 에도 올린다. 지금까지는 행에만 달려 있어서
+    # Fail 이 하나도 없는 조합(행이 없는 조합)의 Read-out 을 읽을 길이 없었다.
+    payload["judged_readout"] = readout
     key_by_item = {}
     for row in payload.get("results", []):
         original_item = row.get("item", "")
@@ -10046,11 +10161,20 @@ def merge_combo_payloads(combo_payloads, mode):
         "total_analysis": True,
         "total_reliability_items": [],
         "total_ft_temps": [],
+        # R-083: Summary 의 Duration 칸은 "판정에 쓴 Read-out" 이다. Fail 이 하나도 없는
+        # 항목은 selected_summary 에 행이 없어 거기서 못 읽으므로 조합 정보를 따로 싣는다.
+        "total_conditions": [],
         "message": "",
     }
     reliability_seen = []
     temp_seen = []
     for payload in combo_payloads:
+        if payload.get("reliability_item"):
+            merged["total_conditions"].append({
+                "item": payload.get("reliability_item"),
+                "ft_temp": payload.get("ft_temp"),
+                "readout": payload.get("judged_readout") or payload.get("readout") or "",
+            })
         merged["results"].extend(payload.get("results", []))
         merged["selected_summary"].extend(payload.get("selected_summary", []))
         merged["over_sigma"].extend(payload.get("over_sigma", []))
@@ -11467,7 +11591,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 30  # 29->30: 선택 키에 type 복원 (R-079 Reliability Type).
+CACHE_SCHEMA = 31  # 30->31: total_conditions 추가 (R-083 Summary Duration).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
@@ -12343,6 +12467,182 @@ def summary_template_state():
     return {"path": path, "exists": os.path.isfile(path), "name": SUMMARY_TEMPLATE_NAME}
 
 
+# ---- R-083 Summary Table ----------------------------------------------------
+# 템플릿(docs/RT_Summary_Template.xlsx) 의 'Summary Table' 시트를 신뢰성 항목별 한 줄로
+# 채운다. 값은 서버가 들고 있는 Fail 분석 결과(CURRENT_PAYLOADS)에서 만든다 —
+# 화면이 보내주는 값을 믿지 않는다. 조건(Product/Ver./Lot) 만 화면에서 받는다.
+
+SUMMARY_SHEET_NAME = "Summary Table"
+SUMMARY_COLUMNS = [
+    ("product", "Product"), ("ver", "Ver."), ("rel_type", "Rel. Type"),
+    ("lot", "Lot ID"), ("rel_item", "Rel. Item"), ("condition", "Condition"),
+    ("duration", "Duration"), ("result", "Result"), ("fail_item", "Fail Item"),
+    ("judgement", "Judgement"), ("remark", "Remark"),
+]
+SUMMARY_FIRST_DATA_ROW = 2
+
+
+def summary_fail_item_text(names):
+    """Fail 항목이 여러 개면 대표 하나 + '외 N건'. 열 너비가 21자라 전부 늘어놓으면 넘친다.
+    대표는 Fail 유닛이 가장 많은 항목이다(동률이면 이름순). 전체 목록은 화면에서 본다."""
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    return "%s 외 %d건" % (names[0], len(names) - 1)
+
+
+def summary_table_rows(selection, run_id=""):
+    payloads, _ = current_export_payloads(run_id)
+    fail = payloads.get("fail")
+    if not fail:
+        raise ValueError("Fail 분석 결과가 없습니다. 먼저 분석을 실행하세요.")
+    # 화면의 'Marginal 제외' 기본값과 같은 기준을 쓴다 — 화면에서 보는 것과 어긋나면 안 된다.
+    excluded = {str(name) for name in ((fail.get("fail_gate") or {}).get("excluded_types")
+                                       or [FAIL_MARGINAL_TYPE])}
+    default_item = (selection.get("item") or "").strip()
+    default_readout = (selection.get("readout") or "").strip()
+    if default_readout == AUTO_LATEST_READOUT:
+        default_readout = ""
+
+    order = [name for name in (fail.get("total_reliability_items") or []) if name]
+    for name in ((fail.get("unit_counts") or {}).get("by_reliability") or {}):
+        if name and name not in order:
+            order.append(name)
+
+    fallback_readout = (fail.get("judged_readout") or "").strip() or default_readout
+    readouts = {}
+    for combo in fail.get("total_conditions") or []:
+        item = (combo.get("item") or "").strip()
+        if item and item not in readouts and combo.get("readout"):
+            readouts[item] = combo["readout"]
+
+    fail_counts = {}       # 신뢰성 항목 -> {테스트 항목명: Fail 유닛 수}
+    for row in fail.get("selected_summary") or []:
+        if str(row.get("fail_type") or "") in excluded:
+            continue
+        item = (row.get("reliability_item") or default_item).strip()
+        name = str(row.get("item") or "").strip()
+        if not item or not name:
+            continue
+        if item not in order:
+            order.append(item)
+        bucket = fail_counts.setdefault(item, {})
+        bucket[name] = bucket.get(name, 0) + (row.get("qty") or 0)
+        # 전체 분석은 readout, 단일 조건은 judged_readout 을 단다 — 둘 다 본다.
+        readouts.setdefault(item, row.get("judged_readout") or row.get("readout") or fallback_readout)
+    if not order and default_item:
+        order = [default_item]
+
+    rows = []
+    for item in order:
+        bucket = fail_counts.get(item) or {}
+        names = sorted(bucket, key=lambda name: (-bucket[name], name))
+        rows.append({
+            "product": (selection.get("device") or "").strip(),
+            "ver": (selection.get("ver") or "").strip(),
+            "rel_type": (selection.get("type") or "").strip(),
+            "lot": (selection.get("lot") or "").strip(),
+            "rel_item": item,
+            "condition": "",          # R-084 Stress 조건 입력이 붙으면 그 값이 들어온다
+            "duration": readouts.get(item) or fallback_readout,
+            "result": "Fail" if names else "Pass",
+            "fail_item": summary_fail_item_text(names),
+            "fail_items_all": names,  # 화면 전용 — 템플릿에는 안 들어간다
+            "judgement": "",
+            "remark": "",
+        })
+    return {
+        "columns": [label for _, label in SUMMARY_COLUMNS],
+        "keys": [key for key, _ in SUMMARY_COLUMNS],
+        "rows": rows,
+        "excluded_types": sorted(excluded),
+        "total_analysis": bool(fail.get("total_analysis")),
+        "analysis_date": fail.get("analysis_date", ""),
+        "template": summary_template_state(),
+    }
+
+
+def _xml_escape(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def fill_summary_sheet_xml(sheet_xml, rows):
+    """템플릿 시트 XML 의 빈 셀에 값만 꽂는다.
+
+    템플릿은 데이터 행의 모든 칸이 <c r="A2" s="3"/> 로 이미 들어 있고 s(서식)를 달고 있다.
+    그 자리에 t="inlineStr" 로 값을 넣으면 sharedStrings 를 건드리지 않아도 되고,
+    테두리·열 너비·행 높이가 그대로 남는다. 행을 새로 끼워 넣지 않는 것이 핵심이다 —
+    행을 삽입하면 병합 셀과 행 높이가 틀어진다.
+    """
+    written = 0
+    skipped = 0
+    for index, row in enumerate(rows):
+        excel_row = SUMMARY_FIRST_DATA_ROW + index
+        for column, (key, _label) in enumerate(SUMMARY_COLUMNS):
+            value = row.get(key)
+            if value is None or str(value) == "":
+                continue
+            ref = "%s%d" % (xlsx_col_name(column + 1), excel_row)
+            empty = re.search(r'<c r="%s"([^>]*?)/>' % re.escape(ref), sheet_xml)
+            if not empty:
+                skipped += 1
+                continue
+            attrs = empty.group(1)
+            filled = '<c r="%s"%s t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>' % (
+                ref, attrs, _xml_escape(value))
+            sheet_xml = sheet_xml[:empty.start()] + filled + sheet_xml[empty.end():]
+            written += 1
+    return sheet_xml, written, skipped
+
+
+def build_summary_workbook(selection, run_id=""):
+    state = summary_template_state()
+    if not state["exists"]:
+        raise ValueError("Summary 템플릿이 없습니다: %s" % state["path"])
+    data = summary_table_rows(selection, run_id)
+    rows = data["rows"]
+    with zipfile.ZipFile(state["path"]) as source:
+        names = source.namelist()
+        payloads = {name: source.read(name) for name in names}
+    sheet_path = summary_sheet_path(payloads)
+    sheet_xml = payloads[sheet_path].decode("utf-8")
+    sheet_xml, written, skipped = fill_summary_sheet_xml(sheet_xml, rows)
+    if skipped:
+        raise ValueError(
+            "템플릿의 빈 행이 모자랍니다 — %d칸을 못 넣었습니다. "
+            "'%s' 시트에 서식이 잡힌 빈 행을 더 만들어 주세요 (지금 %d줄 필요)."
+            % (skipped, SUMMARY_SHEET_NAME, len(rows)))
+    payloads[sheet_path] = sheet_xml.encode("utf-8")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as out:
+        for name in names:                      # 원본 순서를 그대로 지킨다
+            out.writestr(name, payloads[name])
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    parts = [part for part in ("RT_Summary",
+                               (selection.get("device") or "").strip(),
+                               (selection.get("ver") or "").strip(), stamp) if part]
+    filename = re.sub(r'[\\/:*?"<>|]+', "_", "_".join(parts)) + ".xlsx"
+    return filename, buffer.getvalue(), written, len(rows)
+
+
+def summary_sheet_path(payloads):
+    """workbook.xml 에서 'Summary Table' 시트의 실제 XML 경로를 찾는다.
+    시트 순서가 바뀌어도 sheet1.xml 로 못 박지 않기 위해서다."""
+    workbook = payloads["xl/workbook.xml"].decode("utf-8")
+    match = re.search(r'<sheet[^>]*name="%s"[^>]*r:id="([^"]+)"' % re.escape(SUMMARY_SHEET_NAME),
+                      workbook)
+    if not match:
+        raise ValueError("템플릿에 '%s' 시트가 없습니다." % SUMMARY_SHEET_NAME)
+    rels = payloads["xl/_rels/workbook.xml.rels"].decode("utf-8")
+    target = re.search(r'<Relationship[^>]*Id="%s"[^>]*Target="([^"]+)"' % re.escape(match.group(1)),
+                       rels)
+    if not target:
+        raise ValueError("템플릿의 시트 관계를 읽지 못했습니다.")
+    path = target.group(1).lstrip("/")
+    return path if path.startswith("xl/") else "xl/" + path
+
+
 def browse_data_files():
     import tkinter as tk
     from tkinter import filedialog
@@ -12910,6 +13210,9 @@ def decorate_selected_summary_condition(payload, reliability_item, ft_temp, read
             by_reliability={reliability_item or "": dict(counts)},
             by_condition={f"{reliability_item or ''}||{ft_temp or ''}": dict(counts)},
         )
+    # R-083: Summary 의 Duration 칸이 읽는 자리. 단일 조건에서도 전체 분석과 같게 둔다.
+    if readout:
+        payload["judged_readout"] = readout
     if not reliability_item and not ft_temp and not readout:
         return payload
     for row in payload.get("selected_summary", []):
@@ -13389,6 +13692,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(HTML.encode("utf-8"))
+            return
+        if parsed.path == "/summary-data":                        # R-083
+            try:
+                query = parse_qs(parsed.query)
+                selection = {key: query.get(key, [""])[0] for key in
+                             ("device", "type", "ver", "lot", "purpose", "item", "readout", "ft_temp")}
+                self.send_json(summary_table_rows(selection, query.get("run", [""])[0]))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if parsed.path == "/export-summary":                      # R-083
+            try:
+                query = parse_qs(parsed.query)
+                selection = {key: query.get(key, [""])[0] for key in
+                             ("device", "type", "ver", "lot", "purpose", "item", "readout", "ft_temp")}
+                filename, workbook, _written, _count = build_summary_workbook(
+                    selection, query.get("run", [""])[0])
+                self.send_download(
+                    workbook, filename,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
             return
         if parsed.path == "/summary-template":                    # R-082
             try:

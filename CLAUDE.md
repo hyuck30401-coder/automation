@@ -69,12 +69,14 @@ ThreadingHTTPServer
    ├ GET  /item?name=&mode=    항목별 상세 (지연 로딩)
    ├ GET  /export-raw-data     수기 OOXML xlsx
    ├ GET  /summary-template    Summary 템플릿이 자리에 있는지            ← R-082
+   ├ GET  /summary-data        Summary Table 행 (신뢰성 항목별)         ← R-083
+   ├ GET  /export-summary      템플릿 서식 그대로 채운 xlsx              ← R-083
    ├ POST /browse-data-files   저장할 파일 고르기 (네이티브 선택창)   ← R-080
    ├ POST /save-plan           저장 계획 (검증·폴더 확정·파일 해석)   ← R-080
    └ POST /save-data-files     계획대로 폴더 생성 + 복사              ← R-080
 ```
 
-### Summary 템플릿 (R-082, 2단계 미구현)
+### Summary (R-082 버튼 · R-083 내용)
 
 조건 패널 맨 아래 `Analysis Result` / `Summary` 두 버튼. 상단 appbar 의 `결과 새 창` 은
 `Analysis Result` 로 내려왔다 — **id 는 `openResultsWindowBtn` 그대로**라
@@ -83,15 +85,26 @@ ThreadingHTTPServer
 - 템플릿 자리: `app_base_dir()/docs/RT_Summary_Template.xlsx` (상수 `SUMMARY_TEMPLATE_NAME`).
   exe 옆 `docs/` 를 가리키므로 소스로 돌리든 exe 로 돌리든 같은 자리다.
 - **암호가 걸린 xlsx 는 열 수 없다.** `docs/` 의 기존 두 템플릿은 CDFV2 Encrypted 라 못 읽는다.
-- 1단계는 템플릿이 있는지만 확인해 알려준다. 값을 채워 내보내는 2단계는 템플릿을 받은 뒤.
-- 2단계에서 쓸 자리표시자 약속 (Eden 님께 전달한 규칙):
-  - 단일 값 `{{device}} {{type}} {{ver}} {{lot}} {{purpose}} {{item}} {{readout}} {{ft_temp}}`
-    `{{analysis_date}} {{revision}} {{data_path}}`
-    `{{total_units}} {{fail_units}} {{pass_units}} {{fail_items}}` `{{type.<유형>}}`
-  - 표는 첫 데이터 행에만 `{{row.<열이름>}}` — 열이름은 `selected_summary` 의 키를 쓴다
-    (`test_number item unit lower_limit upper_limit qty sample_numbers fail_type` …)
-  - **행은 코드로 끼워 넣지 않는다.** 템플릿에 빈 행을 미리 만들어 두고 그 안만 채운다 —
-    행을 삽입하면 병합 셀·행 높이·테두리가 틀어진다.
+**R-083 — `Summary Table` 시트를 신뢰성 항목별 한 줄로 채운다.** (`ESD Result` 시트는 손대지 않고
+그대로 복사된다. 자리표시자 방식은 쓰지 않았다 — 템플릿의 열이 고정이라 열 순서로 바로 쓴다.)
+
+| 열 | 값 |
+|---|---|
+| A Product · B Ver. · C Rel. Type · D Lot ID | 화면이 보낸 분석 조건 |
+| E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 |
+| F Condition | **빈칸** — R-084 Stress 조건 입력이 붙으면 그 값이 들어온다 |
+| G Duration | 판정에 쓴 Read-out (`total_conditions` / 행의 `judged_readout`) |
+| H Result | `fail_gate.excluded_types`(Tail·Unstable)를 뺀 Fail 행이 있으면 Fail |
+| I Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
+| J Judgement · K Remark | **빈칸** — 사람이 적는다 |
+
+- 행은 **서버(`summary_table_rows`)가 만든다.** 화면은 받은 행을 그리기만 한다 — 판정 기준이
+  화면과 엑셀에서 갈라지지 않게 하려는 것이다.
+- **행을 새로 끼워 넣지 않는다.** 템플릿의 빈 행(2~12행)에 값만 꽂는다. 모자라면 저장을 거부하고
+  "빈 행을 더 만들어 달라"고 알린다 — 행을 삽입하면 병합 셀·행 높이·테두리가 틀어진다.
+- 문자열은 `t="inlineStr"` 로 넣어 `sharedStrings.xml` 을 건드리지 않는다. 셀의 `s`(서식) 속성은
+  그대로 두므로 테두리·열 너비가 살아남는다. zip 안의 파일 순서도 원본대로 다시 쓴다.
+- 화면 출력은 템플릿이 없어도 된다. 내보내기만 템플릿을 탄다.
 
 ### 데이터 저장 (R-080)
 
