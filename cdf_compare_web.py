@@ -295,7 +295,6 @@ HTML = r"""<!doctype html>
     .lnk:hover { background: var(--bg); color: var(--text); }
     .lnk:disabled { opacity: .45; cursor: default; }
     .lnk:disabled:hover { background: transparent; }
-    body.results-window .top { display: none !important; }
     .side {
       border-right: 0;
       padding: 0 22px;
@@ -784,9 +783,6 @@ HTML = r"""<!doctype html>
       min-height: 0;
       gap: 12px;
     }
-    .results-window-title {
-      display: none !important;
-    }
     /* 분석 실행 전에는 결과 영역을 통째로 감춘다.
        !important 가 필요한 이유: 아래쪽(2106줄 부근)에 `.grid{display:grid}` 가
        또 선언되어 있는데 특이도가 같아서 나중 규칙이 이긴다. 그 탓에 여기서
@@ -1180,284 +1176,6 @@ HTML = r"""<!doctype html>
       opacity: .45;
       cursor: default;
       background: #f4f8fb;
-    }
-    body.results-window .side,
-    body.results-window .view-header,
-    body.results-window .rda-card,
-    body.results-window #analyzeBtn,
-    body.results-window #stopAnalyzeBtn,
-    body.results-window .toolbar-mode,
-    body.results-window .toolbar > label,
-    body.results-window #initializeBtn,
-    body.results-window #summaryBtn {
-      display: none !important;
-    }
-    body.results-window {
-      zoom: 1;
-      width: 100%;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-    body.results-window .app-shell {
-      grid-template-columns: 1fr;
-      height: 100vh;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-    body.results-window .content {
-      height: 100vh;
-      min-height: 0;
-      padding: 0;
-      overflow: hidden;
-    }
-    body.results-window main {
-      height: 100vh;
-      min-height: 100vh;
-      padding: 0;
-      overflow: hidden;
-    }
-    body.results-window #rdaView.active {
-      display: grid;
-      grid-template-rows: max-content minmax(0, 1fr);
-      height: 100vh;
-      min-height: 0;
-      overflow: hidden;
-    }
-    body.results-window .toolbar {
-      margin: 10px 12px 8px;
-      min-height: 62px;
-      padding: 12px 20px;
-      align-items: center;
-      flex: 0 0 auto;
-    }
-    body.results-window .analysis-results-section {
-      display: grid;
-      grid-template-rows: minmax(0, 1fr);
-      align-self: stretch;
-      margin: 8px 12px 0;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      box-shadow: none;
-      overflow: var(--results-section-overflow, hidden);
-      height: var(--results-section-height, 100%);
-      min-height: 0;
-    }
-    body.results-window #summaryStrip {
-      display: none !important;
-    }
-    body.results-window .analysis-results-section > .condition-title {
-      display: none !important;
-    }
-    body.results-window .analysis-results-scroll {
-      display: block;
-      overflow: var(--results-scroll-overflow, auto);
-      overflow-x: var(--results-scroll-overflow-x, hidden);
-      overflow-y: var(--results-scroll-overflow-y, scroll);
-      padding: 0;
-      background: transparent;
-      min-height: 0;
-      height: var(--results-scroll-height, 100%);
-    }
-    body.results-window .analysis-filter-bar {
-      display: grid;
-      position: sticky;
-      top: 0;
-      z-index: 5;
-      margin: 0 0 10px;
-      padding: 14px 18px;
-      gap: 8px 18px;
-      border-radius: 8px;
-      box-shadow: 0 7px 20px rgba(21,83,150,.08);
-    }
-    body.results-window .analysis-filter-bar:not(.active) {
-      display: none;
-    }
-    body.results-window .filter-group {
-      gap: 8px;
-    }
-    body.results-window .reliability-filter-group {
-      flex: 1 1 100%;
-    }
-    body.results-window .temp-filter-group {
-      flex: 0 1 auto;
-      padding-left: 0;
-    }
-    body.results-window .filter-chip {
-      min-width: 88px;
-      min-height: 38px;
-      font-size: 14px;
-      font-weight: 800;
-    }
-    body.results-window .temp-filter-group .filter-chip {
-      min-width: 70px;
-      min-height: 30px;
-      padding: 4px 10px;
-      font-size: 12px;
-    }
-    body.results-window #passResultsGrid:not(.results-hidden) {
-      display: grid;
-      grid-template-columns: minmax(0, 4fr) minmax(0, 3fr);  /* 본창과 동일한 4:3 */
-      grid-template-rows: minmax(0, 1fr);
-      grid-template-areas: none;
-      gap: 10px;
-      height: var(--results-grid-height, 100%);
-      min-height: var(--results-grid-min-height, 0);
-      align-items: stretch;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      overflow: var(--results-grid-overflow, hidden);
-    }
-    body.results-window #passResultsGrid.results-hidden {
-      display: none;
-    }
-    body.results-window .result-table-column,
-    body.results-window .result-graph-column {
-      /* 본창과 동일하게 세로 flex. grid 로 두면 .ctl(KPI 상자)까지 행을 배정받아
-         늘어나면서 본창(54px)과 달리 334px 로 벌어졌다. */
-      display: flex;
-      flex-direction: column;
-      grid-area: auto;
-      min-width: 0;
-      min-height: 0;
-      height: 100%;
-      gap: 10px;
-    }
-    body.results-window .result-table-column > .panel,
-    body.results-window .result-graph-column > .panel {
-      grid-area: auto;
-    }
-    body.results-window .result-table-column {
-      padding: 0;
-      border: 1px solid #d7e3f1;
-      border-radius: 9px;
-      background: #fff;
-      box-shadow: 0 8px 22px rgba(31,74,118,.06);
-      overflow: hidden;
-    }
-    body.results-window .summary-panel { order: 1; }
-    body.results-window .over-panel { order: 2; }
-    body.results-window .detail-panel { order: 3; }
-    body.results-window .result-graph-column {
-      grid-template-rows: auto minmax(0, 1fr) minmax(0, .9fr);
-      overflow: hidden;
-    }
-    body.results-window .fail-layout .result-table-column {
-      grid-template-rows: minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.15fr);
-    }
-    body.results-window .fail-layout .result-graph-column {
-      grid-template-rows: auto minmax(0, 1fr) minmax(0, .9fr);
-    }
-    body.results-window .results-window-title {
-      display: none !important;
-    }
-    body.results-window .panel {
-      border-radius: 8px;
-      box-shadow: 0 8px 22px rgba(31,74,118,.07);
-      min-height: 0;
-      overflow: hidden;
-    }
-    body.results-window .panel h2 {
-      min-height: 42px;
-      padding: 10px 18px;
-      font-size: 16px;
-      flex: 0 0 auto;
-    }
-    body.results-window .chart-box,
-    body.results-window .scatter-box,
-    body.results-window .wafer-box {
-      min-height: 0;
-      padding: 8px 12px 12px;
-    }
-    /* 새 창에서 Abnormal Shift Sample 을 강제 표시하던 규칙을 뺐다.
-       본창과 동일한 형식으로 맞추기 위해 updatePanelMode() 의 판단에 맡긴다. */
-    body.results-window .chart-panel,
-    body.results-window .diff-cdf-panel,
-    body.results-window .ppf-panel,
-    body.results-window .scatter-panel {
-      display: none;
-    }
-    body.results-window .chart-panel.active-graph,
-    body.results-window .diff-cdf-panel.active-graph,
-    body.results-window .ppf-panel.active-graph,
-    body.results-window .scatter-panel.active-graph,
-    body.results-window .wafer-panel.active-graph {
-      display: flex;                 /* R-070: 새 창도 본창과 같은 탭 전환 */
-    }
-    body.results-window .table-wrap {
-      flex: 1 1 auto;
-      min-height: 0;
-      overflow-x: auto;
-      overflow-y: scroll;
-    }
-    body.results-window table {
-      min-width: 100%;
-      table-layout: fixed;
-    }
-    body.results-window th,
-    body.results-window td {
-      height: 36px;
-      padding: 7px 10px;
-      font-size: 13px;
-    }
-    body.results-window #resultTable {
-      min-width: 1680px;
-      table-layout: auto;
-    }
-    body.results-window #resultTable th,
-    body.results-window #resultTable td {
-      width: auto !important;
-    }
-    body.results-window .detail-panel .table-wrap {
-      overflow-x: hidden;
-    }
-    body.results-window #detailTable {
-      width: 100%;
-      min-width: 0;
-      table-layout: fixed;
-    }
-    body.results-window #detailTable th,
-    body.results-window #detailTable td {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    body.results-window #detailTable th {
-      line-height: 1.15;
-      white-space: normal;
-      word-break: keep-all;
-    }
-    /* 열 폭은 본창과 동일하게 JS 가 계산한다 (R-023) */
-    body.results-window #overTable th:nth-child(1),
-    body.results-window #overTable td:nth-child(1) { width: 9%; }
-    body.results-window #overTable th:not(:first-child),
-    body.results-window #overTable td:not(:first-child) { width: 22%; }
-    body.results-window .chart-tools {
-      padding: 10px 18px;
-      gap: 14px;
-    }
-    body.results-window .graph-item-toolbar {
-      display: flex;
-      align-items: center;
-      min-height: 52px;
-      border: 1px solid #d7e3f1;
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: 0 8px 22px rgba(31,74,118,.07);
-    }
-    body.results-window .chart-tools select {
-      min-width: 56%;
-      height: 36px;
-      font-size: 15px;
-    }
-    body.results-window .graph-filter-bar {
-      display: flex;
-      min-height: 42px;
-      padding: 8px 12px;
-    }
-    body.results-window .graph-filter-bar:not(.active) {
-      display: none;
     }
     .filter-icon {
       width: 18px;
@@ -1939,16 +1657,6 @@ HTML = r"""<!doctype html>
     }
     .panel-icon {
       color: #0968bd;
-    }
-    body.results-window #passResultsGrid:not(.results-hidden) {
-      display: grid;
-    }
-    body.results-window #passResultsGrid.results-hidden {
-      display: none;
-    }
-    body.results-window .chart-box,
-    body.results-window .scatter-box {
-      min-height: 0;
     }
     th {
       /* WCAG AA 미달(밝은 쪽 정지점 대비 2.87:1) 이라 명도만 낮춤, 색상 계열 유지 */
@@ -3152,7 +2860,6 @@ let analysisFilters = {
   readouts: { pre_t0: true, post_t1: true, post_t2: true, post_t3: true },
   fail_exception: false
 };
-const isResultsWindow = window.location.pathname === "/results-window";
 
 function chartPixelRatio() {
   return Math.max(2, Math.min(4, (window.devicePixelRatio || 1) * 2));
@@ -3625,10 +3332,6 @@ function setAnalysisMode(mode, renderExisting = true) {
   analysisMode = mode === "fail" ? "fail" : "pass";
   updateResultTabButtons();
   updateResultTabVisibility();
-  if (isResultsWindow && renderExisting && !modePayloads[analysisMode]) {
-    loadLatestAnalysis(analysisMode, { retry: true });
-    return;
-  }
   if (renderExisting && modePayloads[analysisMode]) {
     applyAnalysisPayload(modePayloads[analysisMode], false);
     refreshSelectedItem();
@@ -4625,7 +4328,7 @@ function ensureSelectedOverItemVisible() {
   }
 }
 function ensureSelectedItemVisibleForActiveTab() {
-  if (!isResultsWindow && resultViewMode === "sample") ensureSelectedOverItemVisible();
+  if (resultViewMode === "sample") ensureSelectedOverItemVisible();
   else ensureSelectedItemVisible();
 }
 function updateResultTabButtons() {
@@ -5063,7 +4766,7 @@ async function runAnalysis() {
     await refreshSelectedItem();
     const loaded = [passData, failData].every(data => data.cache_status === "loaded");
     setStatus(loaded ? "Loaded" : "Done");
-    if (!isResultsWindow) setConditionCollapsed(true);
+    setConditionCollapsed(true);
   } catch (err) {
     if (stopAnalysisRequested || err.message === "Analysis stopped.") {
       setStatus("Stopped");
@@ -5132,88 +4835,6 @@ async function reportAnalysisResultsRunStatus(status, message) {
   }
 }
 
-let latestAnalysisRetryTimer = null;
-
-async function preloadAnalysisPayload(mode, options = {}) {
-  const resultMode = mode === "fail" ? "fail" : "pass";
-  if (modePayloads[resultMode]) return modePayloads[resultMode];
-  const retry = !!options.retry;
-  const maxAttempts = options.maxAttempts ?? 900;
-  const delayMs = options.delayMs ?? 1000;
-  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
-    try {
-      const params = new URLSearchParams({ mode: resultMode });
-      if (activeAnalysisRunId) params.set("run", activeAnalysisRunId);
-      const res = await fetch(`/latest-analysis?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        if (retry && data.status === "running" && attempt < maxAttempts) {
-          await delay(delayMs);
-          continue;
-        }
-        return null;
-      }
-      modePayloads[data.analysis_mode || resultMode] = data;
-      return data;
-    } catch (_err) {
-      if (retry && attempt < maxAttempts) {
-        await delay(delayMs);
-        continue;
-      }
-      return null;
-    }
-  }
-  return null;
-}
-
-async function loadLatestAnalysis(mode = analysisMode, options = {}) {
-  if (latestAnalysisRetryTimer) {
-    clearTimeout(latestAnalysisRetryTimer);
-    latestAnalysisRetryTimer = null;
-  }
-  setStatus("Loading results...");
-  try {
-    const resultMode = mode === "fail" ? "fail" : "pass";
-    const params = new URLSearchParams({ mode: resultMode });
-    if (activeAnalysisRunId) params.set("run", activeAnalysisRunId);
-    const res = await fetch(`/latest-analysis?${params.toString()}`);
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      if (data.status === "running" && options.retry) {
-        clearAnalysisDisplay(data.message || "Analysis is running...");
-        setStatus("Waiting");
-        latestAnalysisRetryTimer = setTimeout(() => loadLatestAnalysis(resultMode, options), 1000);
-        return;
-      }
-      throw new Error(data.error || "Analysis Results are not available.");
-    }
-    modePayloads[data.analysis_mode || resultMode] = data;
-    setAnalysisMode(data.analysis_mode || resultMode, false);
-    applyAnalysisPayload(data);
-    if (isResultsWindow) {
-      preloadAnalysisPayload(resultMode === "fail" ? "pass" : "fail", { retry: options.retry }).then(payload => {
-        if (payload) renderSummary();
-      });
-    }
-    await refreshSelectedItem();
-    setStatus("Done");
-  } catch (err) {
-    clearAnalysisDisplay(err.message);
-    setStatus("Failed");
-  }
-}
-
-function initializeResultsWindow() {
-  document.title = "Analysis Results";
-  document.body.classList.add("results-window");
-  const params = new URLSearchParams(window.location.search);
-  applyResultsWindowTuning(params);
-  const mode = params.get("mode") === "fail" ? "fail" : "pass";
-  activeAnalysisRunId = params.get("run") || "";
-  setAnalysisMode(mode, false);
-  loadLatestAnalysis(mode, { retry: true });
-}
-
 function parseCssPixelLength(value) {
   if (value == null) return null;
   const normalized = String(value).trim();
@@ -5244,12 +4865,6 @@ function parseOverflowValue(value) {
   const normalized = String(value).trim().toLowerCase();
   if (["visible", "hidden", "auto", "scroll", "clip"].includes(normalized)) return normalized;
   return null;
-}
-
-function setResultsCssVar(name, value, applied) {
-  if (!value) return;
-  document.documentElement.style.setProperty(name, value);
-  applied.push(`${name.replace("--results-", "")}=${value}`);
 }
 
 function firstQueryValue(params, names) {
@@ -5332,58 +4947,6 @@ function applyParentResultsTuning(params) {
   if (visibility === true && !applied.length) applied.push("parentResults=show");
   if (applied.length) {
     document.title = `Pre/Post CDF Sigma Compare Tool (${applied.join(", ")})`;
-  }
-}
-
-function applyResultsWindowTuning(params) {
-  const applied = [];
-  const sectionHeight = parseCssPixelLength(params.get("sectionHeight") || params.get("resultsHeight"));
-  const scrollHeight = parseCssPixelLength(params.get("scrollHeight"));
-  const directGridHeight = parseCssPixelLength(params.get("gridHeight") || params.get("resultsGridHeight"));
-  const gridOffset = parseCssPixelLength(params.get("gridOffset") || params.get("heightOffset"));
-  const clipMode = String(params.get("clip") || "").trim().toLowerCase();
-  if (["off", "false", "0", "visible"].includes(clipMode)) {
-    setResultsCssVar("--results-section-overflow", "visible", applied);
-    setResultsCssVar("--results-scroll-overflow", "visible", applied);
-    setResultsCssVar("--results-scroll-overflow-x", "visible", applied);
-    setResultsCssVar("--results-scroll-overflow-y", "visible", applied);
-    setResultsCssVar("--results-grid-overflow", "visible", applied);
-  } else if (["on", "true", "1", "hidden"].includes(clipMode)) {
-    setResultsCssVar("--results-section-overflow", "hidden", applied);
-    setResultsCssVar("--results-scroll-overflow-x", "hidden", applied);
-    setResultsCssVar("--results-scroll-overflow-y", "scroll", applied);
-    setResultsCssVar("--results-grid-overflow", "hidden", applied);
-  }
-  setResultsCssVar("--results-section-overflow", parseOverflowValue(params.get("sectionOverflow")), applied);
-  const scrollOverflow = parseOverflowValue(params.get("scrollOverflow"));
-  if (scrollOverflow) {
-    setResultsCssVar("--results-scroll-overflow", scrollOverflow, applied);
-    setResultsCssVar("--results-scroll-overflow-x", scrollOverflow, applied);
-    setResultsCssVar("--results-scroll-overflow-y", scrollOverflow, applied);
-  }
-  setResultsCssVar("--results-scroll-overflow-x", parseOverflowValue(params.get("scrollOverflowX")), applied);
-  setResultsCssVar("--results-scroll-overflow-y", parseOverflowValue(params.get("scrollOverflowY")), applied);
-  setResultsCssVar("--results-grid-overflow", parseOverflowValue(params.get("gridOverflow")), applied);
-  if (sectionHeight) {
-    document.documentElement.style.setProperty("--results-section-height", sectionHeight);
-    applied.push(`sectionHeight=${sectionHeight}`);
-  }
-  if (scrollHeight) {
-    document.documentElement.style.setProperty("--results-scroll-height", scrollHeight);
-    applied.push(`scrollHeight=${scrollHeight}`);
-  }
-  if (directGridHeight) {
-    document.documentElement.style.setProperty("--results-grid-height", directGridHeight);
-    applied.push(`gridHeight=${directGridHeight}`);
-  } else if (gridOffset) {
-    const adjustedGridHeight = viewportMinusPixelLength(gridOffset);
-    if (adjustedGridHeight) {
-      document.documentElement.style.setProperty("--results-grid-height", adjustedGridHeight);
-      applied.push(`gridOffset=${gridOffset}`);
-    }
-  }
-  if (applied.length) {
-    document.title = `Analysis Results (${applied.join(", ")})`;
   }
 }
 
@@ -6116,12 +5679,8 @@ function bindConditionToggle() {
 }
 
 bindResultControls();
-if (isResultsWindow) {
-  initializeResultsWindow();
-} else {
-  bindParentControls();
-  applyParentResultsTuning(new URLSearchParams(window.location.search));
-}
+bindParentControls();
+applyParentResultsTuning(new URLSearchParams(window.location.search));
 
 function renderSummary() {
   // R-064: 신뢰성 항목·FT Temp 필터가 바뀌면 유형별 샘플 집합도 달라진다. 여기서 버린다
@@ -6324,25 +5883,6 @@ function renderFlagAlphaLabel() {
     const alpha = Number(analysis.flag_alpha);
     el.textContent = Number.isFinite(alpha) ? `(alpha=${alpha}, 항목별 n 기준 Grubbs 임계)` : "";
   }
-}
-function analysisResultsWindowUrl(mode = analysisMode, waitForResults = false, runId = "") {
-  const params = new URLSearchParams({ mode: mode === "fail" ? "fail" : "pass" });
-  if (waitForResults) params.set("wait", "1");
-  if (runId) params.set("run", runId);
-  return `/results-window?${params.toString()}`;
-}
-function openAnalysisResultsWindow(mode = analysis?.analysis_mode || analysisMode, allowEmpty = false, runId = "") {
-  if (!allowEmpty && !analysis) {
-    alert("Analysis Results are not available.");
-    return null;
-  }
-  const popup = window.open(analysisResultsWindowUrl(mode, allowEmpty, runId), "analysisResultsWindow", "width=1800,height=1050,resizable=yes,scrollbars=yes");
-  if (!popup) {
-    alert("New window was blocked by the browser.");
-    return null;
-  }
-  popup.focus();
-  return popup;
 }
 async function copyCanvasToClipboard(canvasId, button) {
   const canvas = document.getElementById(canvasId);
@@ -13804,7 +13344,7 @@ def build_raw_export_workbook(run_id=""):
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
-        if parsed.path in ("/", "/index.html", "/results-window"):
+        if parsed.path in ("/", "/index.html"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
