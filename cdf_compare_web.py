@@ -1189,7 +1189,6 @@ HTML = r"""<!doctype html>
     body.results-window .toolbar-mode,
     body.results-window .toolbar > label,
     body.results-window #initializeBtn,
-    body.results-window #openResultsWindowBtn,
     body.results-window #summaryBtn {
       display: none !important;
     }
@@ -2569,7 +2568,7 @@ HTML = r"""<!doctype html>
     .sp-go:disabled{ opacity:.5; cursor:default }
     .sp-runrow{ display:grid; grid-template-columns:1fr 1.45fr; gap:8px }
     /* R-082: 패널 맨 아래 결과물 버튼 줄. sp-gap 뒤에 있어 패널 바닥에 붙는다. */
-    .sp-outrow{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px }
+    .sp-outrow{ display:grid; grid-template-columns:1fr; gap:8px; margin-top:4px }
     .sp-sub{ display:inline-flex; align-items:center; justify-content:center; gap:6px; height:38px;
       padding:0 10px; border:1px solid var(--r-line-in); border-radius:8px; background:#fff;
       color:var(--r-ink2); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer;
@@ -2944,10 +2943,8 @@ HTML = r"""<!doctype html>
                 </div>
               </section>
               <div class="sp-gap"></div>
-              <!-- R-082: 결과물 버튼은 패널 제일 아래에 모은다. id 는 상단에 있던 것을 그대로 가져와
-                   활성/비활성 처리(setResultPanelsVisible)를 다시 쓴다. -->
+              <!-- R-085: 결과물 버튼 줄. Analysis Result 는 뺐다 (결과는 본 화면에 이미 떠 있다). -->
               <div class="sp-outrow">
-                <button type="button" class="sp-sub" id="openResultsWindowBtn" title="분석 결과를 새 창으로 엽니다" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 3.5h5.5V9"/><path d="M16.5 3.5 9.6 10.4"/><path d="M14.8 12v3.3a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.4a1.2 1.2 0 0 1 1.2-1.2H8"/></svg> Analysis Result</button>
                 <button type="button" class="sp-sub" id="summaryBtn" title="템플릿 양식에 맞춰 Summary 를 만듭니다" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 3.5h7.2L15.5 7v9.5a.8.8 0 0 1-.8.8H5a.8.8 0 0 1-.8-.8V4.3a.8.8 0 0 1 .8-.8z"/><path d="M7.2 9.4h5.6M7.2 12.2h5.6M7.2 6.6h2.8"/></svg> Summary</button>
               </div>
             </div>
@@ -4910,8 +4907,6 @@ function renderGraphFilterBar() {
 function setResultPanelsVisible(visible) {
   const grid = document.getElementById("passResultsGrid");
   if (grid) grid.classList.toggle("results-hidden", !visible);
-  const resultsWindowBtn = document.getElementById("openResultsWindowBtn");
-  if (resultsWindowBtn) resultsWindowBtn.disabled = !visible;
   const rawExportBtn = document.getElementById("rawExportBtn");
   if (rawExportBtn) rawExportBtn.disabled = !visible;
   const summaryBtn = document.getElementById("summaryBtn");      /* R-082 */
@@ -5628,7 +5623,6 @@ function bindParentControls() {
     setStatus("Stopping...");
   });
   document.getElementById("initializeBtn").addEventListener("click", initializeAnalysis);
-  document.getElementById("openResultsWindowBtn").addEventListener("click", () => openAnalysisResultsWindow());
   document.getElementById("summaryBtn")?.addEventListener("click", openSummary);   /* R-082 */
   bindLookupControls();
   bindConditionToggle();

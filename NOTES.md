@@ -130,6 +130,12 @@ fixed(3.0) 와 grubbs(4.299) 가 거의 동일한 결과를 냈다.
   판정 숫자 불변은 그 상태로 게이트 5건 PASS 가 증명한다.
   남은 것: `tests/verdict_base*/` 의 파일명도 옛 폴더명이다. 게이트가 쓰지 않는
   수동 비교용(`tools/verdict_diff.py`)이라 그대로 뒀다. 쓸 일이 생기면 그때 맞춰야 한다.
+- **결과 새 창(`/results-window`)은 R-085 이후 부를 곳이 없다** — Analysis Result 버튼을
+  없애면서 `openAnalysisResultsWindow()` 의 호출부가 사라졌다. 기능 자체(라우트 `/results-window`,
+  `isResultsWindow` 분기, `body.results-window` CSS 95곳, `prepare-analysis-results` /
+  `analysis-results-status` 엔드포인트)는 그대로 남아 있다 — 지우는 것은 범위 밖이라
+  건드리지 않았다(§5-6). 되살리려면 버튼 하나만 다시 붙이면 되고, 정말 안 쓸 것이면
+  별도 번호로 한 번에 걷어내는 편이 낫다. 어중간하게 반만 지우면 CSS 가 꼬인다.
 - **데이터 저장(R-080) 이 하지 않는 것** — 파일 *내용*은 전혀 보지 않는다. 파일명만 읽어
   Pre/Post 를 추측하고 Post 의 항목·리드아웃·온도를 미리 보여줄 뿐이다. 그래서 데이터로그가
   아닌 파일도 그대로 저장된다(경고만 띄운다). 내용 검증까지 하려면 분석기를 저장 경로에
