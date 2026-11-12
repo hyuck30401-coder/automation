@@ -2344,6 +2344,11 @@ HTML = r"""<!doctype html>
     .cd-table input:focus,.cd-table select:focus{ outline:none; border-color:var(--r-acc) }
     .cd-table input[readonly]{ background:var(--r-soft); color:var(--r-ink3) }
     .cd-num{ width:58px; text-align:center }
+    /* R-089: 항목별 체크박스 — 이 Lot 에서 그 시험을 하는지 */
+    .cd-table input[type=checkbox]{ height:15px; width:15px; padding:0; accent-color:var(--r-acc) }
+    .cd-chk{ width:34px; text-align:center }
+    .cd-table tr.cd-off .cd-item,.cd-table tr.cd-off .cd-fields,
+    .cd-table tr.cd-off .cd-num{ opacity:.45 }
     .cd-val{ width:92px }
     .cd-note{ color:var(--r-ink3); font-size:11.5px }
     .cd-dur{ color:var(--r-ink3); font-size:11.5px; white-space:pre-line; max-width:210px }
@@ -5551,6 +5556,19 @@ function renderConditionTable(spec, saved) {
   table.className = "cd-table";
   const thead = document.createElement("thead");
   const hr = document.createElement("tr");
+  /* R-089: 맨 왼쪽은 '이 시험을 한다' 체크 — 헤더의 것은 전체 선택/해제 */
+  const allTh = document.createElement("th");
+  allTh.className = "cd-chk";
+  const allBox = document.createElement("input");
+  allBox.type = "checkbox";
+  allBox.title = "전체 선택 / 해제";
+  allBox.addEventListener("change", () => {
+    document.querySelectorAll("#cdBody tbody [data-selected]").forEach(box => {
+      box.checked = allBox.checked;
+      box.dispatchEvent(new Event("change"));
+    });
+  });
+  allTh.appendChild(allBox); hr.appendChild(allTh);
   [["Rel. Item", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Duration / Datasheet Spec.", 1]]
     .forEach(([label]) => { const th = document.createElement("th"); th.textContent = label; hr.appendChild(th); });
   thead.appendChild(hr); table.appendChild(thead);
@@ -5561,6 +5579,20 @@ function renderConditionTable(spec, saved) {
     const values = entry.values || {};
     const tr = document.createElement("tr");
     tr.dataset.item = item.item;
+
+    /* R-089: 체크 = 이 제품/이 Lot 에서 이 항목을 시험한다는 초기 설정. */
+    const chkCell = document.createElement("td");
+    chkCell.className = "cd-chk";
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.dataset.selected = "1";
+    chk.checked = entry.selected === true;
+    chk.title = "체크하면 시험 목록에 들어갑니다 — 데이터가 아직 없으면 Summary 의 Remark 에 On-going 으로 적힙니다";
+    const syncRow = () => tr.classList.toggle("cd-off", !chk.checked);
+    chk.addEventListener("change", syncRow);
+    syncRow();
+    chkCell.appendChild(chk);
+    tr.appendChild(chkCell);
 
     const name = document.createElement("td");
     name.className = "cd-item";
@@ -5707,7 +5739,8 @@ function collectConditionItems() {
     tr.querySelectorAll("[data-field]").forEach(el => { values[el.dataset.field] = el.value.trim(); });
     const first = tr.querySelector('[data-sample="sample_first"]')?.value.trim() || "";
     const last = tr.querySelector('[data-sample="sample_last"]')?.value.trim() || "";
-    items[name] = { sample_first: first, sample_last: last, values };
+    const selected = !!tr.querySelector("[data-selected]")?.checked;   /* R-089 */
+    items[name] = { selected, sample_first: first, sample_last: last, values };
   });
   return items;
 }
@@ -12418,6 +12451,14 @@ def summary_table_rows(selection, run_id=""):
         spec = {"items": []}            # 템플릿이 없어도 Summary 는 떠야 한다
     saved_conditions = load_condition_settings(selection).get("items") or {}
 
+    # R-089: 체크는 "이 Lot 에서 이 시험을 한다" 는 초기 설정이다. 체크했는데 데이터가
+    # 아직 없는 항목도 줄을 만들고 Remark 에 On-going 을 적는다 (Eden 님 확정).
+    # 체크하지 않은 항목에 데이터가 있으면 지금처럼 그대로 줄이 나온다 — 분석 범위는 건드리지 않는다.
+    selected_items = condition_selected_items(spec, saved_conditions)
+    ongoing = [name for name in selected_items if name not in order]
+    order = order + ongoing
+    ongoing_set = set(ongoing)
+
     # 분모는 그 (항목, 온도) 파일의 유닛 수다. 분자와 같은 파일에서 나온 수라야
     # "몇 대 중 몇 대" 가 성립한다 — 온도를 섞으면 분모와 분자가 다른 집합이 된다.
     by_condition = (fail.get("unit_counts") or {}).get("by_condition") or {}
@@ -12432,15 +12473,17 @@ def summary_table_rows(selection, run_id=""):
     for item in order:
         bucket = fail_counts.get(item) or {}
         names = sorted(bucket, key=lambda name: (-bucket[name], name))
+        checked = item in selected_items
         rows.append({
             "product": (selection.get("device") or "").strip(),
             "ver": (selection.get("ver") or "").strip(),
             "rel_type": (selection.get("type") or "").strip(),
             "lot": (selection.get("lot") or "").strip(),
             "rel_item": item,
-            "condition": condition_text_for_item(item, spec, saved_conditions),   # R-087
+            # R-087 / R-089: 조건은 체크한 항목에만 적는다 — 안 하는 시험에 조건이 적히면 안 된다.
+            "condition": condition_text_for_item(item, spec, saved_conditions) if checked else "",
             # R-088: 입력창에서 받은 Duration 이 있으면 그걸 쓴다 (Eden 님 확정).
-            "duration": (condition_duration_for_item(item, spec, saved_conditions)
+            "duration": ((condition_duration_for_item(item, spec, saved_conditions) if checked else "")
                          or readouts.get(item) or fallback_readout),
             "result_room": result_text(item, "Room"),
             "result_hot": result_text(item, "Hot"),
@@ -12448,7 +12491,7 @@ def summary_table_rows(selection, run_id=""):
             "fail_item": summary_fail_item_text(names),
             "fail_items_all": names,  # 화면 전용 — 템플릿에는 안 들어간다
             "judgement": "",
-            "remark": "",
+            "remark": "On-going" if item in ongoing_set else "",      # R-089
         })
     return {
         "columns": [label for _, label in SUMMARY_COLUMNS],
@@ -12924,6 +12967,7 @@ def save_condition_settings(selection, items):
     for name, entry in (items or {}).items():
         values = {str(k): ("" if v is None else str(v)) for k, v in (entry.get("values") or {}).items()}
         clean[str(name)] = {
+            "selected": bool(entry.get("selected")),      # R-089
             "sample_first": str(entry.get("sample_first") or "").strip(),
             "sample_last": str(entry.get("sample_last") or "").strip(),
             "values": values,
@@ -12958,6 +13002,15 @@ def condition_entry(analysis_item, spec):
         if item["analysis_item"] == analysis_item or item["item"] == analysis_item:
             return item
     return None
+
+
+def condition_selected_items(spec, settings):
+    """R-089: 체크한 항목. 분석 항목명 -> 템플릿 항목명 (ESD_HBM -> HBM 처럼 다르다)."""
+    out = {}
+    for entry in (spec or {}).get("items", []):
+        if ((settings or {}).get(entry["item"]) or {}).get("selected"):
+            out[entry["analysis_item"]] = entry["item"]
+    return out
 
 
 def condition_values(entry, settings):

@@ -81,9 +81,8 @@ ThreadingHTTPServer
 
 ### Summary (R-082 버튼 · R-083 내용)
 
-조건 패널 맨 아래 `Analysis Result` / `Summary` 두 버튼. 상단 appbar 의 `결과 새 창` 은
-`Analysis Result` 로 내려왔다 — **id 는 `openResultsWindowBtn` 그대로**라
-`setResultPanelsVisible()` 의 활성/비활성 처리를 그대로 쓴다.
+조건 패널 맨 아래 `Summary` 버튼. R-082 에서 `Analysis Result` 와 둘이었으나 R-085·R-086 에서
+결과 새 창을 통째로 걷어내 `Summary` 하나만 남았다.
 
 - 템플릿 자리: `app_base_dir()/docs/RT_Summary_Template.xlsx` (상수 `SUMMARY_TEMPLATE_NAME`).
   exe 옆 `docs/` 를 가리키므로 소스로 돌리든 exe 로 돌리든 같은 자리다.
@@ -96,12 +95,13 @@ ThreadingHTTPServer
 | 열 | 값 |
 |---|---|
 | A Product · B Ver. · C Rel. Type · D Lot ID | 화면이 보낸 분석 조건. **데이터 행 전체를 세로 병합**하므로 첫 줄에만 쓴다 |
-| E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 |
-| F Condition | `시험 조건 입력` 에서 받은 값 (R-087). 예: `Ta 125℃ / Vcc 5.5V` |
+| E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 + **체크했는데 데이터가 없는 항목** (R-089) |
+| F Condition | `시험 조건 입력` 에서 받은 값 (R-087). 예: `Ta 125℃ / Vcc 5.5V`. **체크한 항목만 채운다** (R-089) |
 | G Duration | 판정에 쓴 Read-out (`total_conditions` / 행의 `judged_readout`) |
 | H·I·J Result (Room/Hot/Cold) | `"%dF/%d" % (불량 유닛, 투입 유닛)`. **빈칸이면 그 온도로 시험하지 않은 것** |
 | K Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
-| L Judgement · M Remark | **빈칸** — 사람이 적는다 |
+| L Judgement | **빈칸** — 사람이 적는다 |
+| M Remark | 보통 빈칸(사람이 적는다). 체크했는데 데이터가 아직 없으면 `On-going` (R-089) |
 
 **Result 를 온도별로 쪼갠 이유 (R-084).** 한 항목이 Room/Hot/Cold 로 나뉘어 시험되는데
 온도마다 Fail 수가 다르다 — 실측 HTOL 은 Room 9 / Hot 1 / Cold 13 이었다. 한 칸으로 합치면
@@ -169,10 +169,26 @@ ThreadingHTTPServer
   - Duration 과 Stress Voltage 당 Sample 수는 제 칸이 따로 있으므로 Condition 문자열에 안 넣는다.
 - 템플릿 항목 12종 중 `ESD_HBM`→`HBM`, `ESD_CDM`→`CDM` 만 툴 항목과 잇는다
   (`CONDITION_ITEM_ALIASES`). `LTOL`·`ELFR`·`ESD_MM` 은 입력만 받고 Summary 에는 줄이 안 생긴다.
-- 입력을 한 번도 안 해도 Condition 칸은 **템플릿의 기본값으로 채워진다.** 빈칸으로 두고 싶으면
-  입력창에서 지워야 한다.
-- **아직 안 한 것**: 항목 선택으로 분석 범위를 제어하는 것(B)과 Sample # 를 데이터의 Serial # 와
-  대조하는 것(C). 입력칸만 먼저 만들어 뒀다.
+- 템플릿 기본값은 입력 없이도 칸에 뜨지만, **Summary 에 실리는 건 체크한 항목뿐이다** (R-089).
+
+### 항목 체크 (R-089)
+
+`Rel. Item` 열 왼쪽의 체크박스. **"이 제품·이 Lot 에서 이 항목을 이 조건으로 시험한다"는
+시험 전 초기 설정이다** (Eden 님 확정). 분석 범위를 제어하는 스위치가 **아니다.**
+
+- 체크 상태는 `condition_settings.json` 의 항목별 `selected` 로 저장된다 (조건 폴더 단위 키 그대로).
+- **기본값은 전부 해제.** 데이터로 기본값을 정하지 않는다 — 시험 전에는 데이터가 없다.
+- 데이터가 있는 항목은 체크와 무관하게 **지금처럼 분석되고 결과창에 나온다.** 체크를 안 했으면
+  Summary 의 Condition·Duration 만 비는데, 입력창에서 그 항목을 체크하면 채워진다
+  (Eden 님 확정: "선택되지 않은 데이터가 있는 경우에는 결과창에 나타나게 하는건 그대로").
+- **체크 O · 데이터 X** → Summary 에 줄을 만들고 **Remark 에 `On-going`** 을 적는다
+  (Eden 님 확정). Result 세 칸은 비고, Condition·Duration 은 입력값이 들어간다.
+  줄은 데이터가 있는 항목들 **뒤에** 붙는다.
+- 체크 비교는 **분석 항목명**으로 한다 — `ESD_HBM` 은 `HBM` 줄이 된다
+  (`condition_selected_items()` 가 `CONDITION_ITEM_ALIASES` 를 거쳐 맞춘다).
+- 템플릿 `Summary Table` 의 빈 행은 11줄이다. 12항목을 전부 체크하고 데이터까지 있으면
+  행이 모자라 xlsx 내보내기가 거부된다.
+- **아직 안 한 것**: Sample # 를 데이터의 Serial # 와 대조하는 것(C).
 
 ### 데이터 저장 (R-080)
 
