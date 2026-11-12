@@ -5896,7 +5896,17 @@ function renderSummaryWindow(data, params) {
   lines.push("신뢰성 항목 하나가 한 줄입니다. Result 는 온도별로 '불량 유닛 수 / 투입 유닛 수' 이고, " +
              (data.excluded_types || []).join(" · ") + " 를 뺀 기준입니다 — 화면의 'Marginal 제외' 와 같습니다.");
   lines.push("빈 칸은 그 온도로 시험하지 않았다는 뜻입니다.");
-  lines.push("Condition · Judgement · Remark 는 비워둡니다. 내보낸 엑셀에서 직접 적으세요.");
+  /* R-087/089/090 으로 설명이 바뀌었다 — Condition·Duration·Remark 는 이제 툴이 채운다. */
+  lines.push("Condition 과 Duration 은 '시험 조건 입력' 에서 체크한 항목만 채워집니다. "
+             + "Judgement 는 비워두니 내보낸 엑셀에서 직접 적으세요.");
+  lines.push("Remark 가 'On-going' 이면 시험 항목으로 체크했는데 아직 데이터가 없다는 뜻입니다.");
+  if ((data.plan_warnings || []).length) {
+    lines.push("※ 계획(First~Last)과 데이터가 다릅니다 — 분모는 계획 수량 그대로입니다:");
+    data.plan_warnings.forEach(warn => lines.push("    · " + warn.text));
+  } else {
+    lines.push("점선 밑줄이 그어진 Result 칸은 계획 수량(시험 조건 입력의 First~Last)을 "
+               + "분모로 쓴 칸입니다. 마우스를 올리면 계획과 데이터가 보입니다.");
+  }
   if (!data.total_analysis) {
     lines.push("※ 지금은 항목 하나만 분석한 결과입니다. 표 전체를 채우려면 Reliability Items 를 '전체 (미선택)' 으로 두고 분석하세요.");
   }
@@ -5949,6 +5959,10 @@ function renderSummaryWindow(data, params) {
       if (key.indexOf("result_") === 0) {
         if (!value) td.className = "blank";                 /* 그 온도로 시험 안 함 */
         else td.className = /^0F\//.test(String(value)) ? "pass" : "fail";
+        /* R-090: 계획(First~Last)과 대조한 내용은 칸 툴팁으로만 본다. */
+        const temp = { result_room: "Room", result_hot: "Hot", result_cold: "Cold" }[key];
+        const planNote = (row.result_notes || {})[temp];
+        if (planNote) { td.title = planNote; td.style.textDecoration = "underline dotted"; }
       }
       if (key === "fail_item") {
         td.className = "l";
@@ -9528,7 +9542,8 @@ def unit_census_from_records(records):
             1 for state in states.values()
             if not (bin_is_pass(state["bin"]) and not state["spec_fail"])
         )
-    return {"total": total, "fail": fail, "pass": total - fail}
+    # R-090: 계획(First/Last)과 대조하려면 수뿐 아니라 어떤 Serial # 인지도 있어야 한다.
+    return {"total": total, "fail": fail, "pass": total - fail, "units": sorted(states)}
 
 
 def pass_sample_ids_from_records(records):
@@ -11482,7 +11497,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 31  # 30->31: total_conditions 추가 (R-083 Summary Duration).
+CACHE_SCHEMA = 32  # 31->32: unit_counts 에 units(Serial # 목록) 추가 (R-090 계획 대조).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
@@ -12459,21 +12474,58 @@ def summary_table_rows(selection, run_id=""):
     order = order + ongoing
     ongoing_set = set(ongoing)
 
+    # R-090: 분모는 계획 수량(First~Last)이다 (Eden 님 확정). 계획은 체크한 항목에만 있다.
+    # 계획 밖 Serial # 가 섞여 있어도 분모는 계획 수량 그대로 두고 경고만 띄운다.
+    plans = {}
+    for analysis_item, template_item in selected_items.items():
+        entry = saved_conditions.get(template_item) or {}
+        plan = planned_sample_range(entry.get("sample_first"), entry.get("sample_last"))
+        if plan:
+            plans[analysis_item] = plan
+    plan_warnings = []
+
     # 분모는 그 (항목, 온도) 파일의 유닛 수다. 분자와 같은 파일에서 나온 수라야
     # "몇 대 중 몇 대" 가 성립한다 — 온도를 섞으면 분모와 분자가 다른 집합이 된다.
     by_condition = (fail.get("unit_counts") or {}).get("by_condition") or {}
 
     def result_text(item, temp):
+        """(표시 문자열, 칸 툴팁). 계획이 있으면 분모는 계획 수량이다 (R-090)."""
         counts = by_condition.get("%s||%s" % (item, temp))
         if not counts:
-            return ""                      # 그 온도로는 시험하지 않았다
-        return "%dF/%d" % (len(fail_units.get((item, temp)) or ()), counts.get("total", 0) or 0)
+            return "", ""                  # 그 온도로는 시험하지 않았다
+        fails = len(fail_units.get((item, temp)) or ())
+        found = counts.get("total", 0) or 0
+        plan = plans.get(item)
+        if not plan:
+            return "%dF/%d" % (fails, found), ""
+        first, last, planned = plan
+        units = {str(value) for value in (counts.get("units") or ())}
+        note = "계획 %d대 (Serial #%d~#%d)" % (len(planned), first, last)
+        if units:
+            missing = sorted(planned - units, key=serial_sort_key)
+            extra = sorted(units - planned, key=serial_sort_key)
+            note += " · 데이터 %d대" % len(units)
+            bits = []
+            if missing:
+                bits.append("누락 " + serial_list_text(missing))
+            if extra:
+                bits.append("계획 밖 " + serial_list_text(extra))
+            if bits:
+                note += " · " + " · ".join(bits)
+                plan_warnings.append({
+                    "item": item, "temp": temp, "planned": len(planned), "found": len(units),
+                    "missing": missing, "extra": extra,
+                    "text": "%s %s — 계획 %d대 중 데이터 %d대 · %s"
+                            % (item, temp, len(planned), len(units), " · ".join(bits)),
+                })
+        return "%dF/%d" % (fails, len(planned)), note
 
     rows = []
     for item in order:
         bucket = fail_counts.get(item) or {}
         names = sorted(bucket, key=lambda name: (-bucket[name], name))
         checked = item in selected_items
+        results = {temp: result_text(item, temp) for temp in SUMMARY_TEMPS}
         rows.append({
             "product": (selection.get("device") or "").strip(),
             "ver": (selection.get("ver") or "").strip(),
@@ -12485,9 +12537,11 @@ def summary_table_rows(selection, run_id=""):
             # R-088: 입력창에서 받은 Duration 이 있으면 그걸 쓴다 (Eden 님 확정).
             "duration": ((condition_duration_for_item(item, spec, saved_conditions) if checked else "")
                          or readouts.get(item) or fallback_readout),
-            "result_room": result_text(item, "Room"),
-            "result_hot": result_text(item, "Hot"),
-            "result_cold": result_text(item, "Cold"),
+            "result_room": results["Room"][0],
+            "result_hot": results["Hot"][0],
+            "result_cold": results["Cold"][0],
+            # 화면 전용 — 칸 툴팁으로만 쓰고 템플릿에는 안 들어간다 (R-090)
+            "result_notes": {temp: note for temp, (_text, note) in results.items() if note},
             "fail_item": summary_fail_item_text(names),
             "fail_items_all": names,  # 화면 전용 — 템플릿에는 안 들어간다
             "judgement": "",
@@ -12501,6 +12555,7 @@ def summary_table_rows(selection, run_id=""):
         "subhead": list(SUMMARY_TEMPS),
         "merge_columns": list(SUMMARY_MERGE_COLUMNS),
         "rows": rows,
+        "plan_warnings": plan_warnings,     # R-090 — 화면 경고용, 엑셀에는 안 들어간다
         "excluded_types": sorted(excluded),
         "total_analysis": bool(fail.get("total_analysis")),
         "analysis_date": fail.get("analysis_date", ""),
@@ -13002,6 +13057,27 @@ def condition_entry(analysis_item, spec):
         if item["analysis_item"] == analysis_item or item["item"] == analysis_item:
             return item
     return None
+
+
+def serial_sort_key(value):
+    text = str(value).strip()
+    return (0, int(text), "") if text.isdigit() else (1, 0, text)
+
+
+def planned_sample_range(first, last):
+    """R-090: 투입 Serial # 범위. 둘 다 정수이고 First <= Last 일 때만 계획으로 본다."""
+    first, last = str(first or "").strip(), str(last or "").strip()
+    if not first.isdigit() or not last.isdigit():
+        return None
+    start, end = int(first), int(last)
+    if end < start or end - start + 1 > 100000:
+        return None
+    return (start, end, {str(value) for value in range(start, end + 1)})
+
+
+def serial_list_text(values, limit=6):
+    shown = ", ".join("#%s" % value for value in values[:limit])
+    return shown if len(values) <= limit else "%s 외 %d개" % (shown, len(values) - limit)
 
 
 def condition_selected_items(spec, settings):

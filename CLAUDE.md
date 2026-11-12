@@ -98,7 +98,7 @@ ThreadingHTTPServer
 | E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 + **체크했는데 데이터가 없는 항목** (R-089) |
 | F Condition | `시험 조건 입력` 에서 받은 값 (R-087). 예: `Ta 125℃ / Vcc 5.5V`. **체크한 항목만 채운다** (R-089) |
 | G Duration | 판정에 쓴 Read-out (`total_conditions` / 행의 `judged_readout`) |
-| H·I·J Result (Room/Hot/Cold) | `"%dF/%d" % (불량 유닛, 투입 유닛)`. **빈칸이면 그 온도로 시험하지 않은 것** |
+| H·I·J Result (Room/Hot/Cold) | `"%dF/%d" % (불량 유닛, 분모)`. **빈칸이면 그 온도로 시험하지 않은 것.** 분모는 계획 수량 → 없으면 파일 유닛 수 (R-090) |
 | K Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
 | L Judgement | **빈칸** — 사람이 적는다 |
 | M Remark | 보통 빈칸(사람이 적는다). 체크했는데 데이터가 아직 없으면 `On-going` (R-089) |
@@ -188,7 +188,24 @@ ThreadingHTTPServer
   (`condition_selected_items()` 가 `CONDITION_ITEM_ALIASES` 를 거쳐 맞춘다).
 - 템플릿 `Summary Table` 의 빈 행은 11줄이다. 12항목을 전부 체크하고 데이터까지 있으면
   행이 모자라 xlsx 내보내기가 거부된다.
-- **아직 안 한 것**: Sample # 를 데이터의 Serial # 와 대조하는 것(C).
+### 계획 수량 분모 (R-090)
+
+**Summary 의 Result 분모는 계획 수량이다** — `시험 조건 입력` 의 `First #`~`Last #` (Eden 님 확정).
+분석 화면의 유닛 수(`unit_counts`)는 **안 바꿨다.** 바뀌는 건 Summary 보고서의 분모 하나뿐이다.
+
+- 이 데이터는 Serial # 가 항목별 연속 범위다: HTOL 1~80, HAST 81~160, uHAST 161~240.
+  온도는 **같은 유닛의 재측정**이라 Room/Hot/Cold 세 칸이 **같은 분모**를 쓴다.
+- 분모 = `Last − First + 1`. **분자(Fail 수)는 그대로** — 빠진 유닛은 측정이 없어 Fail 도 Pass 도 아니다.
+- **적용 조건 셋을 다 만족해야 한다**: 항목이 체크돼 있고(R-089), First·Last 가 둘 다 정수이고,
+  `First <= Last`. 하나라도 어긋나면 **지금까지대로 파일 유닛 수**를 분모로 쓴다.
+- **계획 밖 Serial # 가 섞여 있어도 분모는 계획 수량 그대로다** (Eden 님 확정). 경고만 띄운다.
+- 불일치는 **화면에만** 나온다 — Summary 표 아래 경고 줄 + Result 칸 툴팁(점선 밑줄).
+  **내보낸 xlsx 에는 안 들어간다.** Remark 칸은 Eden 님이 쓰는 칸이라 침범하지 않는다.
+- 대조하려면 "유닛이 몇 대"가 아니라 "어떤 Serial #"인지가 필요해서 `unit_census_from_records` 가
+  `units`(Serial # 목록)를 함께 싣는다 → **`CACHE_SCHEMA` 31→32**. `unit_counts` 는 최상위 키라
+  골든 비교 대상이 아니다(게이트 5건 PASS 로 확인).
+- 실데이터 확인: HTOL Cold 는 계획 1~80 중 **Serial #60, #61 이 없다** → `13F/78` 이 `13F/80` 이 되고
+  "HTOL Cold — 계획 80대 중 데이터 78대 · 누락 #60, #61" 경고가 뜬다.
 
 ### 데이터 저장 (R-080)
 
