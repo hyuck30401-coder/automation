@@ -1,6 +1,7 @@
 import io
 import json
 import hashlib
+import html as html_module
 import math
 import os
 import pickle
@@ -2327,6 +2328,26 @@ HTML = r"""<!doctype html>
     .sv-del{ width:24px; height:24px; border:0; border-radius:6px; background:none; color:var(--r-ink4);
       font-size:16px; line-height:1; cursor:pointer }
     .sv-del:hover{ background:var(--r-soft); color:var(--r-ink2) }
+    /* ---- R-087 시험 조건 입력 ---- */
+    .cd-box{ width:min(1180px,100%) }
+    .cd-table{ width:100%; border-collapse:collapse; font-size:12px }
+    .cd-table th,.cd-table td{ border:1px solid var(--r-line-in); padding:6px 8px; vertical-align:middle }
+    .cd-table th{ background:var(--r-soft); font-weight:700; white-space:nowrap }
+    .cd-item{ font-weight:700; color:var(--r-ink); white-space:nowrap }
+    .cd-item small{ display:block; font-weight:500; color:var(--r-ink3); font-size:11px }
+    .cd-fields{ display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center }
+    .cd-f{ display:inline-flex; align-items:center; gap:5px; white-space:nowrap }
+    .cd-f label{ color:var(--r-ink2); font-weight:600 }
+    .cd-f .unit{ color:var(--r-ink3) }
+    .cd-table input,.cd-table select{ height:26px; padding:0 6px; border:1px solid var(--r-line-in);
+      border-radius:6px; background:#fff; color:var(--r-ink); font-family:inherit; font-size:12px }
+    .cd-table input:focus,.cd-table select:focus{ outline:none; border-color:var(--r-acc) }
+    .cd-table input[readonly]{ background:var(--r-soft); color:var(--r-ink3) }
+    .cd-num{ width:58px; text-align:center }
+    .cd-val{ width:92px }
+    .cd-note{ color:var(--r-ink3); font-size:11.5px }
+    .cd-dur{ color:var(--r-ink3); font-size:11.5px; white-space:pre-line; max-width:210px }
+    .cd-hint{ color:#b26b00 }
     .sv-plan{ padding:10px 12px; border:1px solid var(--r-line-in); border-radius:8px;
       background:var(--r-soft); font-size:12px; color:var(--r-ink2); line-height:1.6 }
     .sv-plan b{ color:var(--r-ink) }
@@ -2642,6 +2663,7 @@ HTML = r"""<!doctype html>
                 <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
                 <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
               </div>
+              <button type="button" class="sp-sub" id="conditionBtn" title="신뢰성 항목별 시험 조건과 투입 샘플 번호를 입력합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13"/><circle cx="7" cy="5.5" r="1.8"/><circle cx="13" cy="10" r="1.8"/><circle cx="9" cy="14.5" r="1.8"/></svg> 시험 조건 입력</button>
               <label class="sp-check" title="체크하면 Post 데이터만 분석합니다. Pre 비교가 필요한 기능은 감춰집니다."><input id="postOnlyCheck" type="checkbox"><span>Post Only</span></label>
               <section id="executionToolbar" class="sp-run">
                 <button id="analyzeBtn" class="sp-go"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 4.8v10.4L16 10z"/></svg> Analyze</button>
@@ -2783,6 +2805,19 @@ HTML = r"""<!doctype html>
       </div>
     </section>
   </main>
+
+  <!-- R-087: 시험 조건 입력 창. 입력칸의 사양은 템플릿의 'Condition 입력창' 시트가 정한다. -->
+  <div class="sv-mask" id="conditionModal" hidden>
+    <div class="sv-box cd-box" role="dialog" aria-modal="true" aria-labelledby="cdTitle">
+      <div class="sv-head"><b id="cdTitle">시험 조건 입력</b><span class="sv-sub" id="cdSub"></span><button type="button" class="sv-x" id="cdCloseBtn" title="닫기">&times;</button></div>
+      <div class="sv-body"><div id="cdBody"></div></div>
+      <div class="sv-foot">
+        <span class="sv-msg" id="cdMsg"></span>
+        <button type="button" class="sp-sub" id="cdCancelBtn">취소</button>
+        <button type="button" class="sp-go" id="cdSaveBtn">저장</button>
+      </div>
+    </div>
+  </div>
 
   <!-- R-080: 데이터 저장 창. 미리보기와 실제 저장이 같은 /save-plan 결과를 쓴다. -->
   <div class="sv-mask" id="saveDataModal" hidden>
@@ -5190,6 +5225,7 @@ function bindParentControls() {
   bindLookupControls();
   bindConditionToggle();
   bindSaveData();                                   /* R-080 */
+  bindConditionInput();                             /* R-087 */
 }
 
 /* ====================== R-080 데이터 저장 창 ======================
@@ -5446,6 +5482,207 @@ async function applySavedSelection(selection) {
   document.getElementById("purposeSelect").value = selection.purpose;
   await refreshLookup("item");
   renderConditionSummaryLine();
+}
+
+/* ====================== R-087 시험 조건 입력 ======================
+   입력칸의 사양은 템플릿이 정한다(/condition-spec). 화면은 받은 사양대로 칸을 그리고
+   값만 돌려준다 — 기본값·선택지를 화면에 또 적어두면 템플릿과 어긋난다. */
+let conditionSpec = null;
+
+function conditionSelection() {
+  const out = {};
+  ["device", "type", "ver", "lot", "purpose"].forEach(key => { out[key] = lookupState[key] || ""; });
+  return out;
+}
+
+function conditionFieldKey(field) { return field.group + ":" + field.label; }
+
+async function openConditionModal() {
+  const msg = document.getElementById("cdMsg");
+  msg.textContent = "";
+  const params = new URLSearchParams(conditionSelection());
+  try {
+    const [specRes, savedRes] = await Promise.all([
+      fetch("/condition-spec"),
+      fetch("/condition-settings?" + params.toString()),
+    ]);
+    const spec = await specRes.json();
+    const saved = await savedRes.json();
+    if (!specRes.ok || spec.error) throw new Error(spec.error || "시험 조건 사양을 읽지 못했습니다.");
+    if (!savedRes.ok || saved.error) throw new Error(saved.error || "저장된 조건을 읽지 못했습니다.");
+    conditionSpec = spec;
+    renderConditionTable(spec, saved);
+    document.getElementById("cdSub").textContent =
+      [conditionSelection().device, conditionSelection().ver,
+       conditionSelection().lot ? "Lot " + conditionSelection().lot : ""].filter(Boolean).join(" · ")
+      + (saved.updated ? "   마지막 저장 " + saved.updated : "   (저장된 값 없음)");
+    document.getElementById("conditionModal").hidden = false;
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function renderConditionTable(spec, saved) {
+  const box = document.getElementById("cdBody");
+  box.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "cd-table";
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  [["Rel. Item", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Datasheet Spec.", 1], ["Duration (참고)", 1]]
+    .forEach(([label]) => { const th = document.createElement("th"); th.textContent = label; hr.appendChild(th); });
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+
+  (spec.items || []).forEach(item => {
+    const entry = (saved.items || {})[item.item] || {};
+    const values = entry.values || {};
+    const tr = document.createElement("tr");
+    tr.dataset.item = item.item;
+
+    const name = document.createElement("td");
+    name.className = "cd-item";
+    name.appendChild(document.createTextNode(item.item));
+    const full = document.createElement("small");
+    full.textContent = item.label.replace(item.item, "").replace(/^\s*\(|\)\s*$/g, "");
+    name.appendChild(full);
+    tr.appendChild(name);
+
+    [["sample_first", entry.sample_first], ["sample_last", entry.sample_last]].forEach(([key, value]) => {
+      const td = document.createElement("td");
+      const input = document.createElement("input");
+      input.type = "text"; input.className = "cd-num"; input.dataset.sample = key;
+      input.value = value || "";
+      td.appendChild(input); tr.appendChild(td);
+    });
+
+    const fieldsCell = document.createElement("td");
+    const wrap = document.createElement("div");
+    wrap.className = "cd-fields";
+    (item.notes || []).forEach(text => {
+      const note = document.createElement("span");
+      note.className = "cd-note"; note.textContent = text;
+      wrap.appendChild(note);
+    });
+    (item.fields || []).forEach(field => {
+      if (field.note) {
+        const note = document.createElement("span");
+        note.className = "cd-note"; note.textContent = field.label + " " + field.note;
+        wrap.appendChild(note); return;
+      }
+      const cell = document.createElement("span");
+      cell.className = "cd-f";
+      const label = document.createElement("label");
+      label.textContent = field.label;
+      cell.appendChild(label);
+      const key = conditionFieldKey(field);
+      const current = values[key] !== undefined ? values[key] : (field.fixed || field.default || "");
+      let control;
+      if (field.fixed) {
+        control = document.createElement("input");
+        control.type = "text"; control.readOnly = true; control.className = "cd-val";
+        control.value = field.fixed;
+        control.title = "템플릿에서 고정값으로 정한 칸입니다";
+      } else if ((field.options || []).length && !field.free) {
+        control = document.createElement("select");
+        field.options.forEach(option => {
+          const el = document.createElement("option");
+          el.value = option; el.textContent = option; control.appendChild(el);
+        });
+        control.value = current;
+      } else {
+        control = document.createElement("input");
+        control.type = "text"; control.className = "cd-val";
+        control.value = current;
+        if ((field.options || []).length) {
+          const listId = "cdlist-" + item.item + "-" + key.replace(/[^A-Za-z0-9]+/g, "_");
+          const list = document.createElement("datalist");
+          list.id = listId;
+          field.options.forEach(option => {
+            const el = document.createElement("option"); el.value = option; list.appendChild(el);
+          });
+          cell.appendChild(list);
+          control.setAttribute("list", listId);
+        }
+        if (!field.options?.length && !field.default) control.placeholder = "직접입력";
+      }
+      control.dataset.field = key;
+      control.title = (control.title ? control.title + "\n" : "") + "템플릿: " + (field.raw || "");
+      cell.appendChild(control);
+      if (field.unit) {
+        const unit = document.createElement("span");
+        unit.className = "unit"; unit.textContent = field.unit;
+        cell.appendChild(unit);
+      }
+      wrap.appendChild(cell);
+    });
+    fieldsCell.appendChild(wrap);
+    tr.appendChild(fieldsCell);
+
+    const dur = document.createElement("td");
+    dur.className = "cd-dur";
+    const d = item.duration;
+    dur.textContent = !d ? "" : (d.note || d.raw || "");
+    tr.appendChild(dur);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  const foot = document.createElement("p");
+  foot.className = "cd-note";
+  foot.style.marginTop = "10px";
+  foot.textContent = "입력칸과 기본값은 템플릿의 '" + spec.sheet + "' 시트가 정합니다. "
+    + "칸에 마우스를 올리면 템플릿 원문이 보입니다. Duration 은 분석 데이터에서 자동으로 채웁니다.";
+  box.appendChild(foot);
+}
+
+function collectConditionItems() {
+  const items = {};
+  document.querySelectorAll("#cdBody tbody tr").forEach(tr => {
+    const name = tr.dataset.item;
+    const values = {};
+    tr.querySelectorAll("[data-field]").forEach(el => { values[el.dataset.field] = el.value.trim(); });
+    const first = tr.querySelector('[data-sample="sample_first"]')?.value.trim() || "";
+    const last = tr.querySelector('[data-sample="sample_last"]')?.value.trim() || "";
+    items[name] = { sample_first: first, sample_last: last, values };
+  });
+  return items;
+}
+
+async function saveConditionModal() {
+  const btn = document.getElementById("cdSaveBtn");
+  const msg = document.getElementById("cdMsg");
+  btn.disabled = true; msg.textContent = "저장 중...";
+  try {
+    const res = await fetch("/condition-settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection: conditionSelection(), items: collectConditionItems() }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "저장에 실패했습니다.");
+    document.getElementById("conditionModal").hidden = true;
+    setStatus("시험 조건 저장 완료");
+  } catch (err) {
+    msg.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function bindConditionInput() {
+  const open = document.getElementById("conditionBtn");
+  if (!open) return;
+  open.addEventListener("click", openConditionModal);
+  const close = () => { document.getElementById("conditionModal").hidden = true; };
+  document.getElementById("cdCloseBtn").addEventListener("click", close);
+  document.getElementById("cdCancelBtn").addEventListener("click", close);
+  document.getElementById("cdSaveBtn").addEventListener("click", saveConditionModal);
+  document.getElementById("conditionModal").addEventListener("mousedown", event => {
+    if (event.target === document.getElementById("conditionModal")) close();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !document.getElementById("conditionModal").hidden) close();
+  });
 }
 
 function bindSaveData() {
@@ -12111,6 +12348,13 @@ def summary_table_rows(selection, run_id=""):
     if not order and default_item:
         order = [default_item]
 
+    # R-087: 시험 조건은 사람이 입력한 값이다. 템플릿이 사양을, 설정 파일이 값을 들고 있다.
+    try:
+        spec = condition_spec()
+    except Exception:
+        spec = {"items": []}            # 템플릿이 없어도 Summary 는 떠야 한다
+    saved_conditions = load_condition_settings(selection).get("items") or {}
+
     # 분모는 그 (항목, 온도) 파일의 유닛 수다. 분자와 같은 파일에서 나온 수라야
     # "몇 대 중 몇 대" 가 성립한다 — 온도를 섞으면 분모와 분자가 다른 집합이 된다.
     by_condition = (fail.get("unit_counts") or {}).get("by_condition") or {}
@@ -12131,7 +12375,7 @@ def summary_table_rows(selection, run_id=""):
             "rel_type": (selection.get("type") or "").strip(),
             "lot": (selection.get("lot") or "").strip(),
             "rel_item": item,
-            "condition": "",          # R-084 Stress 조건 입력이 붙으면 그 값이 들어온다
+            "condition": condition_text_for_item(item, spec, saved_conditions),   # R-087
             "duration": readouts.get(item) or fallback_readout,
             "result_room": result_text(item, "Room"),
             "result_hot": result_text(item, "Hot"),
@@ -12299,6 +12543,309 @@ def summary_sheet_path(payloads):
         raise ValueError("템플릿의 시트 관계를 읽지 못했습니다.")
     path = target.lstrip("/")
     return path if path.startswith("xl/") else "xl/" + path
+
+
+# ---- R-087 시험 조건(Condition) ---------------------------------------------
+# 입력칸의 사양은 코드가 아니라 템플릿의 'Condition 입력창' 시트가 정한다.
+# Eden 님이 템플릿만 고치면 입력창이 따라 바뀐다. 해석이 안 되는 문구는 버리지 않고
+# 자유 입력으로 떨어뜨린 뒤 원문을 힌트로 보여준다 — R-037 처럼 조용히 사라지면 안 된다.
+
+CONDITION_SHEET_NAME = "Condition 입력창"
+CONDITION_SETTINGS_FILE = "condition_settings.json"
+CONDITION_SETTINGS_LOCK = threading.Lock()
+CONDITION_FIRST_ROW = 3
+CONDITION_ADD_MARK = "+ add"
+# 템플릿 항목 이름 -> 툴의 RELIABILITY_ITEMS 이름. 나머지(LTOL·ELFR·ESD_MM)는
+# 툴이 분석하지 않으므로 입력만 받고 Summary 에는 줄이 생기지 않는다.
+CONDITION_ITEM_ALIASES = {"ESD_HBM": "HBM", "ESD_CDM": "CDM"}
+
+
+def condition_settings_path():
+    return os.path.join(app_base_dir(), CONDITION_SETTINGS_FILE)
+
+
+def condition_settings_key(selection):
+    """조건 폴더 하나를 가리키는 키. 같은 Lot 을 다시 분석하면 입력값이 그대로 뜬다."""
+    return "||".join((selection.get(name) or "").strip()
+                     for name in ("device", "type", "ver", "lot", "purpose"))
+
+
+def _xlsx_attr(tag, name):
+    found = re.search(r'\b%s="([^"]*)"' % re.escape(name), tag)
+    return found.group(1) if found else ""
+
+
+def _xlsx_text(xml):
+    return html_module.unescape("".join(re.findall(r"<t[^>]*>(.*?)</t>", xml, re.S)))
+
+
+def read_xlsx_sheet(blobs, sheet_name):
+    """표준 라이브러리만으로 시트 한 장을 읽는다 -> ({"A1": "값"}, ["A5:A6", ...]).
+
+    엑셀은 sharedStrings, openpyxl 은 inlineStr 로 쓴다. 둘 다 받는다.
+    """
+    workbook = blobs["xl/workbook.xml"].decode("utf-8")
+    rel_id = ""
+    for tag in re.findall(r"<sheet\b[^>]*/?>", workbook):
+        if _xlsx_attr(tag, "name") == sheet_name:
+            rel_id = _xlsx_attr(tag, "r:id") or _xlsx_attr(tag, "id")
+            break
+    if not rel_id:
+        raise ValueError("템플릿에 '%s' 시트가 없습니다." % sheet_name)
+    target = ""
+    for tag in re.findall(r"<Relationship\b[^>]*/?>", blobs["xl/_rels/workbook.xml.rels"].decode("utf-8")):
+        if _xlsx_attr(tag, "Id") == rel_id:
+            target = _xlsx_attr(tag, "Target")
+            break
+    if not target:
+        raise ValueError("템플릿의 '%s' 시트 관계를 읽지 못했습니다." % sheet_name)
+    path = target.lstrip("/")
+    path = path if path.startswith("xl/") else "xl/" + path
+    xml = blobs[path].decode("utf-8")
+
+    shared = []
+    if "xl/sharedStrings.xml" in blobs:
+        shared = [_xlsx_text(block) for block in
+                  re.findall(r"<si>(.*?)</si>", blobs["xl/sharedStrings.xml"].decode("utf-8"), re.S)]
+
+    cells = {}
+    data = re.search(r"<sheetData>(.*?)</sheetData>", xml, re.S)
+    for match in re.finditer(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", data.group(1) if data else "", re.S):
+        tag, inner = "<c" + match.group(1) + ">", match.group(2) or ""
+        ref, kind = _xlsx_attr(tag, "r"), _xlsx_attr(tag, "t")
+        if not ref:
+            continue
+        if kind == "s":
+            raw = re.search(r"<v>(.*?)</v>", inner, re.S)
+            index = int(raw.group(1)) if raw and raw.group(1).isdigit() else -1
+            value = shared[index] if 0 <= index < len(shared) else ""
+        elif kind == "inlineStr":
+            value = _xlsx_text(inner)
+        else:
+            raw = re.search(r"<v>(.*?)</v>", inner, re.S)
+            value = html_module.unescape(raw.group(1)) if raw else ""
+        if value != "":
+            cells[ref] = value
+    merges = [ref for ref in (_xlsx_attr(tag, "ref")
+              for tag in re.findall(r"<mergeCell\b[^>]*/?>", xml)) if ref]
+    return cells, merges
+
+
+def xlsx_col_index(letters):
+    index = 0
+    for ch in letters:
+        index = index * 26 + (ord(ch.upper()) - 64)
+    return index
+
+
+def spread_xlsx_merges(cells, merges):
+    """병합 범위의 값을 범위 전체로 퍼뜨리고, 각 칸이 속한 범위를 같이 돌려준다."""
+    spread = dict(cells)
+    span = {}
+    for ref in merges:
+        head, tail = ref.split(":")
+        c1, r1 = re.match(r"([A-Z]+)(\d+)", head).groups()
+        c2, r2 = re.match(r"([A-Z]+)(\d+)", tail).groups()
+        value = cells.get(head, "")
+        for ci in range(xlsx_col_index(c1), xlsx_col_index(c2) + 1):
+            for ri in range(int(r1), int(r2) + 1):
+                key = "%s%d" % (xlsx_col_name(ci), ri)
+                span[key] = ref
+                if value != "":
+                    spread.setdefault(key, value)
+    return spread, span
+
+
+def parse_condition_choice(raw):
+    """'125 (Default), 직접입력' 같은 문구를 입력칸 사양으로 바꾼다."""
+    text = (raw or "").strip()
+    if not text or text.upper() == "N/A":
+        return None
+    field = {"raw": text, "label": "", "options": [], "default": "",
+             "free": False, "fixed": "", "note": ""}
+    if "\n" in text or re.search(r"\bif\b", text):
+        field["note"] = text                 # 96hrs (if Ta=130) 같은 조건부는 안내로만
+        return field
+    body = text
+    head = re.match(r"^([^:]{1,40}):\s*(.+)$", text, re.S)
+    if head and not re.match(r"^[-\d]", head.group(1).strip()):
+        field["label"], body = head.group(1).strip(), head.group(2).strip()
+    for token in [part.strip() for part in re.split(r"[/,]", body) if part.strip()]:
+        if token == "직접입력":
+            field["free"] = True
+            continue
+        fixed = re.match(r"^(.*?)\s*\(고정값\)$", token)
+        if fixed:
+            field["fixed"] = fixed.group(1).strip()
+            field["default"] = field["fixed"]
+            continue
+        default = re.match(r"^(.*?)\s*\(Default\)$", token, re.I)
+        value = default.group(1).strip() if default else token
+        if value and value not in field["options"]:
+            field["options"].append(value)
+        if default:
+            field["default"] = value
+    if not field["default"] and field["options"]:
+        field["default"] = field["options"][0]
+    if not field["options"] and not field["free"] and not field["fixed"]:
+        field["free"] = True                 # 해석 실패 -> 자유 입력 + 원문 힌트
+    return field
+
+
+def condition_spec():
+    """템플릿의 Condition 시트를 읽어 항목별 입력칸 사양을 만든다."""
+    state = summary_template_state()
+    if not state["exists"]:
+        raise ValueError("Summary 템플릿이 없습니다: %s" % state["path"])
+    with zipfile.ZipFile(state["path"]) as source:
+        blobs = {name: source.read(name) for name in source.namelist()}
+    cells, merges = read_xlsx_sheet(blobs, CONDITION_SHEET_NAME)
+    spread, span = spread_xlsx_merges(cells, merges)
+
+    def wide(ref):
+        rng = span.get(ref)
+        if not rng:
+            return False
+        head, tail = rng.split(":")
+        return (xlsx_col_index(re.match(r"([A-Z]+)", head).group(1))
+                != xlsx_col_index(re.match(r"([A-Z]+)", tail).group(1)))
+
+    def continued(ref):
+        """세로 병합의 둘째 줄부터는 건너뛴다 — 아니면 같은 칸이 여러 번 생긴다
+        (HAST 의 Vcc 가 Ta/R.H. 두 줄에 걸쳐 병합돼 있어 실제로 두 번 나왔다)."""
+        rng = span.get(ref)
+        if not rng:
+            return False
+        top = int(re.match(r"[A-Z]+(\d+)", rng.split(":")[0]).group(1))
+        return int(re.match(r"[A-Z]+(\d+)", ref).group(1)) != top
+
+    starts = []
+    for row in range(CONDITION_FIRST_ROW, 300):
+        name = cells.get("A%d" % row)
+        if name and name.strip().lower().startswith(CONDITION_ADD_MARK):
+            break
+        if name:
+            starts.append(row)
+        elif starts and row - starts[-1] > 6:
+            break
+    items = []
+    for n, start in enumerate(starts):
+        end = (starts[n + 1] - 1) if n + 1 < len(starts) else start
+        if n + 1 == len(starts):
+            while (spread.get("A%d" % (end + 1)) == spread.get("A%d" % start)
+                   and end < start + 5):
+                end += 1
+        label = cells["A%d" % start].strip()
+        key = re.split(r"\s*\(", label)[0].strip()
+        fields, notes = [], []
+        for row in range(start, end + 1):
+            env_label = "" if continued("D%d" % row) else (spread.get("D%d" % row) or "").strip()
+            if env_label and wide("D%d" % row):
+                notes.append(env_label)                       # ESD 의 'PWR, GND, I/O'
+            elif env_label:
+                choice = parse_condition_choice(spread.get("E%d" % row))
+                if choice:
+                    fields.append(dict(choice, group="env", label=env_label,
+                                       unit=(spread.get("F%d" % row) or "").strip()))
+            volt_label = "" if continued("G%d" % row) else (spread.get("G%d" % row) or "").strip()
+            if volt_label and not wide("G%d" % row) and volt_label.upper() != "N/A":
+                choice = parse_condition_choice(spread.get("H%d" % row))
+                if choice:
+                    fields.append(dict(choice, group="volt", label=volt_label,
+                                       unit=(spread.get("I%d" % row) or "").strip()))
+        choice = parse_condition_choice(spread.get("J%d" % start))
+        if choice:
+            fields.append(dict(choice, group="spec", label="Datasheet Spec.",
+                               unit=(spread.get("K%d" % start) or "").strip()))
+        # 템플릿은 Environment 와 Voltage 가 '나란한 열' 이지만 우리는 줄 단위로 읽는다.
+        # 그대로 두면 HAST 가 Ta -> Vcc -> R.H. 순으로 섞이므로 묶어서 정렬한다.
+        order = {"env": 0, "volt": 1, "spec": 2}
+        fields.sort(key=lambda f: order.get(f["group"], 9))
+        duration = parse_condition_choice(spread.get("L%d" % start))
+        items.append({
+            "item": key, "label": label, "notes": notes, "fields": fields,
+            "duration": duration, "analysis_item": CONDITION_ITEM_ALIASES.get(key, key),
+        })
+    return {"sheet": CONDITION_SHEET_NAME, "template": state, "items": items}
+
+
+def load_condition_settings(selection):
+    key = condition_settings_key(selection)
+    with CONDITION_SETTINGS_LOCK:
+        try:
+            with io.open(condition_settings_path(), encoding="utf-8") as fh:
+                store = json.load(fh)
+        except Exception:
+            store = {}
+    if not isinstance(store, dict):
+        store = {}
+    entry = (store.get("conditions") or {}).get(key) or {}
+    return {"key": key, "updated": entry.get("updated", ""), "items": entry.get("items") or {}}
+
+
+def save_condition_settings(selection, items):
+    key = condition_settings_key(selection)
+    clean = {}
+    for name, entry in (items or {}).items():
+        values = {str(k): ("" if v is None else str(v)) for k, v in (entry.get("values") or {}).items()}
+        clean[str(name)] = {
+            "sample_first": str(entry.get("sample_first") or "").strip(),
+            "sample_last": str(entry.get("sample_last") or "").strip(),
+            "values": values,
+        }
+    with CONDITION_SETTINGS_LOCK:
+        try:
+            with io.open(condition_settings_path(), encoding="utf-8") as fh:
+                store = json.load(fh)
+        except Exception:
+            store = {}
+        if not isinstance(store, dict):
+            store = {}
+        store.setdefault("conditions", {})[key] = {
+            "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "selection": {name: (selection.get(name) or "").strip()
+                          for name in ("device", "type", "ver", "lot", "purpose")},
+            "items": clean,
+        }
+        write_json_file(condition_settings_path(), store)
+    return load_condition_settings(selection)
+
+
+def condition_text_for_item(analysis_item, spec, settings):
+    """Summary 의 Condition 칸에 넣을 한 줄. 'Ta 125℃ / Vcc 5.5V' 모양이다.
+
+    Vcc 의 'Op. Max' 처럼 값이 숫자가 아니면 Datasheet Spec. 에 적은 실제 전압으로
+    바꿔 쓴다 (Eden 님 확정: Op. Max 는 Datasheet 값을 가리키는 말이다).
+    """
+    entry = None
+    for item in (spec or {}).get("items", []):
+        if item["analysis_item"] == analysis_item or item["item"] == analysis_item:
+            entry = item
+            break
+    if not entry:
+        return ""
+    saved = (settings or {}).get(entry["item"]) or {}
+    values = saved.get("values") or {}
+    def value_of(field):
+        key = "%s:%s" % (field["group"], field["label"])
+        raw = (values.get(key) or "").strip()
+        return raw or field.get("fixed") or field.get("default") or ""
+    spec_value = ""
+    for field in entry["fields"]:
+        if field["group"] == "spec":
+            spec_value = value_of(field)
+    parts = []
+    for group in ("env", "volt"):
+        for field in entry["fields"]:
+            if field["group"] != group or field.get("note"):
+                continue
+            text = value_of(field)
+            if not text:
+                continue
+            if group == "volt" and spec_value and not re.match(r"^[-+.\d]", text):
+                text = spec_value               # 'Op. Max' -> 실제 전압
+            parts.append("%s %s%s" % (field["label"], text, field.get("unit") or ""))
+    return " / ".join(parts)
 
 
 def browse_data_files():
@@ -13351,6 +13898,21 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML.encode("utf-8"))
             return
+        if parsed.path == "/condition-spec":                      # R-087
+            try:
+                self.send_json(condition_spec())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if parsed.path == "/condition-settings":                  # R-087
+            try:
+                query = parse_qs(parsed.query)
+                selection = {key: query.get(key, [""])[0] for key in
+                             ("device", "type", "ver", "lot", "purpose")}
+                self.send_json(load_condition_settings(selection))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
         if parsed.path == "/summary-data":                        # R-083
             try:
                 query = parse_qs(parsed.query)
@@ -13482,6 +14044,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/browse-data-root":
             try:
                 self.send_json(browse_data_root())
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/condition-settings":                    # R-087
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                self.send_json(save_condition_settings(body.get("selection") or {},
+                                                       body.get("items") or {}))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return

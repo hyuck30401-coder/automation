@@ -69,6 +69,9 @@ ThreadingHTTPServer
    ├ GET  /item?name=&mode=    항목별 상세 (지연 로딩)
    ├ GET  /export-raw-data     수기 OOXML xlsx
    ├ GET  /summary-template    Summary 템플릿이 자리에 있는지            ← R-082
+   ├ GET  /condition-spec      템플릿이 정한 시험 조건 입력칸 사양      ← R-087
+   ├ GET  /condition-settings  저장된 시험 조건                         ← R-087
+   ├ POST /condition-settings  시험 조건 저장                           ← R-087
    ├ GET  /summary-data        Summary Table 행 (신뢰성 항목별)         ← R-083
    ├ GET  /export-summary      템플릿 서식 그대로 채운 xlsx              ← R-083
    ├ POST /browse-data-files   저장할 파일 고르기 (네이티브 선택창)   ← R-080
@@ -94,7 +97,7 @@ ThreadingHTTPServer
 |---|---|
 | A Product · B Ver. · C Rel. Type · D Lot ID | 화면이 보낸 분석 조건. **데이터 행 전체를 세로 병합**하므로 첫 줄에만 쓴다 |
 | E Rel. Item | `total_reliability_items` + `unit_counts.by_reliability` 의 합집합 |
-| F Condition | **빈칸** — Stress 조건 입력이 붙으면 그 값이 들어온다 |
+| F Condition | `시험 조건 입력` 에서 받은 값 (R-087). 예: `Ta 125℃ / Vcc 5.5V` |
 | G Duration | 판정에 쓴 Read-out (`total_conditions` / 행의 `judged_readout`) |
 | H·I·J Result (Room/Hot/Cold) | `"%dF/%d" % (불량 유닛, 투입 유닛)`. **빈칸이면 그 온도로 시험하지 않은 것** |
 | K Fail Item | 대표 1개 + "외 N건" (열 너비 21자). 전체 목록은 화면 표의 툴팁에서 본다 |
@@ -120,6 +123,31 @@ ThreadingHTTPServer
 - 조건 네 칸의 세로 병합은 `<mergeCells>` 에 범위를 더해서 만든다. 병합한 칸은 맨 윗줄만
   값을 갖는 것이 엑셀 규칙이라, 그 칸은 첫 데이터 행에만 쓴다.
 - 화면 출력은 템플릿이 없어도 된다. 내보내기만 템플릿을 탄다.
+
+### 시험 조건 입력 (R-087)
+
+조건 패널의 `시험 조건 입력` 버튼. 신뢰성 항목별로 Stress 조건과 **투입 샘플 번호(First/Last)** 를
+받아 `condition_settings.json` 에 저장하고, Summary 의 Condition 칸을 채운다.
+
+- **입력칸의 사양은 코드가 아니라 템플릿의 `Condition 입력창` 시트가 정한다.** Eden 님이
+  템플릿만 고치면 입력창이 따라 바뀐다. 화면에 기본값·선택지를 또 적어두지 마라 — 어긋난다.
+- 셀 문구 해석 규칙: `125 (Default), 직접입력` → 기본 125 + 자유 입력 / `130 (Default), 110` →
+  선택지 둘 / `85 (고정값)` → 수정 불가 / `N/A` → 칸 없음 / `if` 나 줄바꿈이 있으면 안내 문구로만.
+  **해석이 안 되면 버리지 않고 자유 입력으로 떨어뜨린 뒤 원문을 힌트로 보여준다** — R-037 처럼
+  조용히 사라지면 안 된다.
+- xlsx 읽기는 표준 라이브러리만 쓴다(`read_xlsx_sheet`). 엑셀은 `sharedStrings`, openpyxl 은
+  `inlineStr` 로 쓰므로 둘 다 받는다. 세로 병합의 둘째 줄은 건너뛴다 — 안 그러면 HAST 의 Vcc 가
+  Ta/R.H. 두 줄에 걸쳐 병합돼 있어 같은 칸이 두 번 생긴다.
+- 저장 키는 **조건 폴더 단위**(Product · Rel. Type · Ver. · Lot · Purpose). 같은 Lot 을 다시
+  분석하면 입력값이 그대로 뜬다.
+- `Vcc` 의 `Op. Max` 처럼 값이 숫자가 아니면 Datasheet Spec. 에 적은 전압으로 바꿔 쓴다
+  (Eden 님 확정: Op. Max 는 Datasheet 값을 가리키는 말이다).
+- 템플릿 항목 12종 중 `ESD_HBM`→`HBM`, `ESD_CDM`→`CDM` 만 툴 항목과 잇는다
+  (`CONDITION_ITEM_ALIASES`). `LTOL`·`ELFR`·`ESD_MM` 은 입력만 받고 Summary 에는 줄이 안 생긴다.
+- 입력을 한 번도 안 해도 Condition 칸은 **템플릿의 기본값으로 채워진다.** 빈칸으로 두고 싶으면
+  입력창에서 지워야 한다.
+- **아직 안 한 것**: 항목 선택으로 분석 범위를 제어하는 것(B)과 Sample # 를 데이터의 Serial # 와
+  대조하는 것(C). 입력칸만 먼저 만들어 뒀다.
 
 ### 데이터 저장 (R-080)
 
