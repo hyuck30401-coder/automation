@@ -131,17 +131,42 @@ ThreadingHTTPServer
 
 - **입력칸의 사양은 코드가 아니라 템플릿의 `Condition 입력창` 시트가 정한다.** Eden 님이
   템플릿만 고치면 입력창이 따라 바뀐다. 화면에 기본값·선택지를 또 적어두지 마라 — 어긋난다.
-- 셀 문구 해석 규칙: `125 (Default), 직접입력` → 기본 125 + 자유 입력 / `130 (Default), 110` →
-  선택지 둘 / `85 (고정값)` → 수정 불가 / `N/A` → 칸 없음 / `if` 나 줄바꿈이 있으면 안내 문구로만.
+- 셀 문구 해석 규칙 (전부 실제 템플릿에 있는 모양이다):
+
+  | 문구 | 읽는 법 |
+  |---|---|
+  | `125 (Default), 직접입력` | 기본 125 + 자유 입력 |
+  | `130 (Default), 110` | 선택지 둘 |
+  | `85 (고정값)` | 수정 불가 |
+  | `PWR, GND, I/O 체크박스 선택` | 다중 선택 (R-088) |
+  | `"500cls, 1000cls (Default), 직접입력"으로 드랍다운` | 따옴표 안이 알맹이, 뒤는 지시어 (R-088) |
+  | `"96hrs (if Ta= 130), 256hrs (if Ta = 110)"로 자동입력` | 다른 칸 값에서 따라온다 (R-088) |
+  | `N/A` 또는 빈칸 | 칸 없음 |
+
+  **선택지가 하나뿐이면 자유 입력도 켠다** — "기본값이고 필요하면 고친다"는 뜻으로 읽는다
+  (R-088, Eden 님 확정). `(고정값)` 으로 명시한 칸만 잠근다.
   **해석이 안 되면 버리지 않고 자유 입력으로 떨어뜨린 뒤 원문을 힌트로 보여준다** — R-037 처럼
   조용히 사라지면 안 된다.
+- 열 역할은 헤더가 아니라 **자리**로 읽는다: `D/E/F`·`G/H/I` 가 (라벨·값·단위) 쌍, `J/K` 가
+  Datasheet Spec., `L` 이 Duration, `M` 이 Stress Voltage 당 Sample 수. 헤더 문구가
+  `Environment/Voltage` 에서 `Stress Condition` 하나로 합쳐져도 그대로 동작한다.
+- **여러 항목에 걸쳐 병합된 칸은 값을 공유한다** (R-088). `J3:J6` 은 HTOL·LTOL·HAST 가 같은
+  Datasheet Spec. 하나를 쓴다는 뜻이다(Eden 님 확정). 저장 키가 `shared:<범위>` 가 되고,
+  한 줄을 고치면 나머지 줄도 같이 바뀐다. 한 항목 안에서만 세로 병합된 칸(`J13:J15`)은 공유가
+  아니다 — 병합 범위가 그 항목 밖까지 나가야 공유다.
+- **Duration 은 HTOL~ELFR 만 입력칸이다** (R-088, Eden 님 확정). HAST·uHAST 는 Ta 값에 따라
+  자동으로 정해져 읽기 전용이다. 입력값이 있으면 Summary 의 Duration 칸은 분석값 대신 그 값을 쓴다.
 - xlsx 읽기는 표준 라이브러리만 쓴다(`read_xlsx_sheet`). 엑셀은 `sharedStrings`, openpyxl 은
   `inlineStr` 로 쓰므로 둘 다 받는다. 세로 병합의 둘째 줄은 건너뛴다 — 안 그러면 HAST 의 Vcc 가
   Ta/R.H. 두 줄에 걸쳐 병합돼 있어 같은 칸이 두 번 생긴다.
 - 저장 키는 **조건 폴더 단위**(Product · Rel. Type · Ver. · Lot · Purpose). 같은 Lot 을 다시
   분석하면 입력값이 그대로 뜬다.
-- `Vcc` 의 `Op. Max` 처럼 값이 숫자가 아니면 Datasheet Spec. 에 적은 전압으로 바꿔 쓴다
-  (Eden 님 확정: Op. Max 는 Datasheet 값을 가리키는 말이다).
+- Condition 칸 표기 (R-088, Eden 님 확정):
+  - 일반 — `Ta 125℃ / Vcc 5.5V`
+  - ESD — `PWR, GND, I/O / 500V ~ 3k (Step: 500V)` (고른 Mode 만 쉼표로, 전압은 범위로)
+  - `Vcc` 의 `Op. Max` 처럼 값에 `Max`/`Min` 이 들어 있으면 Datasheet Spec. 의 전압으로 바꿔 쓴다.
+    (숫자 여부로 판단하면 ESD 의 Mode 값까지 바뀐다 — 그래서 Max/Min 으로 좁혔다.)
+  - Duration 과 Stress Voltage 당 Sample 수는 제 칸이 따로 있으므로 Condition 문자열에 안 넣는다.
 - 템플릿 항목 12종 중 `ESD_HBM`→`HBM`, `ESD_CDM`→`CDM` 만 툴 항목과 잇는다
   (`CONDITION_ITEM_ALIASES`). `LTOL`·`ELFR`·`ESD_MM` 은 입력만 받고 Summary 에는 줄이 안 생긴다.
 - 입력을 한 번도 안 해도 Condition 칸은 **템플릿의 기본값으로 채워진다.** 빈칸으로 두고 싶으면

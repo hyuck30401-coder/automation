@@ -5495,7 +5495,29 @@ function conditionSelection() {
   return out;
 }
 
-function conditionFieldKey(field) { return field.group + ":" + field.label; }
+/* R-088: 여러 항목에 걸쳐 병합된 칸(Datasheet Spec.)은 범위를 키로 써서 값을 공유한다. */
+function conditionFieldKey(field) {
+  return field.shared ? ("shared:" + field.shared) : (field.group + ":" + field.label);
+}
+
+/* 같은 키를 쓰는 다른 줄의 칸도 같이 채운다 — 공유 칸이 줄마다 따로 놀면 안 된다. */
+function syncSharedCondition(key, value, origin) {
+  document.querySelectorAll('#cdBody [data-field="' + CSS.escape(key) + '"]').forEach(el => {
+    if (el !== origin && el.value !== value) el.value = value;
+  });
+}
+
+/* HAST·uHAST 의 Duration 은 Ta 값에서 따라온다. 바뀔 때마다 다시 계산한다. */
+function refreshAutoDuration(tr) {
+  tr.querySelectorAll("[data-auto-key]").forEach(target => {
+    const sourceLabel = target.dataset.autoKey;
+    const source = [...tr.querySelectorAll("[data-field]")]
+      .find(el => el.dataset.fieldLabel === sourceLabel);
+    const table = JSON.parse(target.dataset.autoMap || "{}");
+    const value = source ? table[source.value.trim()] || "" : "";
+    target.value = value;
+  });
+}
 
 async function openConditionModal() {
   const msg = document.getElementById("cdMsg");
@@ -5529,7 +5551,7 @@ function renderConditionTable(spec, saved) {
   table.className = "cd-table";
   const thead = document.createElement("thead");
   const hr = document.createElement("tr");
-  [["Rel. Item", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Datasheet Spec.", 1], ["Duration (참고)", 1]]
+  [["Rel. Item", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Duration / Datasheet Spec.", 1]]
     .forEach(([label]) => { const th = document.createElement("th"); th.textContent = label; hr.appendChild(th); });
   thead.appendChild(hr); table.appendChild(thead);
   const tbody = document.createElement("tbody");
@@ -5578,7 +5600,33 @@ function renderConditionTable(spec, saved) {
       const key = conditionFieldKey(field);
       const current = values[key] !== undefined ? values[key] : (field.fixed || field.default || "");
       let control;
-      if (field.fixed) {
+      if (field.kind === "checkbox") {
+        /* R-088: ESD 의 Mode — 여러 개를 고른다. 값은 고른 것만 쉼표로 잇는다. */
+        control = document.createElement("input");
+        control.type = "hidden"; control.value = current;
+        const chosen = new Set(current.split(",").map(t => t.trim()).filter(Boolean));
+        (field.options || []).forEach(option => {
+          const wrap = document.createElement("label");
+          wrap.style.cssText = "display:inline-flex;align-items:center;gap:3px;font-weight:500";
+          const box = document.createElement("input");
+          box.type = "checkbox"; box.checked = chosen.has(option);
+          box.addEventListener("change", () => {
+            if (box.checked) chosen.add(option); else chosen.delete(option);
+            control.value = (field.options || []).filter(o => chosen.has(o)).join(", ");
+          });
+          wrap.appendChild(box);
+          wrap.appendChild(document.createTextNode(option));
+          cell.appendChild(wrap);
+        });
+      } else if (field.kind === "auto") {
+        /* 값이 다른 칸에서 따라오는 칸 — 직접 못 고친다. */
+        control = document.createElement("input");
+        control.type = "text"; control.readOnly = true; control.className = "cd-val";
+        control.value = current;
+        control.dataset.autoKey = field.auto_key || "";
+        control.dataset.autoMap = JSON.stringify(field.auto || {});
+        control.title = field.label + " 는 " + (field.auto_key || "") + " 값에 따라 자동으로 정해집니다";
+      } else if (field.fixed) {
         control = document.createElement("input");
         control.type = "text"; control.readOnly = true; control.className = "cd-val";
         control.value = field.fixed;
@@ -5607,6 +5655,16 @@ function renderConditionTable(spec, saved) {
         if (!field.options?.length && !field.default) control.placeholder = "직접입력";
       }
       control.dataset.field = key;
+      control.dataset.fieldLabel = field.label;
+      if (field.shared) {
+        control.title = "여러 항목이 같이 쓰는 칸입니다 — 한 곳을 고치면 같이 바뀝니다";
+        control.addEventListener("input", () => syncSharedCondition(key, control.value, control));
+        control.addEventListener("change", () => syncSharedCondition(key, control.value, control));
+      }
+      if (field.group === "env" || field.group === "volt") {
+        control.addEventListener("change", () => refreshAutoDuration(tr));
+        control.addEventListener("input", () => refreshAutoDuration(tr));
+      }
       control.title = (control.title ? control.title + "\n" : "") + "템플릿: " + (field.raw || "");
       cell.appendChild(control);
       if (field.unit) {
@@ -5619,20 +5677,25 @@ function renderConditionTable(spec, saved) {
     fieldsCell.appendChild(wrap);
     tr.appendChild(fieldsCell);
 
-    const dur = document.createElement("td");
-    dur.className = "cd-dur";
-    const d = item.duration;
-    dur.textContent = !d ? "" : (d.note || d.raw || "");
-    tr.appendChild(dur);
+    /* R-088: Duration 이 입력칸으로 들어가 '참고' 열은 비게 됐다. 남은 안내 문구가 있으면
+       조건 칸 끝에 붙이고, 열 자체는 없앴다. */
+    if (item.duration && (item.duration.note || item.duration.raw)) {
+      const note = document.createElement("span");
+      note.className = "cd-note";
+      note.textContent = item.duration.note || item.duration.raw;
+      wrap.appendChild(note);
+    }
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
   box.appendChild(table);
+  box.querySelectorAll("tbody tr").forEach(refreshAutoDuration);
   const foot = document.createElement("p");
   foot.className = "cd-note";
   foot.style.marginTop = "10px";
   foot.textContent = "입력칸과 기본값은 템플릿의 '" + spec.sheet + "' 시트가 정합니다. "
-    + "칸에 마우스를 올리면 템플릿 원문이 보입니다. Duration 은 분석 데이터에서 자동으로 채웁니다.";
+    + "칸에 마우스를 올리면 템플릿 원문이 보입니다. "
+    + "회색 칸은 템플릿이 고정값으로 정했거나 다른 칸에서 따라오는 값입니다.";
   box.appendChild(foot);
 }
 
@@ -12376,7 +12439,9 @@ def summary_table_rows(selection, run_id=""):
             "lot": (selection.get("lot") or "").strip(),
             "rel_item": item,
             "condition": condition_text_for_item(item, spec, saved_conditions),   # R-087
-            "duration": readouts.get(item) or fallback_readout,
+            # R-088: 입력창에서 받은 Duration 이 있으면 그걸 쓴다 (Eden 님 확정).
+            "duration": (condition_duration_for_item(item, spec, saved_conditions)
+                         or readouts.get(item) or fallback_readout),
             "result_room": result_text(item, "Room"),
             "result_hot": result_text(item, "Hot"),
             "result_cold": result_text(item, "Cold"),
@@ -12657,17 +12722,59 @@ def spread_xlsx_merges(cells, merges):
 
 
 def parse_condition_choice(raw):
-    """'125 (Default), 직접입력' 같은 문구를 입력칸 사양으로 바꾼다."""
+    """템플릿 문구 한 칸을 입력칸 사양으로 바꾼다.
+
+    받는 문구 (전부 실제 템플릿에 있는 모양이다):
+      125 (Default), 직접입력                 기본 125 + 자유 입력
+      130 (Default), 110                      선택지 둘
+      85 (고정값)                              수정 불가
+      PWR, GND, I/O 체크박스 선택              다중 선택
+      "500cls, 1000cls (Default), 직접입력"으로 드랍다운
+      "96hrs (if Ta= 130), 256hrs (if Ta = 110)"로 자동입력
+      N/A                                     칸 없음
+    해석이 안 되면 버리지 않고 자유 입력으로 떨어뜨리고 원문을 힌트로 남긴다.
+    """
     text = (raw or "").strip()
     if not text or text.upper() == "N/A":
         return None
-    field = {"raw": text, "label": "", "options": [], "default": "",
-             "free": False, "fixed": "", "note": ""}
-    if "\n" in text or re.search(r"\bif\b", text):
-        field["note"] = text                 # 96hrs (if Ta=130) 같은 조건부는 안내로만
-        return field
+    field = {"raw": text, "label": "", "options": [], "default": "", "free": False,
+             "fixed": "", "note": "", "kind": "input", "mode": "",
+             "auto_key": "", "auto": {}}
+
+    # R-088: "..." 으로 드랍다운 / "..." 로 자동입력 — 따옴표 안이 알맹이고 뒤는 지시어다.
+    quoted = re.match(r'^["\u201c\u201d](.*?)["\u201c\u201d]\s*(?:(?:으)?로)?\s*(.*)$', text, re.S)
     body = text
-    head = re.match(r"^([^:]{1,40}):\s*(.+)$", text, re.S)
+    if quoted:
+        body = quoted.group(1).strip()
+        field["mode"] = "auto" if "자동" in quoted.group(2) else "dropdown"
+
+    # R-088: 체크박스 다중 선택 (ESD 의 Mode)
+    checkbox = re.match(r"^(.*?)\s*체크박스\s*선택\s*$", body, re.S)
+    if checkbox:
+        field["kind"] = "checkbox"
+        field["options"] = [part.strip() for part in checkbox.group(1).split(",") if part.strip()]
+        return field
+
+    # R-088: 자동입력 — 값마다 조건이 붙는다. 96hrs (if Ta= 130)
+    if field["mode"] == "auto":
+        for token in re.split(r"(?<=\))\s*,\s*", body):
+            hit = re.match(r"^(.*?)\s*\(\s*if\s*([^=]+?)\s*=\s*([^)]+?)\s*\)$", token.strip(), re.I)
+            if not hit:
+                continue
+            field["auto_key"] = hit.group(2).strip()
+            field["auto"][hit.group(3).strip()] = hit.group(1).strip()
+        if field["auto"]:
+            field["kind"] = "auto"
+            field["options"] = list(field["auto"].values())
+            field["default"] = field["options"][0]
+            return field
+        field["note"] = text
+        return field
+    if "\n" in body or re.search(r"\bif\b", body):
+        field["note"] = text                 # 조건부인데 지시어가 없으면 안내로만
+        return field
+
+    head = re.match(r"^([^:]{1,40}):\s*(.+)$", body, re.S)
     if head and not re.match(r"^[-\d]", head.group(1).strip()):
         field["label"], body = head.group(1).strip(), head.group(2).strip()
     for token in [part.strip() for part in re.split(r"[/,]", body) if part.strip()]:
@@ -12689,6 +12796,10 @@ def parse_condition_choice(raw):
         field["default"] = field["options"][0]
     if not field["options"] and not field["free"] and not field["fixed"]:
         field["free"] = True                 # 해석 실패 -> 자유 입력 + 원문 힌트
+    # R-088: 선택지가 하나뿐이면 "기본값이고 필요하면 고친다" 로 읽어 직접 입력도 받는다
+    # (Eden 님 확정: ESD 의 Start/End/Step 은 전부 Default 이고 직접입력이 되어야 한다).
+    if len(field["options"]) == 1 and not field["fixed"]:
+        field["free"] = True
     return field
 
 
@@ -12740,28 +12851,52 @@ def condition_spec():
         fields, notes = [], []
         for row in range(start, end + 1):
             env_label = "" if continued("D%d" % row) else (spread.get("D%d" % row) or "").strip()
+            if env_label and env_label.upper() == "N/A":
+                env_label = ""                                # ESD_CDM 의 D16=N/A
             if env_label and wide("D%d" % row):
-                notes.append(env_label)                       # ESD 의 'PWR, GND, I/O'
+                notes.append(env_label)
             elif env_label:
                 choice = parse_condition_choice(spread.get("E%d" % row))
                 if choice:
+                    same = span.get("E%d" % row) and span.get("E%d" % row) == span.get("F%d" % row)
                     fields.append(dict(choice, group="env", label=env_label,
-                                       unit=(spread.get("F%d" % row) or "").strip()))
+                                       unit="" if same else (spread.get("F%d" % row) or "").strip()))
             volt_label = "" if continued("G%d" % row) else (spread.get("G%d" % row) or "").strip()
             if volt_label and not wide("G%d" % row) and volt_label.upper() != "N/A":
                 choice = parse_condition_choice(spread.get("H%d" % row))
                 if choice:
                     fields.append(dict(choice, group="volt", label=volt_label,
                                        unit=(spread.get("I%d" % row) or "").strip()))
+        # R-088: Datasheet Spec. 가 여러 항목에 걸쳐 병합돼 있으면 (J3:J6) 값은 하나다.
+        # 그 경우 저장 키를 병합 범위로 잡아 세 항목이 같은 칸을 공유하게 한다
+        # (Eden 님 확정: HTOL·LTOL·HAST 는 같은 값 하나).
         choice = parse_condition_choice(spread.get("J%d" % start))
         if choice:
+            shared = ""
+            rng = span.get("J%d" % start)
+            if rng:
+                head, tail = rng.split(":")
+                top = int(re.match(r"[A-Z]+(\d+)", head).group(1))
+                bottom = int(re.match(r"[A-Z]+(\d+)", tail).group(1))
+                if top < start or bottom > end:      # 이 항목 밖까지 걸쳐야 '공유' 다
+                    shared = rng
             fields.append(dict(choice, group="spec", label="Datasheet Spec.",
-                               unit=(spread.get("K%d" % start) or "").strip()))
-        # 템플릿은 Environment 와 Voltage 가 '나란한 열' 이지만 우리는 줄 단위로 읽는다.
-        # 그대로 두면 HAST 가 Ta -> Vcc -> R.H. 순으로 섞이므로 묶어서 정렬한다.
-        order = {"env": 0, "volt": 1, "spec": 2}
-        fields.sort(key=lambda f: order.get(f["group"], 9))
+                               unit=(spread.get("K%d" % start) or "").strip(), shared=shared))
+        # R-088: Duration 은 HTOL~ELFR 만 입력칸이다 (Eden 님 확정). ESD 와 LU 는 L 이 N/A 라
+        # parse_condition_choice 가 None 을 돌려줘 자동으로 빠진다.
         duration = parse_condition_choice(spread.get("L%d" % start))
+        if duration and not duration.get("note"):
+            fields.append(dict(duration, group="dur", label="Duration", unit=""))
+            duration = None
+        # R-088: M 열 'Stress Voltage 당 Sample 수' (ESD_HBM / ESD_MM 만).
+        per_voltage = parse_condition_choice(spread.get("M%d" % start))
+        if per_voltage and not per_voltage.get("note"):
+            fields.append(dict(per_voltage, group="vsample",
+                               label=(cells.get("M1") or "Stress Voltage 당 Sample 수").strip(), unit=""))
+        # 템플릿은 조건들이 '나란한 열' 이지만 우리는 줄 단위로 읽는다. 그대로 두면
+        # HAST 가 Ta -> Vcc -> R.H. 순으로 섞이므로 묶어서 정렬한다.
+        order = {"env": 0, "volt": 1, "dur": 2, "vsample": 3, "spec": 4}
+        fields.sort(key=lambda f: order.get(f["group"], 9))
         items.append({
             "item": key, "label": label, "notes": notes, "fields": fields,
             "duration": duration, "analysis_item": CONDITION_ITEM_ALIASES.get(key, key),
@@ -12811,40 +12946,107 @@ def save_condition_settings(selection, items):
     return load_condition_settings(selection)
 
 
-def condition_text_for_item(analysis_item, spec, settings):
-    """Summary 의 Condition 칸에 넣을 한 줄. 'Ta 125℃ / Vcc 5.5V' 모양이다.
+def condition_field_key(field):
+    """저장 키. 여러 항목에 걸쳐 병합된 칸(Datasheet Spec.)은 범위를 키로 써서 공유한다."""
+    if field.get("shared"):
+        return "shared:%s" % field["shared"]
+    return "%s:%s" % (field["group"], field["label"])
 
-    Vcc 의 'Op. Max' 처럼 값이 숫자가 아니면 Datasheet Spec. 에 적은 실제 전압으로
-    바꿔 쓴다 (Eden 님 확정: Op. Max 는 Datasheet 값을 가리키는 말이다).
-    """
-    entry = None
+
+def condition_entry(analysis_item, spec):
     for item in (spec or {}).get("items", []):
         if item["analysis_item"] == analysis_item or item["item"] == analysis_item:
-            entry = item
-            break
+            return item
+    return None
+
+
+def condition_values(entry, settings):
+    """저장값 + 기본값을 합쳐 필드별 최종 값을 만든다. 공유 칸은 어느 항목에 적혔든 찾는다."""
+    settings = settings or {}
+    saved = (settings.get(entry["item"]) or {}).get("values") or {}
+    out = {}
+    for field in entry["fields"]:
+        key = condition_field_key(field)
+        raw = (saved.get(key) or "").strip()
+        if not raw and field.get("shared"):
+            for other in settings.values():
+                raw = ((other or {}).get("values") or {}).get(key, "").strip()
+                if raw:
+                    break
+        out[key] = raw or field.get("fixed") or field.get("default") or ""
+    return out
+
+
+def _with_unit(text, unit):
+    unit = (unit or "").strip()
+    if not unit or not text or text.strip().lower().endswith(unit.lower()):
+        return text
+    return text + unit
+
+
+def condition_duration_for_item(analysis_item, spec, settings):
+    """입력창에서 받은 Duration. HAST·uHAST 는 Ta 값에 따라 자동으로 정해진다."""
+    entry = condition_entry(analysis_item, spec)
     if not entry:
         return ""
-    saved = (settings or {}).get(entry["item"]) or {}
-    values = saved.get("values") or {}
+    values = condition_values(entry, settings)
+    for field in entry["fields"]:
+        if field["group"] != "dur":
+            continue
+        if field.get("kind") == "auto":
+            source = ""
+            for other in entry["fields"]:
+                if other["label"] == field.get("auto_key"):
+                    source = values.get(condition_field_key(other), "")
+                    break
+            return (field.get("auto") or {}).get(source, "")
+        return values.get(condition_field_key(field), "")
+    return ""
+
+
+def condition_text_for_item(analysis_item, spec, settings):
+    """Summary 의 Condition 칸에 넣을 한 줄.
+
+      일반   Ta 125℃ / Vcc 5.5V
+      ESD    PWR, GND, I/O / 500V ~ 3k (Step: 500V)      (Eden 님 확정 표기)
+
+    Vcc 의 'Op. Max' 처럼 스펙을 가리키는 값은 Datasheet Spec. 에 적은 전압으로 바꿔 쓴다.
+    Duration 과 'Stress Voltage 당 Sample 수' 는 각자 제 칸이 있으므로 여기 넣지 않는다.
+    """
+    entry = condition_entry(analysis_item, spec)
+    if not entry:
+        return ""
+    values = condition_values(entry, settings)
     def value_of(field):
-        key = "%s:%s" % (field["group"], field["label"])
-        raw = (values.get(key) or "").strip()
-        return raw or field.get("fixed") or field.get("default") or ""
+        return values.get(condition_field_key(field), "")
     spec_value = ""
     for field in entry["fields"]:
         if field["group"] == "spec":
             spec_value = value_of(field)
+
+    volts = {}
     parts = []
-    for group in ("env", "volt"):
-        for field in entry["fields"]:
-            if field["group"] != group or field.get("note"):
-                continue
-            text = value_of(field)
-            if not text:
-                continue
-            if group == "volt" and spec_value and not re.match(r"^[-+.\d]", text):
-                text = spec_value               # 'Op. Max' -> 실제 전압
-            parts.append("%s %s%s" % (field["label"], text, field.get("unit") or ""))
+    for field in entry["fields"]:
+        if field["group"] not in ("env", "volt") or field.get("note"):
+            continue
+        text = value_of(field)
+        if not text:
+            continue
+        label = field["label"]
+        if label in ("Start Voltage", "End Voltage", "Step"):
+            volts[label] = _with_unit(text, field.get("unit"))
+            continue
+        if field.get("kind") == "checkbox":
+            parts.append(text)                  # 고른 것만 쉼표로 (Mode)
+            continue
+        if spec_value and re.search(r"\b(max|min)\b", text, re.I):
+            text = spec_value                   # 'Op. Max' -> 실제 전압
+        parts.append("%s %s" % (label, _with_unit(text, field.get("unit"))))
+    if volts.get("Start Voltage") and volts.get("End Voltage"):
+        span = "%s ~ %s" % (volts["Start Voltage"], volts["End Voltage"])
+        if volts.get("Step"):
+            span += " (Step: %s)" % volts["Step"]
+        parts.append(span)
     return " / ".join(parts)
 
 
