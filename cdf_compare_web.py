@@ -2308,6 +2308,11 @@ HTML = r"""<!doctype html>
       font-family:inherit; font-size:13px }
     .sv-grid input:focus,.sv-grid select:focus{ outline:none; border-color:var(--r-acc);
       box-shadow:0 0 0 3px rgba(39,71,212,.12) }
+    /* R-094: Rel. Type 드롭다운 오른쪽 Plan 버튼. 시험 조건 입력 창은 저장 창 위에 떠야 한다. */
+    .sv-inline{ display:flex; gap:6px; align-items:center; min-width:0 }
+    .sv-inline select{ flex:1 1 auto }
+    .sv-inline .sp-sub.sm{ height:36px; padding:0 14px }
+    #conditionModal{ z-index:95 }
     .sv-filehead{ display:flex; align-items:center; gap:8px }
     .sv-filehead .sp-label{ margin:0 }
     .sv-fileacts{ margin-left:auto; display:flex; gap:6px }
@@ -2668,7 +2673,6 @@ HTML = r"""<!doctype html>
                 <div class="field"><label>Read-out</label><select id="readoutSelect"></select></div>
                 <div class="field"><label>FT Temp.</label><select id="ftTempSelect"></select></div>
               </div>
-              <button type="button" class="sp-sub" id="conditionBtn" title="신뢰성 항목별 시험 조건과 투입 샘플 번호를 입력합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13"/><circle cx="7" cy="5.5" r="1.8"/><circle cx="13" cy="10" r="1.8"/><circle cx="9" cy="14.5" r="1.8"/></svg> 시험 조건 입력</button>
               <label class="sp-check" title="체크하면 Post 데이터만 분석합니다. Pre 비교가 필요한 기능은 감춰집니다."><input id="postOnlyCheck" type="checkbox"><span>Post Only</span></label>
               <section id="executionToolbar" class="sp-run">
                 <button id="analyzeBtn" class="sp-go"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 4.8v10.4L16 10z"/></svg> Analyze</button>
@@ -2829,11 +2833,12 @@ HTML = r"""<!doctype html>
     <div class="sv-box" role="dialog" aria-modal="true" aria-labelledby="svTitle">
       <div class="sv-head"><b id="svTitle">데이터 저장</b><span class="sv-sub">폴더 규칙대로 저장합니다</span><button type="button" class="sv-x" id="svCloseBtn" title="닫기">&times;</button></div>
       <div class="sv-body">
-        <div class="sp-label">PRODUCT</div>
+        <!-- R-092: Device 라벨·PRODUCT 소제목 삭제(Product 로). R-093: Product/Ver. · Rel. Type/Lot No. · Purpose.
+             R-094: Rel. Type 오른쪽 Plan 버튼 = 시험 조건 입력 (이 창의 입력값을 조건 키로 쓴다). -->
         <div class="sv-grid">
-          <div class="field wide"><label>Device</label><input id="svDevice" type="text" list="deviceOptions" placeholder="SM3502Q"></div>
-          <div class="field wide"><label>Reliability Type</label><select id="svType"></select></div>
+          <div class="field"><label>Product</label><input id="svDevice" type="text" list="deviceOptions" placeholder="SM3502Q"></div>
           <div class="field"><label>Ver.</label><input id="svVer" type="text" placeholder="MVT1-3"></div>
+          <div class="field"><label>Rel. Type</label><div class="sv-inline"><select id="svType"></select><button type="button" class="sp-sub sm" id="svPlanBtn" title="신뢰성 항목별 시험 조건과 투입 샘플 번호를 입력합니다">Plan</button></div></div>
           <div class="field"><label>Lot No.</label><input id="svLot" type="text" placeholder="1111"></div>
           <div class="field wide"><label>Purpose</label><input id="svPurpose" type="text" placeholder="111"></div>
         </div>
@@ -5494,10 +5499,17 @@ async function applySavedSelection(selection) {
    값만 돌려준다 — 기본값·선택지를 화면에 또 적어두면 템플릿과 어긋난다. */
 let conditionSpec = null;
 
+/* R-094: 시험 조건 입력은 데이터 저장 창의 Plan 버튼에서 연다 — 조건 키도 그 창의 입력값이다.
+   시험 전(폴더가 아직 없을 때)에 계획을 넣는 기능이라 분석 패널 선택값을 쓰면 안 된다.
+   키 모양(device||type||ver||lot||purpose)은 그대로라 Summary 가 같은 값을 찾는다. */
 function conditionSelection() {
-  const out = {};
-  ["device", "type", "ver", "lot", "purpose"].forEach(key => { out[key] = lookupState[key] || ""; });
-  return out;
+  return {
+    device: (document.getElementById("svDevice")?.value || "").trim(),
+    type: document.getElementById("svType")?.value || "",
+    ver: (document.getElementById("svVer")?.value || "").trim(),
+    lot: (document.getElementById("svLot")?.value || "").trim(),
+    purpose: (document.getElementById("svPurpose")?.value || "").trim(),
+  };
 }
 
 /* R-088: 여러 항목에 걸쳐 병합된 칸(Datasheet Spec.)은 범위를 키로 써서 값을 공유한다. */
@@ -5527,7 +5539,14 @@ function refreshAutoDuration(tr) {
 async function openConditionModal() {
   const msg = document.getElementById("cdMsg");
   msg.textContent = "";
-  const params = new URLSearchParams(conditionSelection());
+  const selection = conditionSelection();
+  const missing = [["device", "Product"], ["ver", "Ver."], ["lot", "Lot No."], ["purpose", "Purpose"]]
+    .filter(([key]) => !selection[key]).map(([, label]) => label);
+  if (missing.length) {
+    alert(missing.join(", ") + " 을(를) 먼저 입력하세요. 시험 조건은 이 조건별로 저장됩니다.");
+    return;
+  }
+  const params = new URLSearchParams(selection);
   try {
     const [specRes, savedRes] = await Promise.all([
       fetch("/condition-spec"),
@@ -5766,7 +5785,7 @@ async function saveConditionModal() {
 }
 
 function bindConditionInput() {
-  const open = document.getElementById("conditionBtn");
+  const open = document.getElementById("svPlanBtn");   /* R-094: 분석 패널 버튼에서 저장 창 Plan 으로 */
   if (!open) return;
   open.addEventListener("click", openConditionModal);
   const close = () => { document.getElementById("conditionModal").hidden = true; };
@@ -5777,7 +5796,10 @@ function bindConditionInput() {
     if (event.target === document.getElementById("conditionModal")) close();
   });
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !document.getElementById("conditionModal").hidden) close();
+    if (event.key === "Escape" && !document.getElementById("conditionModal").hidden) {
+      event.preventDefault();             /* R-094: 아래 저장 창까지 같이 닫히지 않게 */
+      close();
+    }
   });
 }
 
@@ -5791,6 +5813,8 @@ function bindSaveData() {
     if (event.target === svEl("saveDataModal")) closeSaveDataModal();
   });
   document.addEventListener("keydown", event => {
+    /* R-094: 시험 조건 입력 창이 위에 떠 있으면 Esc 는 그 창만 닫는다. */
+    if (event.defaultPrevented || !svEl("conditionModal").hidden) return;
     if (event.key === "Escape" && !svEl("saveDataModal").hidden) closeSaveDataModal();
   });
   ["svDevice", "svVer", "svLot", "svPurpose"].forEach(id => {
@@ -12470,7 +12494,7 @@ def summary_table_rows(selection, run_id=""):
         spec = condition_spec()
     except Exception:
         spec = {"items": []}            # 템플릿이 없어도 Summary 는 떠야 한다
-    saved_conditions = load_condition_settings(selection).get("items") or {}
+    saved_conditions = load_condition_settings(selection, match_any_type=True).get("items") or {}
 
     # R-089: 체크는 "이 Lot 에서 이 시험을 한다" 는 초기 설정이다. 체크했는데 데이터가
     # 아직 없는 항목도 줄을 만들고 Remark 에 On-going 을 적는다 (Eden 님 확정).
@@ -13008,7 +13032,7 @@ def condition_spec():
     return {"sheet": CONDITION_SHEET_NAME, "template": state, "items": items}
 
 
-def load_condition_settings(selection):
+def load_condition_settings(selection, match_any_type=False):
     key = condition_settings_key(selection)
     with CONDITION_SETTINGS_LOCK:
         try:
@@ -13018,7 +13042,19 @@ def load_condition_settings(selection):
             store = {}
     if not isinstance(store, dict):
         store = {}
-    entry = (store.get("conditions") or {}).get(key) or {}
+    conditions = store.get("conditions") or {}
+    entry = conditions.get(key) or {}
+    if not entry and match_any_type and not (selection.get("type") or "").strip():
+        # R-094: 시험 조건은 데이터 저장 창(Plan)에서 Rel. Type 까지 정해 저장하지만, 분석은
+        # Rel. Type 을 '전체'(빈 값)로 두고 하는 일이 많다. 그때는 나머지 네 칸이 같은 저장값이
+        # 정확히 하나일 때만 그것을 쓴다 — 둘 이상이면 어느 쪽인지 모르니 고르지 않는다.
+        want = [(selection.get(name) or "").strip() for name in ("device", "ver", "lot", "purpose")]
+        matches = [
+            value for stored_key, value in conditions.items()
+            if [part for index, part in enumerate(stored_key.split("||")) if index != 1] == want
+        ]
+        if len(matches) == 1:
+            entry = matches[0] or {}
     return {"key": key, "updated": entry.get("updated", ""), "items": entry.get("items") or {}}
 
 
@@ -13305,7 +13341,7 @@ def build_save_plan(payload):
     errors 가 비어야만 저장할 수 있다 (can_save)."""
     sel = payload.get("selection") or {}
     errors = []
-    device, errs = validate_name_token("Device", sel.get("device")); errors += errs
+    device, errs = validate_name_token("Product", sel.get("device")); errors += errs   # R-092: 화면 라벨과 같게
     ver, errs = validate_name_token("Ver.", sel.get("ver")); errors += errs
     rel_type, errs = validate_name_token("Reliability Type", sel.get("type"), required=False); errors += errs
     lot, errs = validate_name_token("Lot No.", sel.get("lot")); errors += errs
