@@ -7520,6 +7520,12 @@ function drawReadoutLegend(ctx, series, x, y, align = "left") {
   ctx.restore();
 }
 function failCdfForValue(value, row, fallbackValues = []) {
+  /* R-091: 규격 이탈값이 이미 CDF 곡선(fallbackValues)에 들어 있으면 곡선 위 제 높이에 둔다.
+     종전에는 무조건 0/1 끝에 붙여, 곡선 위의 점과 0/1 줄의 큰 마커로 같은 샘플이 두 번 찍혔다.
+     곡선에 없는 값(곡선을 Pass 값만으로 그린 경우)만 지금처럼 0/1 끝에 붙인다. */
+  if ((fallbackValues || []).some(entry => Number(entry) === value)) {
+    return cdfFraction(fallbackValues, value) ?? 0.5;
+  }
   const lower = finiteNumber(row?.lower_limit);
   const upper = finiteNumber(row?.upper_limit);
   if (lower !== null && value < lower) return 0;
