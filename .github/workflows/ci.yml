@@ -97,38 +97,71 @@ jobs:
 
       - name: exe 스모크 테스트 (실제로 뜨는지)
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           set -uo pipefail
-          exe="dist/${{ steps.ver.outputs.name }}.exe"
+          name="${{ steps.ver.outputs.name }}"
+          exe="dist/$name.exe"
           size=$(stat -c%s "$exe")
-          echo "크기: $((size/1024/1024)) MB"
+          echo "크기: $((size/1024/1024)) MB ($size bytes)"
           # PyInstaller 가 조용히 껍데기만 만드는 경우를 거른다
           if (( size < 5*1024*1024 )); then echo "::error::exe 가 비정상적으로 작습니다"; exit 1; fi
 
           # 띄운 exe 는 어떤 경로로 끝나든 반드시 회수한다.
           # 예전에는 배경(&)으로 띄우고 /shutdown 에만 맡겨서, 프로세스가 남으면
           # 스크립트가 exit 해도 러너가 단계를 못 끝냈다 (실측: 6시간 뒤 강제 취소).
-          cleanup() { taskkill //F //IM "${{ steps.ver.outputs.name }}.exe" >/dev/null 2>&1 || true; }
+          cleanup() {
+            taskkill //F //IM "$name.exe"          >/dev/null 2>&1 || true
+            taskkill //F //IM "${name}_console.exe" >/dev/null 2>&1 || true
+          }
           trap cleanup EXIT
 
           "./$exe" &
+          pid=$!
           ok=0
-          for i in $(seq 1 60); do
-            # --connect-timeout / --max-time 이 없으면 포트만 열리고 응답이 없을 때
-            # curl 이 무한정 기다려 60초 루프가 한 바퀴도 못 돈다.
+          # v0.0.35 / v0.0.36 이 여기서 멈췄다. 60초가 모자란 것인지, 프로세스가 죽는 것인지
+          # 로그만으로는 구분이 안 돼서 셋을 나눠 본다: 대기 180초 · 생사 확인 · 실패 시 진단.
+          for i in $(seq 1 180); do
             if curl -sf --connect-timeout 2 --max-time 5 -o /dev/null http://127.0.0.1:8765/; then
               echo "HTTP 200 확인 ( ${i}초 )"
               curl -sf --connect-timeout 2 --max-time 5 -X POST http://127.0.0.1:8765/shutdown >/dev/null 2>&1 || true
               ok=1
               break
             fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "exe 프로세스가 ${i}초 만에 사라졌습니다 — 뜨다가 죽은 것입니다"
+              break
+            fi
+            if (( i % 15 == 0 )); then echo "  ... ${i}초 대기 중 (프로세스는 살아 있음)"; fi
             sleep 1
           done
-          if (( ok == 0 )); then
-            echo "::error::exe 는 만들어졌지만 60초 안에 서버가 뜨지 않았습니다"
-            exit 1
+          if (( ok == 1 )); then exit 0; fi
+
+          echo "---- 프로세스 ----"
+          tasklist //FI "IMAGENAME eq $name.exe" 2>&1 || true
+          echo "---- 8765 포트 ----"
+          netstat -ano 2>/dev/null | grep ":8765" || echo "(열려 있지 않음)"
+          cleanup
+
+          # --windowed 는 stdout/stderr 가 없어서 파이썬이 죽어도 아무 말이 없다.
+          # 같은 소스를 콘솔 모드로 한 번 더 빌드해 실제 오류를 받아낸다 (실패했을 때만 돈다).
+          echo "---- 콘솔 빌드로 실제 오류 확인 ----"
+          pyinstaller --onefile --name "${name}_console" cdf_compare_web.py > build_console.log 2>&1 \
+            || { echo "(콘솔 빌드 실패)"; tail -40 build_console.log; }
+          if [ -f "dist/${name}_console.exe" ]; then
+            "./dist/${name}_console.exe" > console.out 2>&1 &
+            cpid=$!
+            for i in $(seq 1 60); do
+              curl -sf --connect-timeout 2 --max-time 5 -o /dev/null http://127.0.0.1:8765/ && break
+              kill -0 "$cpid" 2>/dev/null || break
+              sleep 1
+            done
+            cleanup
+            echo "---- 콘솔 빌드 출력 ----"
+            cat console.out 2>/dev/null || echo "(출력 없음)"
           fi
+          echo "::error::exe 는 만들어졌지만 180초 안에 서버가 뜨지 않았습니다"
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
