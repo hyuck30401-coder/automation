@@ -188,7 +188,7 @@ ThreadingHTTPServer
   (`condition_selected_items()` 가 `CONDITION_ITEM_ALIASES` 를 거쳐 맞춘다).
 - 템플릿 `Summary Table` 의 빈 행은 11줄이다. 12항목을 전부 체크하고 데이터까지 있으면
   행이 모자라 xlsx 내보내기가 거부된다.
-### 타 항목 Fail 유닛 표시 (R-091)
+### 타 항목 Fail 유닛 표시 (R-095)
 
 Fail 분석에서 **다른 항목 때문에 Fail 난 유닛은, 이 항목에서는 규격 안이어도 그래프에서
 빠져 있었다.** Pass 묶음(= 전 항목 통과)에도 못 들고, 이 항목 Fail 묶음에도 못 들어서다.
@@ -196,6 +196,7 @@ Fail 분석에서 **다른 항목 때문에 Fail 난 유닛은, 이 항목에서
 
 - `analyze_fail_to_json()` 이 그 유닛들을 `other_records` 로 따로 모아
   **`other_values` / `other_details`** 로 싣는다. `CACHE_SCHEMA` 32→33.
+  (처음에는 R-091 로 달았으나 같은 날 올라온 브랜치의 R-091 과 겹쳐 R-095 로 옮겼다.)
 - **판정은 하나도 안 바뀐다.** `post_records`(= `details`·`qty`·`sample_numbers`·`fail_type`)
   에도, `pass_pairs`(= 평균·σ·Grubbs 임계)에도 넣지 않는다. 골든이 보는 건 `details` 뿐이라
   비교 대상도 아니다(게이트 5건 PASS 로 확인).

@@ -2904,7 +2904,7 @@ let analysisFilters = {
   ft_temps: { Room: true, Hot: false, Cold: false },
   readouts: { pre_t0: true, post_t1: true, post_t2: true, post_t3: true },
   fail_exception: false,
-  other_units: true          /* R-091: 타 항목 Fail 유닛 표시 — 기본 켜기 (Eden 님 확정) */
+  other_units: true          /* R-095: 타 항목 Fail 유닛 표시 — 기본 켜기 (Eden 님 확정) */
 };
 
 function chartPixelRatio() {
@@ -3686,7 +3686,7 @@ function resetAnalysisFilters() {
     ft_temps: { Room: true, Hot: false, Cold: false },
     readouts: { pre_t0: true, post_t1: true, post_t2: true, post_t3: true },
     fail_exception: false,
-    other_units: true        /* R-091 */
+    other_units: true        /* R-095 */
   };
 }
 function availableFilterTemps() {
@@ -4651,7 +4651,7 @@ function renderGraphFilterBar() {
     analysisFilters.fail_exception = checked;
     drawCharts();
   }));
-  /* R-091: 끄면 종전 그림 그대로다. 판정에는 어느 쪽이든 영향이 없다. */
+  /* R-095: 끄면 종전 그림 그대로다. 판정에는 어느 쪽이든 영향이 없다. */
   graphGroup.appendChild(makeGraphCheckbox("타 항목 Fail 포함", otherUnitsEnabled(), checked => {
     analysisFilters.other_units = checked;
     drawCharts();
@@ -7498,7 +7498,7 @@ function failOverlayPoints(data) {
   });
   return points;
 }
-/* ---- R-091: 다른 항목에서 Fail 났지만 이 항목은 규격 안인 유닛 ----------------------
+/* ---- R-095: 다른 항목에서 Fail 났지만 이 항목은 규격 안인 유닛 ----------------------
    판정(평균·σ·Grubbs 임계)에는 들어가지 않는다 — 서버가 other_details 로 따로 보낸다.
    그래프에만 회색 점으로 얹는다. 켜고 끄는 건 Graph 체크박스. */
 const OTHER_UNIT_COLOR = "#9aa0a6";
@@ -7686,7 +7686,7 @@ function drawChart() {
      Abnormal Pass 그래프까지 축이 넓어진다. */
   const failMarkerValues = (mode === "fail" && !hideFailData && hasReadoutSeries)
     ? failReadoutMarkerValues(readoutSeries) : [];
-  const otherRows = otherUnitRows(data);                      // R-091
+  const otherRows = otherUnitRows(data);                      // R-095
   const otherValues = otherUnitValues(data);                  // 축 범위에도 넣는다
   const all = [...preAxisValues, ...postAxisValues, ...failOverlayValues, ...failMarkerValues, ...otherValues];
   if (showSpecLines && specSource.lower_limit !== null) all.push(specSource.lower_limit);
@@ -7715,7 +7715,7 @@ function drawChart() {
     if (!hideFailData && hasReadoutSeries) {
       drawFailReadoutMarkers(ctx, readoutSeries, x, y);
     }
-    /* R-091: 판정 곡선(Pass 분포)은 그대로 두고 점만 얹는다. */
+    /* R-095: 판정 곡선(Pass 분포)은 그대로 두고 점만 얹는다. */
     drawOtherUnitMarkers(ctx, otherRows, "post_value", x, y,
       postAxisValues.length ? postAxisValues : (data.pass_post_values || data.post_values || []));
   } else {
@@ -7736,7 +7736,7 @@ function drawChart() {
   const displayedReadoutSeries = mode === "fail"
     ? readoutSeries.map(series => ({ ...series, markerOnly: true }))
     : readoutSeries.map(series => ({ ...series, markerOnly: true }));
-  /* R-091: 회색 점이 무엇인지 범례로 말해준다. */
+  /* R-095: 회색 점이 무엇인지 범례로 말해준다. */
   const otherLegend = otherRows.length
     ? [{ label: "타 항목 Fail (이 항목은 정상)", color: OTHER_UNIT_COLOR, markerOnly: true }] : [];
   drawReadoutLegend(ctx, [...(useSeriesLegend ? [...displayedPreSeries, ...displayedReadoutSeries] : displayedReadoutSeries), ...otherLegend], legendX, readoutLegendY, "center");
@@ -8424,7 +8424,7 @@ function drawDiffCdfChart() {
   const failBaselineValues = hasReadoutSeries ? values : passValues.length ? passValues : values;
   const baseValues = mode === "fail" ? failBaselineValues : values;
   const statsValues = baseValues.length ? baseValues : [...values, ...passValues, ...failOverlayDiffs];
-  const otherDiffRows = otherUnitRows(data);                  // R-091
+  const otherDiffRows = otherUnitRows(data);                  // R-095
   const otherDiffValues = otherUnitValues(data, "diff");
   const allValues = [...values, ...passValues, ...failOverlayDiffs, ...otherDiffValues];
   const avg = statsValues.reduce((sum, value) => sum + value, 0) / statsValues.length;
@@ -8489,7 +8489,7 @@ function drawDiffCdfChart() {
   if (failOverlayDiffs.length) {
     drawFailOverlay(ctx, failOverlayDiffs.map((value, index) => ({ value, sample: index + 1 })), x, y, values.length ? values : allValues);
   }
-  /* R-091 */
+  /* R-095 */
   drawOtherUnitMarkers(ctx, otherDiffRows, "diff", x, y,
     failBaselineValues.length ? failBaselineValues : allValues);
   ctx.restore();
@@ -8558,7 +8558,7 @@ function drawScatterPlot() {
   ) : fallbackPostSelected && !hideFailData ? [...data.details].filter(row =>
     !isGraphExcluded(row) && finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null
   ) : [];
-  /* R-091: 타 항목 Fail 유닛도 같은 평면에 찍는다. other_unit 표시로 색만 달리한다. */
+  /* R-095: 타 항목 Fail 유닛도 같은 평면에 찍는다. other_unit 표시로 색만 달리한다. */
   rows = rows.concat(
     otherUnitRows(data)
       .filter(row => finiteNumber(row.diff_s) !== null && finiteNumber(row.mea_s) !== null)
@@ -8609,7 +8609,7 @@ function drawScatterPlot() {
     const px = x(Number(row.diff_s));
     const py = y(Number(row.mea_s));
     const fail = Math.abs(Number(row.diff_s)) > diffLimit || Math.abs(Number(row.mea_s)) > meaLimit;
-    ctx.fillStyle = row.other_unit ? OTHER_UNIT_COLOR                               /* R-091 */
+    ctx.fillStyle = row.other_unit ? OTHER_UNIT_COLOR                               /* R-095 */
       : row.overlay_fail ? "#ff4d4f" : hasReadoutSeries ? row.color : fail ? getCss("--red") : getCss("--blue");
     ctx.beginPath(); ctx.arc(px, py, row.other_unit ? 3.2 : 4.2, 0, Math.PI * 2); ctx.fill();
     if (hasReadoutSeries && fail && !row.other_unit) {
@@ -8629,7 +8629,7 @@ function drawScatterPlot() {
     else drawScatterRow(row);
   });
   scatterDeferred.forEach(drawScatterRow);
-  /* R-091: 산점도 범례에도 회색 점을 알린다. */
+  /* R-095: 산점도 범례에도 회색 점을 알린다. */
   const scatterOtherLegend = rows.some(row => row.other_unit)
     ? [{ label: "타 항목 Fail (이 항목은 정상)", color: OTHER_UNIT_COLOR, markerOnly: true }] : [];
   if (hasReadoutSeries || scatterOtherLegend.length) {
@@ -11269,7 +11269,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
     for loop_index, item in enumerate(item_names):
         report_item(loop_index)
         post_records = []
-        # R-091: 다른 항목에서 Fail 났지만 이 항목은 규격 안인 유닛. 판정(평균·σ·Grubbs
+        # R-095: 다른 항목에서 Fail 났지만 이 항목은 규격 안인 유닛. 판정(평균·σ·Grubbs
         # 임계)과 Fail 목록에는 넣지 않고 그래프 표시용으로만 모은다 (Eden 님 확정).
         other_records = []
         pre_values_by_sample = {}
@@ -11286,7 +11286,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             shape_pool.append(latest.get("value"))
             lower = latest.get("lower_limit")
             upper = latest.get("upper_limit")
-            # R-091: Pre 값은 두 묶음 모두 필요해서 분기 전에 받아 둔다.
+            # R-095: Pre 값은 두 묶음 모두 필요해서 분기 전에 받아 둔다.
             join_key = state.get("join_key") or sample
             pre_record = pre_by_sample.get(join_key, {}).get("items", {}).get(item)
             pre_values_by_sample[sample] = pre_record.get("value") if pre_record else None
@@ -11303,7 +11303,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                         history[0][1].get("upper_limit"),
                     ) in ("low", "high")
                 if not keep:
-                    other_records.append((sample, latest))   # R-091 — 표시 전용
+                    other_records.append((sample, latest))   # R-095 — 표시 전용
                     continue
             post_records.append((sample, latest))
         if not post_records:
@@ -11368,7 +11368,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
                     "result": "OK",
                 }
             )
-        # R-091: 표시 전용 묶음. 환산 기준(post_mean/post_sigma/diff_*)은 Pass 표본에서 나온
+        # R-095: 표시 전용 묶음. 환산 기준(post_mean/post_sigma/diff_*)은 Pass 표본에서 나온
         # 지금 그대로다 — 이 유닛들은 어떤 통계에도 들어가지 않는다. 그래프에만 그린다.
         other_samples = [sample for sample, _record in other_records]
         other_values = [record.get("value") for _sample, record in other_records]
@@ -11486,7 +11486,7 @@ def analyze_fail_to_json(pre_path, post_files, progress=None, include_pre=True):
             "upper_limit": to_jsonable(metadata["upper_limit"]),
             "details": [{key: to_jsonable(value) for key, value in row.items()} for row in details],
             "normal_details": [{key: to_jsonable(value) for key, value in row.items()} for row in normal_details],
-            # R-091 — 표시 전용. 골든 비교 대상은 details 뿐이라 여기 추가해도 판정은 그대로다.
+            # R-095 — 표시 전용. 골든 비교 대상은 details 뿐이라 여기 추가해도 판정은 그대로다.
             "other_values": [to_jsonable(value) for value in other_values],
             "other_details": [{key: to_jsonable(value) for key, value in row.items()} for row in other_details],
         }
@@ -11633,7 +11633,7 @@ def app_base_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CACHE_SCHEMA = 33  # 32->33: 항목별 other_values/other_details 추가 (R-091 표시 전용).
+CACHE_SCHEMA = 33  # 32->33: 항목별 other_values/other_details 추가 (R-095 표시 전용).
 #   올리지 않으면 옛 캐시를 그대로 불러와 새 키가 없는 payload 로 화면을 그린다 —
 #   R-053 에서 실제로 그 일이 났다(배지 카드가 안 뜸). 구조가 늘면 같이 올린다.
 # 스키마를 올리는 이유: 이 키들이 없던 시절 저장된 캐시를 그대로 불러오면 payload 에
