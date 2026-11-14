@@ -188,6 +188,29 @@ ThreadingHTTPServer
   (`condition_selected_items()` 가 `CONDITION_ITEM_ALIASES` 를 거쳐 맞춘다).
 - 템플릿 `Summary Table` 의 빈 행은 11줄이다. 12항목을 전부 체크하고 데이터까지 있으면
   행이 모자라 xlsx 내보내기가 거부된다.
+### 타 항목 Fail 유닛 표시 (R-091)
+
+Fail 분석에서 **다른 항목 때문에 Fail 난 유닛은, 이 항목에서는 규격 안이어도 그래프에서
+빠져 있었다.** Pass 묶음(= 전 항목 통과)에도 못 들고, 이 항목 Fail 묶음에도 못 들어서다.
+실측: HTOL Room 79대 중 `BST1_LX1_N_OS` 는 58대만 그려졌다(21대 누락).
+
+- `analyze_fail_to_json()` 이 그 유닛들을 `other_records` 로 따로 모아
+  **`other_values` / `other_details`** 로 싣는다. `CACHE_SCHEMA` 32→33.
+- **판정은 하나도 안 바뀐다.** `post_records`(= `details`·`qty`·`sample_numbers`·`fail_type`)
+  에도, `pass_pairs`(= 평균·σ·Grubbs 임계)에도 넣지 않는다. 골든이 보는 건 `details` 뿐이라
+  비교 대상도 아니다(게이트 5건 PASS 로 확인).
+- `other_details` 의 `mea_s`·`diff_s` 는 **지금과 같은 Pass 기준 통계로 환산한 표시 전용 값**이다.
+- 화면은 **CDF · Diff. CDF · Scattered Plot** 에 회색 점으로 얹는다. 범례는
+  "타 항목 Fail (이 항목은 정상)". `Graph` 의 **`타 항목 Fail 포함`** 체크박스로 끄고 켠다
+  (**기본 켜기**, Eden 님 확정). 끄면 종전 그림 그대로다.
+- **PPF 는 제외했다** — 개별 유닛이 아니라 적합된 정규분포 곡선만 그리는 탭이라,
+  여기에 반영하려면 "모집단을 무엇으로 볼 것인가"(= 판정 쪽 변경)를 먼저 정해야 한다.
+- 형상 판정(`shape_pool`)은 **원래부터** 이 유닛들을 포함하고 있었다 — 그 주석(11173줄)이
+  같은 문제를 이미 지적하고 있다.
+- **아직 안 한 것**: 이 유닛들을 통계(평균·σ·Grubbs 임계)에 넣을지. Fail 이 많은 Lot 에서는
+  Pass 표본이 급감해 `n≤2` 면 `threshold_for()` 가 `None` 이라 판정이 성립하지 않는다.
+  판정이 바뀌는 변경이라 §5-1 대상 — Eden 님 결정 대기.
+
 ### 계획 수량 분모 (R-090)
 
 **Summary 의 Result 분모는 계획 수량이다** — `시험 조건 입력` 의 `First #`~`Last #` (Eden 님 확정).
