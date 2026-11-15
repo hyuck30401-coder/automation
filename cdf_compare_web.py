@@ -13479,7 +13479,8 @@ def safe_new_child(parent, name):
     return candidate
 
 
-def validate_name_token(label, value, allow_underscore=False, required=True):
+def validate_name_token(label, value, allow_underscore=False, required=True,
+                        allow_trailing_dot=False):
     text = (value or "").strip()
     errors = []
     if not text:
@@ -13492,7 +13493,12 @@ def validate_name_token(label, value, allow_underscore=False, required=True):
     if bad:
         shown = " ".join(ch if ch.isprintable() else "\\x%02x" % ord(ch) for ch in bad)
         errors.append("%s 에 폴더명으로 쓸 수 없는 문자가 있습니다: %s" % (label, shown))
-    if text.endswith("."):
+    # R-098: 마침표로 끝나는 것을 막는 이유는 윈도우가 '이름이 마침표로 끝나는 폴더' 를
+    # 못 만들기 때문이다. 그런데 Ver.·Rel. Type·Lot No. 는 폴더명 가운데 토막이라
+    # 마침표가 있어도 폴더명 자체는 마침표로 끝나지 않는다. 그 셋만 풀어준다 —
+    # 안 그러면 'Qual.' 과 'PCN Qual.' 을 아예 쓸 수 없다(실제로 막혀 있었다).
+    # Product 는 그 자체가 폴더명이고 Purpose 는 폴더명의 마지막 토막이라 그대로 막는다.
+    if text.endswith(".") and not allow_trailing_dot:
         errors.append("%s 은(는) 마침표로 끝날 수 없습니다." % label)
     return text, errors
 
@@ -13566,9 +13572,11 @@ def build_save_plan(payload):
     sel = payload.get("selection") or {}
     errors = []
     device, errs = validate_name_token("Product", sel.get("device")); errors += errs   # R-092: 화면 라벨과 같게
-    ver, errs = validate_name_token("Ver.", sel.get("ver")); errors += errs
-    rel_type, errs = validate_name_token("Reliability Type", sel.get("type"), required=False); errors += errs
-    lot, errs = validate_name_token("Lot No.", sel.get("lot")); errors += errs
+    # R-098: 가운데 토막 셋은 마침표로 끝나도 된다 (Qual. · PCN Qual.).
+    ver, errs = validate_name_token("Ver.", sel.get("ver"), allow_trailing_dot=True); errors += errs
+    rel_type, errs = validate_name_token("Reliability Type", sel.get("type"), required=False,
+                                         allow_trailing_dot=True); errors += errs
+    lot, errs = validate_name_token("Lot No.", sel.get("lot"), allow_trailing_dot=True); errors += errs
     purpose, errs = validate_name_token("Purpose", sel.get("purpose"), allow_underscore=True); errors += errs
     if rel_type and rel_type not in RELIABILITY_TYPES:
         errors.append("Reliability Type 은 %s 중 하나이거나 비어 있어야 합니다."
