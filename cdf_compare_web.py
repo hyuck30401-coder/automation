@@ -5519,6 +5519,21 @@ function conditionSelection() {
   };
 }
 
+/* R-096: 지금 고른 Rel. Type 의 기본 선택 항목·조건. 템플릿 시트가 정본이라
+   화면에는 어떤 값도 적어두지 않는다 — 템플릿만 고치면 따라 바뀐다. */
+function relTypeDefaults(spec) {
+  const type = (document.getElementById("svType")?.value || "").trim();
+  return ((spec?.rel_types?.types) || {})[type] || {};
+}
+/* 체크박스 칸(ESD Mode)의 기본값. 템플릿은 "PWR, GND, I/O 모두 선택" 처럼 지시문으로 적는다. */
+function defaultCheckboxValue(text, options) {
+  const list = options || [];
+  if (!text) return "";
+  if (text.indexOf("모두") >= 0) return list.join(", ");
+  const chosen = new Set(text.split(",").map(part => part.trim()).filter(Boolean));
+  return list.filter(option => chosen.has(option)).join(", ");
+}
+
 /* R-088: 여러 항목에 걸쳐 병합된 칸(Datasheet Spec.)은 범위를 키로 써서 값을 공유한다. */
 function conditionFieldKey(field) {
   return field.shared ? ("shared:" + field.shared) : (field.group + ":" + field.label);
@@ -5564,18 +5579,23 @@ async function openConditionModal() {
     if (!specRes.ok || spec.error) throw new Error(spec.error || "시험 조건 사양을 읽지 못했습니다.");
     if (!savedRes.ok || saved.error) throw new Error(saved.error || "저장된 조건을 읽지 못했습니다.");
     conditionSpec = spec;
-    renderConditionTable(spec, saved);
+    renderConditionTable(spec, saved, relTypeDefaults(spec));   /* R-096 */
     document.getElementById("cdSub").textContent =
       [conditionSelection().device, conditionSelection().ver,
        conditionSelection().lot ? "Lot " + conditionSelection().lot : ""].filter(Boolean).join(" · ")
       + (saved.updated ? "   마지막 저장 " + saved.updated : "   (저장된 값 없음)");
+    /* R-096: 템플릿이 어긋나면 조용히 넘기지 않는다. */
+    msg.textContent = (spec.rel_types?.warnings || []).join(" / ");
     document.getElementById("conditionModal").hidden = false;
   } catch (err) {
     alert(err.message);
   }
 }
 
-function renderConditionTable(spec, saved) {
+function renderConditionTable(spec, saved, defaults = {}) {
+  /* R-096: 저장값이 하나라도 있으면 그쪽이 정본이다. 아무것도 없을 때만 Rel. Type
+     기본값으로 출발한다 — 사람이 고친 값을 템플릿이 덮으면 안 된다. */
+  const useDefaults = !Object.keys(saved.items || {}).length;
   const box = document.getElementById("cdBody");
   box.innerHTML = "";
   const table = document.createElement("table");
@@ -5612,7 +5632,8 @@ function renderConditionTable(spec, saved) {
     const chk = document.createElement("input");
     chk.type = "checkbox";
     chk.dataset.selected = "1";
-    chk.checked = entry.selected === true;
+    chk.checked = useDefaults ? Object.prototype.hasOwnProperty.call(defaults, item.item)
+                              : entry.selected === true;   /* R-096 */
     chk.title = "체크하면 시험 목록에 들어갑니다 — 데이터가 아직 없으면 Summary 의 Remark 에 On-going 으로 적힙니다";
     const syncRow = () => tr.classList.toggle("cd-off", !chk.checked);
     chk.addEventListener("change", syncRow);
@@ -5656,7 +5677,13 @@ function renderConditionTable(spec, saved) {
       label.textContent = field.label;
       cell.appendChild(label);
       const key = conditionFieldKey(field);
-      const current = values[key] !== undefined ? values[key] : (field.fixed || field.default || "");
+      /* R-096: 저장값 > Rel. Type 기본값 > 템플릿 기본값 순으로 고른다. */
+      const relDefault = useDefaults ? ((defaults[item.item] || {})[field.label] || "") : "";
+      const seeded = field.kind === "checkbox"
+        ? defaultCheckboxValue(relDefault, field.options)
+        : relDefault;
+      const current = values[key] !== undefined ? values[key]
+        : (seeded || field.fixed || field.default || "");
       let control;
       if (field.kind === "checkbox") {
         /* R-088: ESD 의 Mode — 여러 개를 고른다. 값은 고른 것만 쉼표로 잇는다. */
@@ -5771,9 +5798,27 @@ function collectConditionItems() {
   return items;
 }
 
+/* R-096: 체크한 항목의 Datasheet Spec. 은 비워 둘 수 없다 (Eden 님 확정 — 누락 방지).
+   HTOL·LTOL·HAST 는 한 칸을 공유하므로 한 곳만 채우면 셋 다 충족된다. */
+function missingDatasheetSpecItems() {
+  const missing = [];
+  document.querySelectorAll("#cdBody tbody tr").forEach(tr => {
+    if (!tr.querySelector("[data-selected]")?.checked) return;
+    const spec = [...tr.querySelectorAll("[data-field]")]
+      .find(el => el.dataset.fieldLabel === "Datasheet Spec.");
+    if (spec && !spec.value.trim()) missing.push(tr.dataset.item);
+  });
+  return missing;
+}
+
 async function saveConditionModal() {
   const btn = document.getElementById("cdSaveBtn");
   const msg = document.getElementById("cdMsg");
+  const missing = missingDatasheetSpecItems();
+  if (missing.length) {
+    msg.textContent = "Datasheet Spec. 을 입력하세요 — " + missing.join(", ");
+    return;
+  }
   btn.disabled = true; msg.textContent = "저장 중...";
   try {
     const res = await fetch("/condition-settings", {
@@ -12146,7 +12191,8 @@ RELIABILITY_ITEMS = ["HTOL", "HAST", "uHAST", "TC", "PTC", "HTSL", "HBM", "CDM",
 # 때만 구분으로 읽는다. 언더바 개수만으로 가르면 Purpose 에 언더바가 들어간 4토막
 # 폴더(예: 06_MVT1-3_1111_111_추가메모)를 5토막으로 오인한다.
 # 새 구분값이 생기면 여기 한 줄만 추가한다. 토막에 언더바는 쓸 수 없다.
-RELIABILITY_TYPES = ["ERT", "Qual.", "Qual. (Q100)", "ORT"]
+# R-096: PCN Qual. 추가 (Eden 님 확정). 폴더명 4·5토막 판정도 이 목록을 쓴다.
+RELIABILITY_TYPES = ["ERT", "Qual.", "Qual. (Q100)", "PCN Qual.", "ORT"]
 
 # R-080: 저장 창의 Reliability Type 드롭다운은 이 상수 하나만 본다. 프론트에 같은 목록을
 # 또 적어두면 구분값이 늘어날 때 한쪽만 고쳐 조용히 어긋난다. HTML 은 위에서 이미
@@ -13037,6 +13083,76 @@ def parse_condition_choice(raw):
     return field
 
 
+REL_TYPE_SHEET_NAME = "Rel. Type 별 기본선택사항"
+REL_TYPE_FIRST_ROW = 3
+# Eden 님이 지우려다 남은 열 — 받을 입력칸이 없어 읽지 않는다.
+REL_TYPE_SKIP_COLUMNS = ("Class",)
+
+
+def rel_type_defaults():
+    """R-096: Rel. Type 별 '기본 선택 항목 + 조건'. 템플릿 시트가 정본이다.
+
+    A열에 값이 있으면 새 Rel. Type 블록이 시작되고, A가 빈 행은 같은 블록으로 읽는다.
+    B열(기본선택항목 수)은 검산용이다 — 읽은 수와 다르면 경고를 올린다. 조용히 틀어지면
+    "왜 항목이 하나 빠졌지" 를 한참 못 찾는다(R-037 과 같은 실수).
+    조건 열은 2행의 라벨을 키로 쓴다. 'N/A' 와 빈칸은 값 없음이다.
+    """
+    state = summary_template_state()
+    out = {"sheet": REL_TYPE_SHEET_NAME, "types": {}, "order": [], "warnings": []}
+    if not state["exists"]:
+        out["warnings"].append("Summary 템플릿이 없습니다: %s" % state["path"])
+        return out
+    try:
+        with zipfile.ZipFile(state["path"]) as source:
+            blobs = {name: source.read(name) for name in source.namelist()}
+        cells, _merges = read_xlsx_sheet(blobs, REL_TYPE_SHEET_NAME)
+    except Exception as exc:
+        out["warnings"].append("'%s' 시트를 읽지 못했습니다: %s" % (REL_TYPE_SHEET_NAME, exc))
+        return out
+
+    columns = []
+    for letter in [chr(code) for code in range(ord("D"), ord("Z") + 1)]:
+        label = (cells.get("%s2" % letter) or "").strip()
+        if label and label not in REL_TYPE_SKIP_COLUMNS:
+            columns.append((letter, label))
+
+    rows = sorted({int(re.match(r"[A-Z]+(\d+)", ref).group(1)) for ref in cells})
+    expected, current = {}, ""
+    for row in rows:
+        if row < REL_TYPE_FIRST_ROW:
+            continue
+        name = (cells.get("A%d" % row) or "").strip()
+        item = (cells.get("C%d" % row) or "").strip()
+        if name:
+            current = name
+            out["types"].setdefault(current, {})
+            if current not in out["order"]:
+                out["order"].append(current)
+            count = (cells.get("B%d" % row) or "").strip()
+            if count:
+                expected[current] = count
+        if not current or not item:
+            continue
+        values = {}
+        for letter, label in columns:
+            raw = (cells.get("%s%d" % (letter, row)) or "").strip()
+            if raw and raw.upper() != "N/A":
+                values[label] = raw
+        out["types"][current][item] = values
+
+    for name, count in expected.items():
+        try:
+            want = int(float(count))
+        except (TypeError, ValueError):
+            continue
+        got = len(out["types"].get(name) or {})
+        if want != got:
+            out["warnings"].append(
+                "'%s' 의 기본선택항목 수는 %d 인데 %d개를 읽었습니다 — 템플릿을 확인하세요."
+                % (name, want, got))
+    return out
+
+
 def condition_spec():
     """템플릿의 Condition 시트를 읽어 항목별 입력칸 사양을 만든다."""
     state = summary_template_state()
@@ -13135,7 +13251,9 @@ def condition_spec():
             "item": key, "label": label, "notes": notes, "fields": fields,
             "duration": duration, "analysis_item": CONDITION_ITEM_ALIASES.get(key, key),
         })
-    return {"sheet": CONDITION_SHEET_NAME, "template": state, "items": items}
+    # R-096: Rel. Type 별 기본값을 같이 싣는다 — 화면이 창을 열 때 바로 쓴다.
+    return {"sheet": CONDITION_SHEET_NAME, "template": state, "items": items,
+            "rel_types": rel_type_defaults()}
 
 
 def load_condition_settings(selection, match_any_type=False):
