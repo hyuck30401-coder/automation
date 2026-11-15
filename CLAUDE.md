@@ -147,9 +147,21 @@ ThreadingHTTPServer
   (R-088, Eden 님 확정). `(고정값)` 으로 명시한 칸만 잠근다.
   **해석이 안 되면 버리지 않고 자유 입력으로 떨어뜨린 뒤 원문을 힌트로 보여준다** — R-037 처럼
   조용히 사라지면 안 된다.
-- 열 역할은 헤더가 아니라 **자리**로 읽는다: `D/E/F`·`G/H/I` 가 (라벨·값·단위) 쌍, `J/K` 가
-  Datasheet Spec., `L` 이 Duration, `M` 이 Stress Voltage 당 Sample 수. 헤더 문구가
-  `Environment/Voltage` 에서 `Stress Condition` 하나로 합쳐져도 그대로 동작한다.
+- 열 역할은 헤더가 아니라 **자리**로 읽는다. **R-099 에서 S/S 열(B)이 끼면서 조건 열이
+  통째로 한 칸 밀렸다** — 그래서 열 글자를 코드 곳곳에 박아두지 않고 `condition_spec()`
+  맨 위 상수(`COL_*`) 한 곳에 모아 뒀다. 다음에 또 밀리면 거기만 고치면 된다.
+
+  | 열 | 역할 |
+  |---|---|
+  | `A` | Rel. Item |
+  | `B` | **S/S (샘플 수량) 기본값** — ESD 와 LU 는 비어 있다 (Eden 님) |
+  | `C`·`D` | Sample # First / Last |
+  | `E/F/G` · `H/I/J` | (라벨·값·단위) 쌍 |
+  | `K`·`L` | Datasheet Spec. (값·단위) |
+  | `M` | Duration |
+  | `N` | Stress Voltage 당 Sample 수 |
+
+  헤더 문구가 `Environment/Voltage` 에서 `Stress Condition` 하나로 합쳐져도 그대로 동작한다.
 - **여러 항목에 걸쳐 병합된 칸은 값을 공유한다** (R-088). `J3:J6` 은 HTOL·LTOL·HAST 가 같은
   Datasheet Spec. 하나를 쓴다는 뜻이다(Eden 님 확정). 저장 키가 `shared:<범위>` 가 되고,
   한 줄을 고치면 나머지 줄도 같이 바뀐다. 한 항목 안에서만 세로 병합된 칸(`J13:J15`)은 공유가
@@ -205,6 +217,26 @@ ThreadingHTTPServer
 - **`Product` 와 `Purpose` 는 그대로 막는다.** Product 는 그 자체가 폴더명이고,
   Purpose 는 폴더명의 **마지막** 토막이다.
 - 되읽기 확인: `00_MVT9-9_PCN Qual._7777_T` -> `type = "PCN Qual."` 로 정확히 돌아온다.
+
+### S/S 와 Last # 자동 계산 (R-099)
+
+Plan 창에 **`S/S`(샘플 수량) 열**이 생겼고 **`Last #` 는 읽기 전용**이 됐다.
+
+```
+Last # = First # + S/S - 1          (Eden 님 확정)
+```
+
+- 둘 중 하나라도 비거나 숫자가 아니면 `Last #` 도 비운다.
+- **`Last #` 는 손으로 못 고친다** (Eden 님 확정). 공식과 화면이 어긋나면 어느 쪽이 맞는지
+  알 수 없기 때문이다. 샘플 번호가 중간에 끊기는 경우는 아직 다루지 않는다.
+- S/S 기본값은 템플릿 `Condition 입력창` **B열**이 준다 — HTOL~HTSL `77`, ELFR `800`,
+  ESD·LU 는 빈칸. 저장값이 있으면 그쪽이 우선이다.
+- `condition_settings.json` 에 `sample_size` 로 함께 저장된다.
+- R-090 의 계획 수량 분모(`Last − First + 1`)는 **그대로 둔다.** 공식상 S/S 와 같은 값이라
+  판정 쪽은 건드릴 필요가 없다.
+- **주의**: 열이 밀리면서 공유 칸의 저장 키가 `shared:J3:J6` -> `shared:K3:K6` 으로 바뀌었다.
+  그 전에 저장해 둔 Datasheet Spec. 값은 다시 넣어야 한다 (`condition_settings.json` 은
+  사람마다 다른 파일이라 저장소에는 없다).
 
 ### Rel. Type 별 기본값 (R-096)
 

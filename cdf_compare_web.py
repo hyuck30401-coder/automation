@@ -5636,6 +5636,18 @@ function syncSharedCondition(key, value, origin) {
   });
 }
 
+/* R-099: Last # = First # + S/S - 1 (Eden 님 확정). Last # 는 읽기 전용이다 —
+   공식과 화면이 어긋나면 어느 쪽이 맞는지 알 수 없다. 둘 중 하나라도 비면 Last # 도 비운다. */
+function refreshSampleLast(tr) {
+  const cell = key => tr.querySelector('[data-sample="' + key + '"]');
+  const size = cell("sample_size"), first = cell("sample_first"), last = cell("sample_last");
+  if (!size || !first || !last) return;
+  const count = parseInt(size.value.trim(), 10);
+  const start = parseInt(first.value.trim(), 10);
+  last.value = (Number.isFinite(count) && Number.isFinite(start) && count > 0)
+    ? String(start + count - 1) : "";
+}
+
 /* HAST·uHAST 의 Duration 은 Ta 값에서 따라온다. 바뀔 때마다 다시 계산한다. */
 function refreshAutoDuration(tr) {
   tr.querySelectorAll("[data-auto-key]").forEach(target => {
@@ -5705,7 +5717,7 @@ function renderConditionTable(spec, saved, defaults = {}) {
     });
   });
   allTh.appendChild(allBox); hr.appendChild(allTh);
-  [["Rel. Item", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Duration / Datasheet Spec.", 1]]
+  [["Rel. Item", 1], ["S/S", 1], ["First #", 1], ["Last #", 1], ["Stress Condition / Duration / Datasheet Spec.", 1]]
     .forEach(([label]) => { const th = document.createElement("th"); th.textContent = label; hr.appendChild(th); });
   thead.appendChild(hr); table.appendChild(thead);
   const tbody = document.createElement("tbody");
@@ -5739,13 +5751,24 @@ function renderConditionTable(spec, saved, defaults = {}) {
     name.appendChild(full);
     tr.appendChild(name);
 
-    [["sample_first", entry.sample_first], ["sample_last", entry.sample_last]].forEach(([key, value]) => {
+    /* R-099: S/S 기본값은 템플릿 B열이 정한다. 저장값이 있으면 그쪽이 우선이다. */
+    const sizeDefault = useDefaults ? (item.sample_size || "") : "";
+    [["sample_size", entry.sample_size !== undefined ? entry.sample_size : sizeDefault],
+     ["sample_first", entry.sample_first],
+     ["sample_last", entry.sample_last]].forEach(([key, value]) => {
       const td = document.createElement("td");
       const input = document.createElement("input");
       input.type = "text"; input.className = "cd-num"; input.dataset.sample = key;
       input.value = value || "";
+      if (key === "sample_last") {
+        input.readOnly = true;
+        input.title = "Last # = First # + S/S - 1 로 자동 계산됩니다";
+      } else {
+        input.addEventListener("input", () => refreshSampleLast(tr));
+      }
       td.appendChild(input); tr.appendChild(td);
     });
+    refreshSampleLast(tr);
 
     const fieldsCell = document.createElement("td");
     const wrap = document.createElement("div");
@@ -5880,10 +5903,11 @@ function collectConditionItems() {
     const name = tr.dataset.item;
     const values = {};
     tr.querySelectorAll("[data-field]").forEach(el => { values[el.dataset.field] = el.value.trim(); });
+    const size = tr.querySelector('[data-sample="sample_size"]')?.value.trim() || "";   /* R-099 */
     const first = tr.querySelector('[data-sample="sample_first"]')?.value.trim() || "";
     const last = tr.querySelector('[data-sample="sample_last"]')?.value.trim() || "";
     const selected = !!tr.querySelector("[data-selected]")?.checked;   /* R-089 */
-    items[name] = { selected, sample_first: first, sample_last: last, values };
+    items[name] = { selected, sample_size: size, sample_first: first, sample_last: last, values };
   });
   return items;
 }
@@ -13275,6 +13299,14 @@ def condition_spec():
         top = int(re.match(r"[A-Z]+(\d+)", rng.split(":")[0]).group(1))
         return int(re.match(r"[A-Z]+(\d+)", ref).group(1)) != top
 
+    # R-099: 템플릿에 S/S 열(B)이 끼면서 조건 열이 통째로 한 칸 밀렸다. 열 글자를 코드
+    # 곳곳에 박아두면 그때마다 열 군데를 고쳐야 한다. 한 곳에 모아 둔다.
+    COL_ITEM, COL_SS = "A", "B"
+    COL_ENV_LABEL, COL_ENV_VALUE, COL_ENV_UNIT = "E", "F", "G"
+    COL_VOLT_LABEL, COL_VOLT_VALUE, COL_VOLT_UNIT = "H", "I", "J"
+    COL_SPEC_VALUE, COL_SPEC_UNIT = "K", "L"
+    COL_DURATION, COL_PER_VOLTAGE = "M", "N"
+
     starts = []
     for row in range(CONDITION_FIRST_ROW, 300):
         name = cells.get("A%d" % row)
@@ -13295,30 +13327,33 @@ def condition_spec():
         key = re.split(r"\s*\(", label)[0].strip()
         fields, notes = [], []
         for row in range(start, end + 1):
-            env_label = "" if continued("D%d" % row) else (spread.get("D%d" % row) or "").strip()
+            env_label = ("" if continued(COL_ENV_LABEL + "%d" % row)
+                         else (spread.get(COL_ENV_LABEL + "%d" % row) or "").strip())
             if env_label and env_label.upper() == "N/A":
-                env_label = ""                                # ESD_CDM 의 D16=N/A
-            if env_label and wide("D%d" % row):
+                env_label = ""                                # ESD_CDM 의 E16=N/A
+            if env_label and wide(COL_ENV_LABEL + "%d" % row):
                 notes.append(env_label)
             elif env_label:
-                choice = parse_condition_choice(spread.get("E%d" % row))
+                choice = parse_condition_choice(spread.get(COL_ENV_VALUE + "%d" % row))
                 if choice:
-                    same = span.get("E%d" % row) and span.get("E%d" % row) == span.get("F%d" % row)
+                    same = (span.get(COL_ENV_VALUE + "%d" % row)
+                            and span.get(COL_ENV_VALUE + "%d" % row) == span.get(COL_ENV_UNIT + "%d" % row))
                     fields.append(dict(choice, group="env", label=env_label,
-                                       unit="" if same else (spread.get("F%d" % row) or "").strip()))
-            volt_label = "" if continued("G%d" % row) else (spread.get("G%d" % row) or "").strip()
-            if volt_label and not wide("G%d" % row) and volt_label.upper() != "N/A":
-                choice = parse_condition_choice(spread.get("H%d" % row))
+                                       unit="" if same else (spread.get(COL_ENV_UNIT + "%d" % row) or "").strip()))
+            volt_label = ("" if continued(COL_VOLT_LABEL + "%d" % row)
+                          else (spread.get(COL_VOLT_LABEL + "%d" % row) or "").strip())
+            if volt_label and not wide(COL_VOLT_LABEL + "%d" % row) and volt_label.upper() != "N/A":
+                choice = parse_condition_choice(spread.get(COL_VOLT_VALUE + "%d" % row))
                 if choice:
                     fields.append(dict(choice, group="volt", label=volt_label,
-                                       unit=(spread.get("I%d" % row) or "").strip()))
-        # R-088: Datasheet Spec. 가 여러 항목에 걸쳐 병합돼 있으면 (J3:J6) 값은 하나다.
+                                       unit=(spread.get(COL_VOLT_UNIT + "%d" % row) or "").strip()))
+        # R-088: Datasheet Spec. 가 여러 항목에 걸쳐 병합돼 있으면 (K3:K6) 값은 하나다.
         # 그 경우 저장 키를 병합 범위로 잡아 세 항목이 같은 칸을 공유하게 한다
         # (Eden 님 확정: HTOL·LTOL·HAST 는 같은 값 하나).
-        choice = parse_condition_choice(spread.get("J%d" % start))
+        choice = parse_condition_choice(spread.get(COL_SPEC_VALUE + "%d" % start))
         if choice:
             shared = ""
-            rng = span.get("J%d" % start)
+            rng = span.get(COL_SPEC_VALUE + "%d" % start)
             if rng:
                 head, tail = rng.split(":")
                 top = int(re.match(r"[A-Z]+(\d+)", head).group(1))
@@ -13326,24 +13361,29 @@ def condition_spec():
                 if top < start or bottom > end:      # 이 항목 밖까지 걸쳐야 '공유' 다
                     shared = rng
             fields.append(dict(choice, group="spec", label="Datasheet Spec.",
-                               unit=(spread.get("K%d" % start) or "").strip(), shared=shared))
-        # R-088: Duration 은 HTOL~ELFR 만 입력칸이다 (Eden 님 확정). ESD 와 LU 는 L 이 N/A 라
+                               unit=(spread.get(COL_SPEC_UNIT + "%d" % start) or "").strip(), shared=shared))
+        # R-088: Duration 은 HTOL~ELFR 만 입력칸이다 (Eden 님 확정). ESD 와 LU 는 M 이 N/A 라
         # parse_condition_choice 가 None 을 돌려줘 자동으로 빠진다.
-        duration = parse_condition_choice(spread.get("L%d" % start))
+        duration = parse_condition_choice(spread.get(COL_DURATION + "%d" % start))
         if duration and not duration.get("note"):
             fields.append(dict(duration, group="dur", label="Duration", unit=""))
             duration = None
-        # R-088: M 열 'Stress Voltage 당 Sample 수' (ESD_HBM / ESD_MM 만).
-        per_voltage = parse_condition_choice(spread.get("M%d" % start))
+        # R-088: N 열 'Stress Voltage 당 Sample 수' (ESD_HBM / ESD_MM 만).
+        per_voltage = parse_condition_choice(spread.get(COL_PER_VOLTAGE + "%d" % start))
         if per_voltage and not per_voltage.get("note"):
             fields.append(dict(per_voltage, group="vsample",
-                               label=(cells.get("M1") or "Stress Voltage 당 Sample 수").strip(), unit=""))
+                               label=(cells.get(COL_PER_VOLTAGE + "1") or "Stress Voltage 당 Sample 수").strip(), unit=""))
         # 템플릿은 조건들이 '나란한 열' 이지만 우리는 줄 단위로 읽는다. 그대로 두면
         # HAST 가 Ta -> Vcc -> R.H. 순으로 섞이므로 묶어서 정렬한다.
         order = {"env": 0, "volt": 1, "dur": 2, "vsample": 3, "spec": 4}
         fields.sort(key=lambda f: order.get(f["group"], 9))
+        # R-099: B 열은 S/S(샘플 수량) 기본값이다. ESD 와 LU 는 비워 두셨다 (Eden 님).
+        sample_size = (spread.get(COL_SS + "%d" % start) or "").strip()
+        if sample_size.upper() == "N/A":
+            sample_size = ""
         items.append({
             "item": key, "label": label, "notes": notes, "fields": fields,
+            "sample_size": sample_size,
             "duration": duration, "analysis_item": CONDITION_ITEM_ALIASES.get(key, key),
         })
     # R-096: Rel. Type 별 기본값을 같이 싣는다 — 화면이 창을 열 때 바로 쓴다.
@@ -13384,6 +13424,7 @@ def save_condition_settings(selection, items):
         values = {str(k): ("" if v is None else str(v)) for k, v in (entry.get("values") or {}).items()}
         clean[str(name)] = {
             "selected": bool(entry.get("selected")),      # R-089
+            "sample_size": str(entry.get("sample_size") or "").strip(),   # R-099
             "sample_first": str(entry.get("sample_first") or "").strip(),
             "sample_last": str(entry.get("sample_last") or "").strip(),
             "values": values,
