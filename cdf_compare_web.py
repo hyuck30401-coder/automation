@@ -2359,7 +2359,8 @@ HTML = r"""<!doctype html>
     .cd-dur{ color:var(--r-ink3); font-size:11.5px; white-space:pre-line; max-width:210px }
     .cd-hint{ color:#b26b00 }
     /* R-097: 시험 등록 / 데이터 저장 탭 */
-    .sv-tabs{ margin:4px 0 10px }
+    .sp-pair{ display:flex; gap:6px }
+    .sp-pair .sp-sub{ flex:1 1 0; min-width:0; padding:0 8px }
     .sv-regrow{ display:flex; align-items:center; gap:10px; margin-bottom:8px }
     .sv-regnote{ color:var(--r-ink3); font-size:12px }
     .sv-reghelp{ margin:0 0 10px; color:var(--r-ink3); font-size:12px; line-height:1.6 }
@@ -2664,7 +2665,11 @@ HTML = r"""<!doctype html>
               <!-- R-081: 데이터 경로와 저장을 맨 위로. 조건을 고르기 전에 먼저 정하는 것들이다. -->
               <div class="sp-label sp-pathlabel"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.8 6.2a1.4 1.4 0 0 1 1.4-1.4h3.1l1.5 1.8h6.3a1.4 1.4 0 0 1 1.4 1.4v6.2a1.4 1.4 0 0 1-1.4 1.4H4.2a1.4 1.4 0 0 1-1.4-1.4z"/></svg> DATA PATH</div>
               <div class="sp-path"><span class="pathtxt" id="dataPath">-</span><button type="button" class="sp-sub sm" id="browseDataPathBtn">경로 변경</button></div>
-              <button type="button" class="sp-sub" id="saveDataBtn" title="데이터 파일을 폴더 규칙대로 저장합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.6 3.5h8l3 3v9.3a.7.7 0 0 1-.7.7H4.6a.7.7 0 0 1-.7-.7V4.2a.7.7 0 0 1 .7-.7z"/><path d="M6.6 3.5v4.2h5.3V3.5M6.6 16.5v-4.6h6.8v4.6"/></svg> 데이터 저장</button>
+              <!-- R-097: 시험 등록 / 데이터 저장 버튼 둘. 각각 같은 창을 제 모드로 연다 (Eden 님 확정). -->
+              <div class="sp-pair">
+                <button type="button" class="sp-sub" id="registerTestBtn" title="시험 항목·조건을 등록하고 저장 폴더를 미리 만듭니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.6 5.2h12.8M3.6 10h12.8M3.6 14.8h8.2"/><path d="M14.6 13.2v4.2M12.5 15.3h4.2"/></svg> 시험 등록</button>
+                <button type="button" class="sp-sub" id="saveDataBtn" title="데이터 파일을 폴더 규칙대로 저장합니다"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4.6 3.5h8l3 3v9.3a.7.7 0 0 1-.7.7H4.6a.7.7 0 0 1-.7-.7V4.2a.7.7 0 0 1 .7-.7z"/><path d="M6.6 3.5v4.2h5.3V3.5M6.6 16.5v-4.6h6.8v4.6"/></svg> 데이터 저장</button>
+              </div>
               <div class="sp-div"></div>
               <div class="sp-grid">
                 <div class="field wide"><label>Product</label><input id="deviceInput" type="text" list="deviceOptions" placeholder="SM3502Q"><datalist id="deviceOptions"></datalist></div>
@@ -2837,7 +2842,7 @@ HTML = r"""<!doctype html>
   <!-- R-080: 데이터 저장 창. 미리보기와 실제 저장이 같은 /save-plan 결과를 쓴다. -->
   <div class="sv-mask" id="saveDataModal" hidden>
     <div class="sv-box" role="dialog" aria-modal="true" aria-labelledby="svTitle">
-      <div class="sv-head"><b id="svTitle">데이터 저장</b><span class="sv-sub">폴더 규칙대로 저장합니다</span><button type="button" class="sv-x" id="svCloseBtn" title="닫기">&times;</button></div>
+      <div class="sv-head"><b id="svTitle">데이터 저장</b><span class="sv-sub" id="svSub">폴더 규칙대로 저장합니다</span><button type="button" class="sv-x" id="svCloseBtn" title="닫기">&times;</button></div>
       <div class="sv-body">
         <!-- R-092: Device 라벨·PRODUCT 소제목 삭제(Product 로). R-093: Product/Ver. · Rel. Type/Lot No. · Purpose.
              R-094: Rel. Type 오른쪽 Plan 버튼 = 시험 조건 입력 (이 창의 입력값을 조건 키로 쓴다). -->
@@ -2847,11 +2852,6 @@ HTML = r"""<!doctype html>
           <div class="field"><label>Rel. Type</label><select id="svType"></select></div>
           <div class="field"><label>Lot No.</label><input id="svLot" type="text" placeholder="1111"></div>
           <div class="field wide"><label>Purpose</label><input id="svPurpose" type="text" placeholder="111"></div>
-        </div>
-        <!-- R-097: 조건 다섯 칸은 두 탭이 같이 쓰므로 탭 위에 둔다 (Eden 님 확정). -->
-        <div class="ptabs sv-tabs" id="svTabBar">
-          <button type="button" class="pt active" data-svtab="reg">시험 등록</button>
-          <button type="button" class="pt" data-svtab="save">데이터 저장</button>
         </div>
         <div id="svPaneReg">
           <div class="sv-regrow">
@@ -5285,14 +5285,15 @@ let svActiveTab = "reg";
 
 function setSaveTab(tab) {
   svActiveTab = tab === "save" ? "save" : "reg";
-  svEl("svPaneReg").hidden = svActiveTab !== "reg";
-  svEl("svPaneSave").hidden = svActiveTab !== "save";
-  document.querySelectorAll("#svTabBar [data-svtab]").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.svtab === svActiveTab);
-  });
-  svEl("svSaveBtn").textContent = svActiveTab === "reg" ? "등록" : "저장";
+  const reg = svActiveTab === "reg";
+  svEl("svPaneReg").hidden = !reg;
+  svEl("svPaneSave").hidden = reg;
+  svEl("svTitle").textContent = reg ? "시험 등록" : "데이터 저장";
+  svEl("svSub").textContent = reg ? "조건을 등록하고 저장 폴더를 미리 만듭니다"
+                                  : "폴더 규칙대로 저장합니다";
+  svEl("svSaveBtn").textContent = reg ? "등록" : "저장";
   svEl("svMsg").textContent = "";
-  if (svActiveTab === "reg") refreshPlanNote();
+  if (reg) refreshPlanNote();
   requestSavePlan();
 }
 
@@ -5320,7 +5321,7 @@ async function refreshPlanNote() {
   }
 }
 
-function openSaveDataModal() {
+function openSaveDataModal(mode = "save") {
   const typeSel = svEl("svType");
   typeSel.innerHTML = "";
   [["", "(없음 — 폴더명 4토막)"]].concat(RELIABILITY_TYPES.map(t => [t, t])).forEach(([value, label]) => {
@@ -5341,7 +5342,7 @@ function openSaveDataModal() {
   renderSaveFiles();
   svEl("saveDataModal").hidden = false;
   svEl("svDevice").focus();
-  setSaveTab("reg");                    /* R-097: 시험 등록부터 */
+  setSaveTab(mode);                     /* R-097: 누른 버튼이 모드를 정한다 */
 }
 
 function closeSaveDataModal() {
@@ -5948,7 +5949,8 @@ function bindConditionInput() {
 function bindSaveData() {
   const open = svEl("saveDataBtn");
   if (!open) return;
-  open.addEventListener("click", openSaveDataModal);
+  open.addEventListener("click", () => openSaveDataModal("save"));
+  svEl("registerTestBtn")?.addEventListener("click", () => openSaveDataModal("reg"));
   svEl("svCloseBtn").addEventListener("click", closeSaveDataModal);
   svEl("svCancelBtn").addEventListener("click", closeSaveDataModal);
   svEl("saveDataModal").addEventListener("mousedown", event => {
@@ -5976,9 +5978,6 @@ function bindSaveData() {
   /* R-097: 기본 버튼은 탭에 따라 등록/저장으로 갈린다. */
   svEl("svSaveBtn").addEventListener("click", () => {
     if (svActiveTab === "reg") commitRegisterTest(); else commitSaveData();
-  });
-  document.querySelectorAll("#svTabBar [data-svtab]").forEach(btn => {
-    btn.addEventListener("click", () => setSaveTab(btn.dataset.svtab));
   });
 }
 
