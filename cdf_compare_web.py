@@ -2358,6 +2358,12 @@ HTML = r"""<!doctype html>
     .cd-note{ color:var(--r-ink3); font-size:11.5px }
     .cd-dur{ color:var(--r-ink3); font-size:11.5px; white-space:pre-line; max-width:210px }
     .cd-hint{ color:#b26b00 }
+    /* R-097: 시험 등록 / 데이터 저장 탭 */
+    .sv-tabs{ margin:4px 0 10px }
+    .sv-regrow{ display:flex; align-items:center; gap:10px; margin-bottom:8px }
+    .sv-regnote{ color:var(--r-ink3); font-size:12px }
+    .sv-reghelp{ margin:0 0 10px; color:var(--r-ink3); font-size:12px; line-height:1.6 }
+    .sv-reghelp b{ color:var(--r-ink2) }
     .sv-plan{ padding:10px 12px; border:1px solid var(--r-line-in); border-radius:8px;
       background:var(--r-soft); font-size:12px; color:var(--r-ink2); line-height:1.6 }
     .sv-plan b{ color:var(--r-ink) }
@@ -2838,10 +2844,24 @@ HTML = r"""<!doctype html>
         <div class="sv-grid">
           <div class="field"><label>Product</label><input id="svDevice" type="text" list="deviceOptions" placeholder="SM3502Q"></div>
           <div class="field"><label>Ver.</label><input id="svVer" type="text" placeholder="MVT1-3"></div>
-          <div class="field"><label>Rel. Type</label><div class="sv-inline"><select id="svType"></select><button type="button" class="sp-sub sm" id="svPlanBtn" title="신뢰성 항목별 시험 조건과 투입 샘플 번호를 입력합니다">Plan</button></div></div>
+          <div class="field"><label>Rel. Type</label><select id="svType"></select></div>
           <div class="field"><label>Lot No.</label><input id="svLot" type="text" placeholder="1111"></div>
           <div class="field wide"><label>Purpose</label><input id="svPurpose" type="text" placeholder="111"></div>
         </div>
+        <!-- R-097: 조건 다섯 칸은 두 탭이 같이 쓰므로 탭 위에 둔다 (Eden 님 확정). -->
+        <div class="ptabs sv-tabs" id="svTabBar">
+          <button type="button" class="pt active" data-svtab="reg">시험 등록</button>
+          <button type="button" class="pt" data-svtab="save">데이터 저장</button>
+        </div>
+        <div id="svPaneReg">
+          <div class="sv-regrow">
+            <button type="button" class="sp-sub" id="svPlanBtn" title="신뢰성 항목별 시험 조건과 투입 샘플 번호를 입력합니다">Plan — 시험 항목 · 조건 입력</button>
+            <span class="sv-regnote" id="svPlanNote"></span>
+          </div>
+          <p class="sv-reghelp">등록을 누르면 조건 폴더와 Pre · Post 하위 폴더를 미리 만듭니다.
+            데이터는 나중에 <b>데이터 저장</b> 탭에서 넣으면 됩니다.</p>
+        </div>
+        <div id="svPaneSave" hidden>
         <div class="sv-filehead">
           <div class="sp-label">DATA FILES</div>
           <div class="sv-fileacts">
@@ -2852,6 +2872,7 @@ HTML = r"""<!doctype html>
         </div>
         <div class="sv-files" id="svFiles"></div>
         <label class="sp-check"><input id="svOverwrite" type="checkbox"><span>같은 이름이 있으면 덮어쓰기</span></label>
+        </div>
         <div class="sv-plan" id="svPlan"></div>
       </div>
       <div class="sv-foot">
@@ -5257,6 +5278,48 @@ let savePlanSeq = 0;
 
 function svEl(id) { return document.getElementById(id); }
 
+/* ---- R-097: 시험 등록 / 데이터 저장 두 탭 ------------------------------------
+   조건 다섯 칸은 두 탭이 같이 쓰므로 탭 위에 공통으로 둔다 (Eden 님 확정).
+   등록 탭은 파일 없이 폴더만 만들므로 /save-plan 에 folder_only 를 실어 보낸다. */
+let svActiveTab = "reg";
+
+function setSaveTab(tab) {
+  svActiveTab = tab === "save" ? "save" : "reg";
+  svEl("svPaneReg").hidden = svActiveTab !== "reg";
+  svEl("svPaneSave").hidden = svActiveTab !== "save";
+  document.querySelectorAll("#svTabBar [data-svtab]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.svtab === svActiveTab);
+  });
+  svEl("svSaveBtn").textContent = svActiveTab === "reg" ? "등록" : "저장";
+  svEl("svMsg").textContent = "";
+  if (svActiveTab === "reg") refreshPlanNote();
+  requestSavePlan();
+}
+
+/* 이 조건에 Plan 이 몇 개 등록돼 있는지 한 줄로 보여준다 — 등록했는지 아닌지가 안 보이면
+   같은 Lot 을 두 번 등록하게 된다. */
+async function refreshPlanNote() {
+  const note = svEl("svPlanNote");
+  if (!note) return;
+  const selection = saveSelectionFromForm();
+  if (!selection.device || !selection.ver || !selection.lot || !selection.purpose) {
+    note.textContent = "조건을 모두 채우면 등록 상태가 보입니다.";
+    return;
+  }
+  try {
+    const res = await fetch("/condition-settings?" + new URLSearchParams(selection).toString());
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "");
+    const items = data.items || {};
+    const checked = Object.keys(items).filter(name => items[name]?.selected);
+    note.textContent = checked.length
+      ? "시험 항목 " + checked.length + "개 등록됨" + (data.updated ? " · " + data.updated : "")
+      : "아직 등록된 시험 조건이 없습니다.";
+  } catch (_err) {
+    note.textContent = "";
+  }
+}
+
 function openSaveDataModal() {
   const typeSel = svEl("svType");
   typeSel.innerHTML = "";
@@ -5278,7 +5341,7 @@ function openSaveDataModal() {
   renderSaveFiles();
   svEl("saveDataModal").hidden = false;
   svEl("svDevice").focus();
-  requestSavePlan();
+  setSaveTab("reg");                    /* R-097: 시험 등록부터 */
 }
 
 function closeSaveDataModal() {
@@ -5391,6 +5454,7 @@ function renderSavePlan(plan) {
       if (conflict) text += plan.overwrite ? "  · " + conflict + "개 덮어씀" : "  · " + conflict + "개 건너뜀";
       line(text);
     });
+    if (plan.folder_only) line("   00_Pre · 01_Post 를 함께 만듭니다");   /* R-097 */
     if (plan.base) line(plan.base, "sv-path");
   }
   (plan.errors || []).forEach(text => line("! " + text, "sv-err"));
@@ -5402,8 +5466,9 @@ function requestSavePlan() {
     const seq = ++savePlanSeq;
     const body = {
       selection: saveSelectionFromForm(),
-      files: saveFiles.map(f => ({ path: f.path, kind: f.kind })),
+      files: svActiveTab === "reg" ? [] : saveFiles.map(f => ({ path: f.path, kind: f.kind })),
       overwrite: svEl("svOverwrite").checked,
+      folder_only: svActiveTab === "reg",          /* R-097 */
     };
     try {
       const res = await fetch("/save-plan", {
@@ -5439,6 +5504,30 @@ async function pickSaveFiles() {
     svEl("svMsg").textContent = "";
     renderSaveFiles();
     requestSavePlan();
+  } catch (err) {
+    svEl("svMsg").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* R-097: 파일 없이 폴더만 만든다. 이미 있으면 아무것도 바꾸지 않는다. */
+async function commitRegisterTest() {
+  const btn = svEl("svSaveBtn");
+  btn.disabled = true;
+  svEl("svMsg").textContent = "등록 중...";
+  try {
+    const res = await fetch("/register-test", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection: saveSelectionFromForm() }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "등록에 실패했습니다.");
+    svEl("svMsg").textContent = (data.folder_created ? "폴더를 만들었습니다 — " : "이미 있는 폴더입니다 — ")
+      + data.folder;
+    setStatus("시험 등록 완료 — " + data.folder);
+    requestSavePlan();
+    refreshPlanNote();
   } catch (err) {
     svEl("svMsg").textContent = err.message;
   } finally {
@@ -5829,6 +5918,7 @@ async function saveConditionModal() {
     if (!res.ok || data.error) throw new Error(data.error || "저장에 실패했습니다.");
     document.getElementById("conditionModal").hidden = true;
     setStatus("시험 조건 저장 완료");
+    refreshPlanNote();                 /* R-097 */
   } catch (err) {
     msg.textContent = err.message;
   } finally {
@@ -5870,9 +5960,9 @@ function bindSaveData() {
     if (event.key === "Escape" && !svEl("saveDataModal").hidden) closeSaveDataModal();
   });
   ["svDevice", "svVer", "svLot", "svPurpose"].forEach(id => {
-    svEl(id).addEventListener("input", requestSavePlan);
+    svEl(id).addEventListener("input", () => { requestSavePlan(); refreshPlanNote(); });
   });
-  svEl("svType").addEventListener("change", requestSavePlan);
+  svEl("svType").addEventListener("change", () => { requestSavePlan(); refreshPlanNote(); });
   svEl("svOverwrite").addEventListener("change", requestSavePlan);
   svEl("svPickBtn").addEventListener("click", pickSaveFiles);
   svEl("svAllPreBtn").addEventListener("click", () => {
@@ -5883,7 +5973,13 @@ function bindSaveData() {
     saveFiles.forEach(f => { f.kind = "post"; });
     renderSaveFiles(); requestSavePlan();
   });
-  svEl("svSaveBtn").addEventListener("click", commitSaveData);
+  /* R-097: 기본 버튼은 탭에 따라 등록/저장으로 갈린다. */
+  svEl("svSaveBtn").addEventListener("click", () => {
+    if (svActiveTab === "reg") commitRegisterTest(); else commitSaveData();
+  });
+  document.querySelectorAll("#svTabBar [data-svtab]").forEach(btn => {
+    btn.addEventListener("click", () => setSaveTab(btn.dataset.svtab));
+  });
 }
 
 /* R-083: Summary Table 을 새 창에 그리고, 그 창에서 템플릿 서식대로 xlsx 를 받는다.
@@ -13649,7 +13745,10 @@ def build_save_plan(payload):
             if path and os.path.normcase(os.path.abspath(path)) == os.path.normcase(destination):
                 errors.append("원본과 저장 위치가 같습니다: %s" % name)
         files_out.append(info)
-    if not files_out:
+    # R-097: '시험 등록' 은 파일 없이 폴더만 만든다. 파일 관련 검사만 건너뛰고
+    # 이름 검증·되읽기 검증은 그대로 탄다 — 폴더명이 틀리면 등록도 막아야 한다.
+    folder_only = bool(payload.get("folder_only"))
+    if not files_out and not folder_only:
         errors.append("저장할 파일을 하나 이상 고르세요.")
 
     overwrite = bool(payload.get("overwrite"))
@@ -13659,6 +13758,7 @@ def build_save_plan(payload):
         errors.append("고른 파일이 전부 같은 이름으로 이미 있습니다 — 덮어쓰기를 선택하거나 파일을 바꾸세요.")
     return {
         "selection": {"device": device, "type": rel_type, "ver": ver, "lot": lot, "purpose": purpose},
+        "folder_only": folder_only,                      # R-097
         "data_root": os.path.abspath(DATA_ROOT),
         "device_exists": device_exists,
         "folder": folder,
@@ -13676,6 +13776,30 @@ def build_save_plan(payload):
             "to_copy": len(files_out) - (0 if overwrite else conflicts),
         },
     }
+
+
+def register_test_folder(payload):
+    """R-097 '시험 등록': 데이터가 나오기 전에 조건 폴더와 Pre/Post 하위 폴더를 미리 만든다.
+
+    시험 투입 시점에는 파일이 없다. 폴더를 먼저 만들어 두면 나중에 데이터만 넣으면 된다.
+    이미 있으면 아무것도 바꾸지 않고 '기존 폴더' 로 돌려준다 (makedirs exist_ok).
+    """
+    payload = dict(payload or {})
+    payload["folder_only"] = True
+    payload["files"] = []
+    plan = build_save_plan(payload)
+    if not plan["can_save"]:
+        raise ValueError(plan["errors"][0])
+    created = not os.path.isdir(plan["base"])
+    os.makedirs(plan["base"], exist_ok=True)
+    made = []
+    for kind in ("pre", "post"):
+        path = plan["subdirs"][kind]["path"]
+        if not os.path.isdir(path):
+            made.append(os.path.basename(path))
+        os.makedirs(path, exist_ok=True)
+    return {"selection": plan["selection"], "folder": plan["folder"], "base": plan["base"],
+            "subdirs": plan["subdirs"], "folder_created": created, "subdirs_created": made}
 
 
 def save_data_files(payload):
@@ -14672,6 +14796,14 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
                 self.send_json(build_save_plan(body))
+            except Exception as exc:
+                self.send_json({"error": str(exc)}, status=400)
+            return
+        if self.path == "/register-test":                         # R-097
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+                self.send_json(register_test_folder(body))
             except Exception as exc:
                 self.send_json({"error": str(exc)}, status=400)
             return
